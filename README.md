@@ -3,7 +3,7 @@ Team 1 COSC 3380
 
 ## Prereqs
 - node js
-- cite
+- vite
 
 ## steps
 - npm install init -y
