@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS patients (
     email VARCHAR(100) UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-----------
+
 /*
 DOCTORS Table
 Doctor ID (int) (Primary Key)
@@ -35,7 +35,8 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
+
 
 /*
 STAFF Table 
@@ -57,7 +58,6 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
 
 /*
 APPOINTMENTS Table
@@ -74,7 +74,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 
 /*
 SALARIES Table
@@ -89,7 +89,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 
 /* 
 DEPENDENTS Table
@@ -104,7 +104,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 
 /*
 MEDICAL RECORDS Table
@@ -118,7 +118,7 @@ Record details(string)
 Allergies (multi-valued)
 Family history (multi-valued)
 */
-----------
+
 
 /*
 INVOICES Table
@@ -134,7 +134,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 
 /*
 PAYMENTS Table
@@ -148,7 +148,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 
 /* 
 LOCATIONS Table
@@ -161,7 +161,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 /*
 ROOMS Table
 Room number (int)
@@ -173,7 +173,7 @@ UpdatedBy (char)
 LastUpdated (datetime)
 Location ID (int) (FK)
 */
-----------
+
 
 /*
 SUPPLIES Table
@@ -187,7 +187,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 
 /*
 SUPPLIES INVOICES Table
@@ -202,7 +202,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 
 /*
 PHARMACIES Table
@@ -214,7 +214,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)	
 */
-----------
+
 
 /*
 USER Table
@@ -227,7 +227,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 
 /*
 INSURANCE Table
@@ -246,7 +246,8 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
+
 /*
 PRESCRIPTION Table
 Prescription ID (int) (PK)
@@ -259,7 +260,8 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
+
 /*
 ADA_PROCEDURE_CODES Table
 Procedure_Code(PK)(string)
@@ -271,7 +273,7 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-----------
+
 
 /*
 DENTAL_FINDINGS Table
@@ -288,7 +290,7 @@ CreatedAt (datetime)
 UpdatedBy (char)
 LastUpdated (datetime)
 */
-----------
+
 
 /*
 TREATMENT_PLANS Table
@@ -306,7 +308,7 @@ CreatedAt (datetime)
 UpdatedBy (char)
 LastUpdated (datetime)
 */
-----------
+
 
 /*
 DENTAL_LAB_ORDERS Table
@@ -326,7 +328,8 @@ CreatedAt (datetime)
 UpdatedBy (char)
 LastUpdated (datetime)
 */
-----------
+
+
 /*
 VITALS Table
 Vitals_ID  (int) (Primary Key)
@@ -339,4 +342,3 @@ CreatedAt (datetime)
 UpdatedBy (char)
 LastUpdated (datetime)
 */
-----------
