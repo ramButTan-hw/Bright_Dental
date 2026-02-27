@@ -15,7 +15,6 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
------------
 
 CREATE TABLE IF NOT EXISTS patients (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -24,7 +23,7 @@ CREATE TABLE IF NOT EXISTS patients (
     email VARCHAR(100) UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
+----------
 /*
 DOCTORS Table
 Doctor ID (int) (Primary Key)
