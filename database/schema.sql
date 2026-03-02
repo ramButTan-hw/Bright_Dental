@@ -77,36 +77,6 @@ LastUpdated (datetime)
 
 
 /*
-SALARIES Table
-Salary ID(int) (PK)
-Hours Worked (float)
-Rate(float)
-Hours Scheduled(Float
-Hours Total(Float)
-Tax (float)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char) 
-LastUpdated (datetime)
-*/
-
-
-/* 
-DEPENDENTS Table
-Dependents ID (int) (PK)
-Patient ID (int) (FK)
-Staff ID (int) (FK)
-Address
-Phone Number (string)
-Relation (String)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char) 
-LastUpdated (datetime)
-*/
-
-
-/*
 MEDICAL RECORDS Table
 CreatedBy (char)
 CreatedAt (datetime)
