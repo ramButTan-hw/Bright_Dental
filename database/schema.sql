@@ -24,40 +24,40 @@ CREATE TABLE IF NOT EXISTS patients (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
-CREATE TABLE IF NOT EXISTS doctors (
-    Doctor_ID INT AUTO_INCREMENT PRIMARY KEY,
-    NPI  VARCHAR(10) NOT NULL,
-    Staff_ID INT FOREIGN KEY,
-    /*Specialties/Department (string- multi-valued attribute)*/
-    CreatedBy VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    UpdatedBy VARCHAR(50) NOT NULL,
-    /*LastUpdated TIMESTAMP*/
-);
-
-
+/*
+DOCTORS Table
+Doctor ID (int) (Primary Key)
+NPI (string) (mandatory ID for medical workers)
+Staff ID (int) (FK)
+Specialties/Department (string- multi-valued attribute)
+CreatedBy (char)
+CreatedAt (datetime)
+UpdatedBy (char) 
+LastUpdated (datetime)
+*/
 
 
-CREATE TABLE IF NOT EXISTS staff (
-    Staff_ID INT PRIMARY KEY, 
-    User_ID INT FOREIGN KEY,
-    /*Location_ID INT (Foreign Key- multi-valued attribute)*/
-    /*Home_Address (APT#, House#, Street, City, State, Zip, Country) (composite)*/
-    /*Full_Name (string- composite attribute)*/
-    /**/
-    Role VARCHAR(30) NOT NULL,
-    Gender INT,
-    Race INT,
-    Ethnicity INT NOT NULL,
-    Phone_Number VARCHAR(10),
-    SSN INT(9) NOT NULL,
-    S_SSN INT(9)
-    CreatedBy VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    UpdatedBy VARCHAR(50) NOT NULL, 
-    LastUpdated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+
+/*
+STAFF Table 
+Staff ID (int) (Primary Key) 
+User ID (int) (FK)
+Location ID (int) (Foreign Key- multi-valued attribute)
+Home Address (APT#, House#, Street, City, State, Zip, Country) (composite)
+Full Name (string- composite attribute)
+Date of Birth (Datetime)
+Role (string)
+Gender (int)
+Race (int) 
+Ethnicity (int)
+Phone Number (string)
+SSN (int)
+S_SSN (int)
+CreatedBy (char)
+CreatedAt (datetime)
+UpdatedBy (char) 
+LastUpdated (datetime)
+*/
 
 /*
 APPOINTMENTS Table
