@@ -9,7 +9,6 @@ RaceOtherText (char)
 Gender (int)
 Ethnicity (int)
 Phone
-NCPDP UPI (string)
 CreatedBy (char)
 CreatedAt (datetime)
 UpdatedBy (char) 
@@ -17,11 +16,28 @@ LastUpdated (datetime)
 */
 
 CREATE TABLE IF NOT EXISTS patients (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    first_name VARCHAR(50) NOT NULL,
-    last_name VARCHAR(50) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    patient_id INT AUTO_INCREMENT PRIMARY KEY,
+    p_first_name VARCHAR(50) NOT NULL,
+    p_last_name VARCHAR(50) NOT NULL,
+    p_dob DATE NOT NULL,
+    p_gender INT,
+    p_race INT,
+    p_race_other_text VARCHAR(100),
+    p_ethnicity INT,
+    p_phone VARCHAR(20),
+    p_email VARCHAR(100) UNIQUE NOT NULL,
+    p_street VARCHAR(100),
+    p_apt VARCHAR(20),
+    p_city VARCHAR(50),
+    p_state VARCHAR(2),
+    p_zip VARCHAR(10),
+    p_country VARCHAR(50),
+    p_emergency_contact_name VARCHAR(100),
+    p_emergency_contact_phone VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
 );
 
 /*
@@ -75,21 +91,6 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
-
-/*
-MEDICAL RECORDS Table
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char) 
-LastUpdated (datetime) 
-Patient ID (FK) (INT)
-Diagnosis(string)
-Record details(string)
-Allergies (multi-valued)
-Family history (multi-valued)
-*/
-
-
 /*
 INVOICES Table
 Invoice ID (int) (PK)
@@ -131,48 +132,6 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-
-/*
-ROOMS Table
-Room number (int)
-Medical supplies ()
-Type of room (string - multivalued attribute)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char) 
-LastUpdated (datetime)
-Location ID (int) (FK)
-*/
-
-
-/*
-SUPPLIES Table
-Supply_ID(int) (PK)
-Quantity (int)
-Department (string)
-Location ID (FK)
-Room ID(int) (FK)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char) 
-LastUpdated (datetime)
-*/
-
-
-/*
-SUPPLIES INVOICES Table
-SupplyInvoice_ID(int)(PK)
-Supply_ID(int)(FK)
-Total(float)
-Receipt_File(string)
-Date(datetime)
-SupplierName(string)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char) 
-LastUpdated (datetime)
-*/
-
 
 /*
 PHARMACIES Table
@@ -244,6 +203,16 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
+CREATE TABLE IF NOT EXISTS ada_procedure_codes (
+    procedure_code VARCHAR(20) PRIMARY KEY,
+    description TEXT,
+    category VARCHAR(50),
+    default_fees DECIMAL(10,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
+);
 
 /*
 DENTAL_FINDINGS Table
@@ -312,3 +281,27 @@ CreatedAt (datetime)
 UpdatedBy (char)
 LastUpdated (datetime)
 */
+
+/*
+MEDICAL ALERTS Table
+CreatedBy (char)
+CreatedAt (datetime)
+UpdatedBy (char) 
+Alert ID (PK)
+Patient ID(FK)
+Condition (string)
+Notes(string)
+*/
+
+CREATE TABLE IF NOT EXISTS medical_alerts (
+    alert_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT,
+    alert_condition VARCHAR(255),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
+);
+
