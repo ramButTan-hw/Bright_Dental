@@ -1,6 +1,8 @@
 
+
 CREATE TABLE IF NOT EXISTS patients (
     patient_id INT AUTO_INCREMENT PRIMARY KEY,
+    p_address_id INT NOT NULL,
     p_first_name VARCHAR(50) NOT NULL,
     p_last_name VARCHAR(50) NOT NULL,
     p_dob DATE NOT NULL,
@@ -9,20 +11,24 @@ CREATE TABLE IF NOT EXISTS patients (
     p_race_other_text VARCHAR(100),
     p_ethnicity INT,
     p_phone VARCHAR(20),
-    p_email VARCHAR(100) UNIQUE NOT NULL,
-    p_street VARCHAR(100),
-    p_apt VARCHAR(20),
-    p_city VARCHAR(50),
-    p_state VARCHAR(2),
-    p_zip VARCHAR(10),
-    p_country VARCHAR(50),
+    p_email VARCHAR(100) UNIQUE NOT NULL,,
     p_emergency_contact_name VARCHAR(100),
     p_emergency_contact_phone VARCHAR(20),
+    p_address_1 VARCHAR(120),
+    p_address_2 VARCHAR(120),
+    p_city VARCHAR(60),
+    p_state CHAR(2),
+    p_zipcode CHAR(10),
+    p_country VARCHAR(40),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50)
+
+    FOREIGN KEY (p_address_id) REFERENCES patients_addresses(p_address_id)
 );
+
+
 
 CREATE TABLE IF NOT EXISTS locations (
     location_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -37,19 +43,6 @@ CREATE TABLE IF NOT EXISTS locations (
     updated_by VARCHAR(50)
 );
 
-CREATE TABLE IF NOT EXISTS pharmacy_addresses (
-    ph_address_id INT AUTO_INCREMENT PRIMARY KEY,
-    ph_address_1 VARCHAR(120),
-    ph_address_2 VARCHAR(120),
-    ph_city VARCHAR(60),
-    ph_state CHAR(2),
-    ph_zipcode CHAR(10),
-    ph_country VARCHAR(40),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(50),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50)
-);
 
 CREATE TABLE IF NOT EXISTS ada_procedure_codes (
     procedure_code VARCHAR(20) PRIMARY KEY,
@@ -75,13 +68,12 @@ CREATE TABLE IF NOT EXISTS staff (
     ssn VARCHAR(11),
     salary DECIMAL(10,2),
     s_ssn VARCHAR(11),
-    apt VARCHAR(20),
-    house_number VARCHAR(20),
-    street VARCHAR(100),
-    city VARCHAR(50),
-    state VARCHAR(2),
-    zip_code VARCHAR(10),
-    country VARCHAR(50),
+    s_address_1 VARCHAR(120),
+    s_address_2 VARCHAR(120),
+    s_city VARCHAR(60),
+    s_state CHAR(2),
+    s_zipcode CHAR(10),
+    s_country VARCHAR(40),,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -120,15 +112,18 @@ CREATE TABLE IF NOT EXISTS specialties_department (
 );
 
 CREATE TABLE IF NOT EXISTS pharmacies (
-    pharm_id INT AUTO_INCREMENT PRIMARY KEY,
-    ph_address_id INT NOT NULL,
     pharm_name VARCHAR(100),
     pharm_phone VARCHAR(20),
+    ph_address_1 VARCHAR(120),
+    ph_address_2 VARCHAR(120),
+    ph_city VARCHAR(60),
+    ph_state CHAR(2),
+    ph_zipcode CHAR(10),
+    ph_country VARCHAR(40),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
-    FOREIGN KEY (ph_address_id) REFERENCES pharmacy_addresses(ph_address_id)
 );
 
 CREATE TABLE IF NOT EXISTS appointments (
