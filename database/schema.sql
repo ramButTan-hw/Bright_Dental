@@ -1,3 +1,4 @@
+
 /*
 PATIENT Table
 Patient ID(int) (PK)
@@ -52,23 +53,25 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
-CREATE TABLE IF NOT EXISTS DOCTORS (
-    DOCTOR_ID INT AUTO_INCREMENT PRIMARY KEY UNIQUE,
-    NPI VARCHAR(20) NOT NULL,
-    FOREIGN_KEY(STAFF_ID) INT NOT NULL,
-    CREATEDBY CHAR,
-    CREATEDAT DATETIME,
-    UPDATEDBY CHAR,
-    LASTUPDATED DATETIME
+CREATE TABLE IF NOT EXISTS doctors (
+    doctor_id INT AUTO_INCREMENT PRIMARY KEY,
+    npi VARCHAR(20) NOT NULL,
+    staff_id INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
 );
-CREATE TABLE IF NOT EXISTS SPECIALTIES_DEPARTMENT (
-    DOCTOR_ID INT NOT NULL,
-    SPECIALTY VARCHAR(20) NOT NULL,
-    FOREIGN KEY (DOCTOR_ID) REFERENCES DOCTORS(DOCTOR_ID),
-    CREATEDBY CHAR,
-    CREATEDAT DATETIME,
-    UPDATEDBY CHAR,
-    LASTUPDATED DATETIME
+
+CREATE TABLE IF NOT EXISTS specialties_department (
+    doctor_id INT NOT NULL,
+    specialty VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    PRIMARY KEY (doctor_id, specialty),
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id)
 );
 
 
@@ -108,19 +111,20 @@ CreatedAt (datetime)
 UpdatedBy (char)
 LastUpdated (datetime)
 */
-CREATE TABLE IF NOT EXISTS APPOINTMENTS (
-    APPOINTMENT_ID INT AUTO_INCREMENT PRIMARY KEY UNIQUE,
-    FOREIGN KEY(LOCATION_ID) REFERENCES LOCATIONS(LOCATION_ID),
-    FOREIGN KEY(PATIENT_ID) REFERENCES PATIENTS(PATIENT_ID),
-    FOREIGN KEY(DOCTOR_ID) REFERENCES DOCTOR(DOCTOR_ID),
-    FOREIGN KEY(ROOM_NUMBER) REFERENCES ROOMS(ROOM_NUMBER),
-    APPOINTMENT_TIME TIME NOT NULL,
-    APPOINTMENT_DATE DATE NOT NULL,
-    APPT_STATUS BOOLEAN NOT NULL,
-    CREATEDBY CHAR,
-    CREATEDAT DATETIME,
-    UPDATEDBY CHAR,
-    LASTUPDATED DATETIME
+CREATE TABLE IF NOT EXISTS appointments (
+    appointment_id INT AUTO_INCREMENT PRIMARY KEY,
+    location_id INT,
+    patient_id INT NOT NULL,
+    doctor_id INT NOT NULL,
+    appointment_time TIME NOT NULL,
+    appointment_date DATE NOT NULL,
+    appt_status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id)
 );
 
 
@@ -182,16 +186,16 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
-CREATE TABLE IF NOT EXISTS PAYMENTS (
-    PAYMENT_ID INT AUTO_INCREMENT PRIMARY KEY UNIQUE,
-    FOREIGN KEY(INVOICE_ID) REFERENCES INVOICES(INVOICE_ID),
-    PAYMENT_AMOUNT FLOAT NOT NULL,
-    PAYMENT_DATE DATETIME NOT NULL,
-    PAYMENT_METHOD VARCHAR(10) NOT NULL,
-    CREATEDBY CHAR,
-    CREATEDAT DATETIME,
-    UPDATEDBY CHAR,
-    LASTUPDATED DATETIME
+CREATE TABLE IF NOT EXISTS payments (
+    payment_id INT AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT,
+    payment_amount DECIMAL(10,2) NOT NULL,
+    payment_date DATETIME NOT NULL,
+    payment_method VARCHAR(30) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
 );
 
 /*
@@ -206,17 +210,17 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
-CREATE TABLE IF NOT EXISTS LOCATIONS (
-    LOCATION_ID INT PRIMARY KEY UNIQUE NOT NULL,
-    LOCATION_CITY VARCHAR(20) NOT NULL,
-    LOCATION_STATE VARCHAR(20) NOT NULL,
-    LOC_STREET_NO INT NOT NULL,
-    LOC_STREET_NAME VARCHAR(100) NOT NULL,
-    LOC_ZIP_CODE VARCHAR(10) NOT NULL,
-    CREATEDBY CHAR,
-    CREATEDAT DATETIME,
-    UPDATEDBY CHAR,
-    LASTUPDATED DATETIME
+CREATE TABLE IF NOT EXISTS locations (
+    location_id INT AUTO_INCREMENT PRIMARY KEY,
+    location_city VARCHAR(20) NOT NULL,
+    location_state VARCHAR(20) NOT NULL,
+    loc_street_no VARCHAR(20) NOT NULL,
+    loc_street_name VARCHAR(100) NOT NULL,
+    loc_zip_code VARCHAR(10) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
 );
 
 
@@ -246,20 +250,19 @@ CREATE TABLE IF NOT EXISTS PHARMACY_ADDRESSES (
   ph_country VARCHAR(40)
 );
 
-CREATE TABLE IF NOT EXISTS PHARMACIES (
+CREATE TABLE IF NOT EXISTS pharmacies (
     pharm_id INT AUTO_INCREMENT PRIMARY KEY,
     ph_address_id INT NOT NULL,
     pharm_name VARCHAR(100),
-    pharm_phone VARCHAR(10),
-    created_by CHAR(1),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_by CHAR(1),
-    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
+    pharm_phone VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
     FOREIGN KEY (ph_address_id) REFERENCES PHARMACY_ADDRESSES(ph_address_id)
 );
 
-CREATE TABLE IF NOT EXISTS INSURANCE (
+CREATE TABLE IF NOT EXISTS insurance (
     insurance_id INT AUTO_INCREMENT PRIMARY KEY,
     patient_id INT NOT NULL,
     member_id INT NOT NULL,
@@ -269,36 +272,33 @@ CREATE TABLE IF NOT EXISTS INSURANCE (
     expiration_date DATETIME,
     company_name VARCHAR(100),
     phone_number VARCHAR(15),
-    created_by CHAR(1),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_by CHAR(1),
-    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
 );
 
-CREATE TABLE IF NOT EXISTS PRESCRIPTIONS (
+CREATE TABLE IF NOT EXISTS prescriptions (
     prescription_id INT AUTO_INCREMENT PRIMARY KEY,
-    plan_id INT NOT NULL
+    plan_id INT,
     patient_id INT NOT NULL,
     pharm_id INT NOT NULL,
     doctor_id INT NOT NULL,
-    medication_name VARCHAR (100),
-    instructions VARCHAR (255),
+    medication_name VARCHAR(100),
+    instructions VARCHAR(255),
     strength VARCHAR(50),
     dosage VARCHAR(50),
     date_prescribed DATETIME,
     quantity INT,
     refills INT,
-    created_by CHAR(1),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_by CHAR(1),
-    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
-    FOREIGN KEY (pharm_id) REFERENCES PHARMACIES(pharm_id),
-    FOREIGN KEY (doctor_id) REFERENCES DOCTORS(doctor_id),
-    FOREIGN KEY (plan_id) REFERENCES TREATMENT_PLANS(plan_id)
+    FOREIGN KEY (pharm_id) REFERENCES pharmacies(pharm_id),
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id)
 );
 /*
 INSURANCE Table
@@ -318,7 +318,7 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
-CREATE TABLE IF NOT EXISTS TREATMENT_PLANS (
+CREATE TABLE IF NOT EXISTS treatment_plans (
     plan_id INT AUTO_INCREMENT PRIMARY KEY,
     patient_id INT NOT NULL,
     doctor_id INT NOT NULL,
@@ -326,17 +326,15 @@ CREATE TABLE IF NOT EXISTS TREATMENT_PLANS (
     procedure_code VARCHAR(20),
     treatment_status VARCHAR(20),
     tooth_number VARCHAR(10),
-    estimated_cost FLOAT,
+    estimated_cost DECIMAL(10,2),
     quantity INT,
     refills INT,
-    created_by CHAR(1),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_by CHAR(1),
-    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
-    FOREIGN KEY (doctor_id) REFERENCES DOCTORS(doctor_id),
-    FOREIGN KEY (procedure_code) REFERENCES ADA_PROCEDURE_CODES(procedure_code)
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id)
 );
 
 /*
@@ -394,19 +392,21 @@ LastUpdated (datetime)
 
 CREATE TABLE IF NOT EXISTS dental_findings (
     finding_id INT AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT AUTO_INCREMENT NOT NULL,
-    doctor_id INT AUTO_INCREMENT NOT NULL,
-    tooth_number VARCHAR(10) UNIQUE NOT NULL,
+    patient_id INT NOT NULL,
+    doctor_id INT NOT NULL,
+    tooth_number VARCHAR(10) NOT NULL,
     surface CHAR(1),
-    Condition_Type VARCHAR(30),
-    Notes VARCHAR(200),
-    Date_logged DATETIME,
+    condition_type VARCHAR(30),
+    notes VARCHAR(200),
+    date_logged DATETIME,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(30),
-    LastUpdated DATETIME,
-    UpdatedBy VARCHAR(30),
-    CHECK (surface = 'M' OR surface = 'O' OR surface = 'D' OR surface = 'F' OR surface = 'L'),
-    CHECK (Condition_Type = 'Decay' OR Condition_Type = 'Missing' OR Condition_Type = 'Impacted' OR Condition_Type = 'Existing Amalgam')
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
+    CHECK (surface IN ('M', 'O', 'D', 'F', 'L')),
+    CHECK (condition_type IN ('Decay', 'Missing', 'Impacted', 'Existing Amalgam'))
 );
 
 
@@ -431,18 +431,25 @@ LastUpdated (datetime)
 */
 
 CREATE TABLE IF NOT EXISTS dental_lab_orders (
-    lab_order_ID INT AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT AUTO_INCREMENT NOT NULL,
-    doctor_id INT AUTO_INCREMENT NOT NULL,
-    appointment_id INT AUTO_INCREMENT NOT NULL,
-    tooth_number VARCHAR(10) UNIQUE NOT NULL,
+    lab_order_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    doctor_id INT NOT NULL,
+    appointment_id INT,
+    tooth_number VARCHAR(10),
+    procedure_code VARCHAR(20),
+    lab_name VARCHAR(100),
+    order_date DATETIME,
+    due_date DATETIME,
     status VARCHAR(20),
     cost DECIMAL(10,2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(30),
-    LastUpdated DATETIME,
-    UpdatedBy VARCHAR(30),
-    CHECK (status = 'Sent' OR status = 'In Production' OR status = 'Received' OR status = 'Delivered')
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
+    FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id),
+    CHECK (status IN ('Sent', 'In Production', 'Received', 'Delivered'))
 );
 
 /*
@@ -459,16 +466,17 @@ LastUpdated (datetime)
 */
 
 CREATE TABLE IF NOT EXISTS vitals (
-    Vitals_ID INT AUTO_INCREMENT PRIMARY KEY,
-    appointment_id INT AUTO_INCREMENT NOT NULL,
-    Blood_Pressure INT,
-    Heart_Rate INT,
-    Oxygen_Saturation INT,
+    vitals_id INT AUTO_INCREMENT PRIMARY KEY,
+    appointment_id INT NOT NULL,
+    blood_pressure INT,
+    heart_rate INT,
+    oxygen_saturation INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(30),
-    LastUpdated DATETIME,
-    UpdatedBy VARCHAR(30),
-    CHECK (Heart_Rate > 0 OR Heart_Rate < 300)
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id),
+    CHECK (heart_rate > 0 AND heart_rate < 300)
 );
 /*
 MEDICAL ALERTS Table
@@ -492,4 +500,9 @@ CREATE TABLE IF NOT EXISTS medical_alerts (
     updated_by VARCHAR(50),
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
 );
+
+-- Deferred foreign key constraints (referenced tables are defined after the referencing tables)
+ALTER TABLE appointments ADD FOREIGN KEY (location_id) REFERENCES locations(location_id);
+ALTER TABLE treatment_plans ADD FOREIGN KEY (procedure_code) REFERENCES ada_procedure_codes(procedure_code);
+ALTER TABLE prescriptions ADD FOREIGN KEY (plan_id) REFERENCES treatment_plans(plan_id);
 
