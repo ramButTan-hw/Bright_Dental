@@ -273,8 +273,6 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
-
-
 /*
 DENTAL_FINDINGS Table
 Finding_ID (int) (Primary Key)
@@ -291,6 +289,22 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
+CREATE TABLE IF NOT EXISTS dental_findings (
+    finding_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT AUTO_INCREMENT NOT NULL,
+    doctor_id INT AUTO_INCREMENT NOT NULL,
+    tooth_number VARCHAR(10) UNIQUE NOT NULL,
+    surface CHAR(1),
+    Condition_Type VARCHAR(30),
+    Notes VARCHAR(200),
+    Date_logged DATETIME,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(30),
+    LastUpdated DATETIME,
+    UpdatedBy VARCHAR(30),
+    CHECK (surface = 'M' OR surface = 'O' OR surface = 'D' OR surface = 'F' OR surface = 'L'),
+    CHECK (Condition_Type = 'Decay' OR Condition_Type = 'Missing' OR Condition_Type = 'Impacted' OR Condition_Type = 'Existing Amalgam')
+);
 
 /*
 TREATMENT_PLANS Table
@@ -308,7 +322,6 @@ CreatedAt (datetime)
 UpdatedBy (char)
 LastUpdated (datetime)
 */
-
 
 /*
 DENTAL_LAB_ORDERS Table
@@ -329,6 +342,20 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
+CREATE TABLE IF NOT EXISTS dental_lab_orders (
+    lab_order_ID INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT AUTO_INCREMENT NOT NULL,
+    doctor_id INT AUTO_INCREMENT NOT NULL,
+    appointment_id INT AUTO_INCREMENT NOT NULL,
+    tooth_number VARCHAR(10) UNIQUE NOT NULL,
+    status VARCHAR(20),
+    cost DECIMAL(10,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(30),
+    LastUpdated DATETIME,
+    UpdatedBy VARCHAR(30),
+    CHECK (status = 'Sent' OR status = 'In Production' OR status = 'Received' OR status = 'Delivered')
+);
 
 /*
 VITALS Table
@@ -342,3 +369,16 @@ CreatedAt (datetime)
 UpdatedBy (char)
 LastUpdated (datetime)
 */
+
+CREATE TABLE IF NOT EXISTS vitals (
+    Vitals_ID INT AUTO_INCREMENT PRIMARY KEY,
+    appointment_id INT AUTO_INCREMENT NOT NULL,
+    Blood_Pressure INT,
+    Heart_Rate INT,
+    Oxygen_Saturation INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(30),
+    LastUpdated DATETIME,
+    UpdatedBy VARCHAR(30),
+    CHECK (Heart_Rate > 0 OR Heart_Rate < 300)
+);
