@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS PATIENTS (
     LASTUPDATED DATETIME
 );
 
+/*
+DOCTORS Table
+Doctor ID (int) (Primary Key)
+NPI (string) (mandatory ID for medical workers)
+Staff ID (int) (FK)
+Specialties/Department (string- multi-valued attribute)
+CreatedBy (char)
+CreatedAt (datetime)
+UpdatedBy (char)
+LastUpdated (datetime)
+*/
 
 CREATE TABLE IF NOT EXISTS DOCTORS (
     DOCTOR_ID INT AUTO_INCREMENT PRIMARY KEY UNIQUE,
@@ -46,18 +57,6 @@ CREATE TABLE IF NOT EXISTS SPECIALTIES_DEPARTMENT (
     UPDATEDBY CHAR,
     LASTUPDATED DATETIME
 );
-/*
-DOCTORS Table
-Doctor ID (int) (Primary Key)
-NPI (string) (mandatory ID for medical workers)
-Staff ID (int) (FK)
-Specialties/Department (string- multi-valued attribute)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char)
-LastUpdated (datetime)
-*/
-
 
 
 /*
