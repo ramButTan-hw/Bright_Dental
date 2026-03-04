@@ -236,19 +236,70 @@ LastUpdated (datetime)
 
 
 
-/*
-USER Table
-User ID (int) (PK)
-Email (string)
-Username (string)
-Password (string)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char)
-LastUpdated (datetime)
-*/
+CREATE TABLE IF NOT EXISTS PHARMACY_ADDRESSES (
+  ph_address_id INT PRIMARY KEY AUTO_INCREMENT,
+  ph_address_1 VARCHAR(120),
+  p_address_2 VARCHAR(120),
+  p_city VARCHAR(60) ,
+  p_state CHAR(2) ,
+  p_zipcode CHAR(10) ,
+  p_country VARCHAR(40)
+);
 
+CREATE TABLE IF NOT EXISTS PHARMACIES (
+    pharm_id INT AUTO_INCREMENT PRIMARY KEY,
+    ph_address_id INT NOT NULL,
+    pharm_name VARCHAR(100),
+    pharm_phone VARCHAR(10),
+    created_by CHAR(1),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by CHAR(1),
+    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
+    FOREIGN KEY (ph_address_id) REFERENCES PHARMACY_ADDRESSES(ph_address_id)
+);
+
+CREATE TABLE IF NOT EXISTS INSURANCE (
+    insurance_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    member_id INT NOT NULL,
+    group_number INT NOT NULL,
+    is_primary BOOLEAN,
+    effective_date DATETIME,
+    expiration_date DATETIME,
+    company_name VARCHAR(100),
+    phone_number VARCHAR(15),
+    created_by CHAR(1),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by CHAR(1),
+    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+);
+
+CREATE TABLE IF NOT EXISTS PRESCRIPTIONS (
+    prescription_id INT AUTO_INCREMENT PRIMARY KEY,
+    plan_id INT NOT NULL
+    patient_id INT NOT NULL,
+    pharm_id INT NOT NULL,
+    doctor_id INT NOT NULL,
+    medication_name VARCHAR (100),
+    instructions VARCHAR (255),
+    strength VARCHAR(50),
+    dosage VARCHAR(50),
+    date_prescribed DATETIME,
+    quantity INT,
+    refills INT,
+    created_by CHAR(1),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by CHAR(1),
+    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (pharm_id) REFERENCES PHARMACIES(pharm_id),
+    FOREIGN KEY (doctor_id) REFERENCES DOCTORS(doctor_id),
+    FOREIGN KEY (plan_id) REFERENCES TREATMENT_PLANS(plan_id)
+);
 /*
 INSURANCE Table
 Insurance ID (int) (PK)
@@ -267,6 +318,26 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
+CREATE TABLE IF NOT EXISTS TREATMENT_PLANS (
+    plan_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    doctor_id INT NOT NULL,
+    surface VARCHAR(10),
+    procedure_code VARCHAR(20),
+    treatment_status VARCHAR(20),
+    tooth_number VARCHAR(10),
+    estimated_cost FLOAT,
+    quantity INT,
+    refills INT,
+    created_by CHAR(1),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by CHAR(1),
+    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (doctor_id) REFERENCES DOCTORS(doctor_id),
+    FOREIGN KEY (procedure_code) REFERENCES ADA_PROCEDURE_CODES(procedure_code)
+);
 
 /*
 PRESCRIPTION Table
@@ -322,22 +393,6 @@ LastUpdated (datetime)
 */
 
 
-/*
-TREATMENT_PLANS Table
-Plan_ID (int) (Primary Key)
-Patient ID (int) (Foreign Key)
-Doctor_ID (int) (Foreign Key)
-Tooth_Number (string)
-Surface (string)(Domain constraint = M=Mesial, O=Occlusal, D=Distal, F=Facial, L=Lingual)
-Procedure_Code (string) (Foreign Key)
-Status (string)
-Estimated_Cost (float)
-Date_Proposed (datetime)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char)
-LastUpdated (datetime)
-*/
 
 
 /*
