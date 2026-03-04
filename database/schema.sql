@@ -239,11 +239,11 @@ LastUpdated (datetime)
 CREATE TABLE IF NOT EXISTS PHARMACY_ADDRESSES (
   ph_address_id INT PRIMARY KEY AUTO_INCREMENT,
   ph_address_1 VARCHAR(120),
-  p_address_2 VARCHAR(120),
-  p_city VARCHAR(60) ,
-  p_state CHAR(2) ,
-  p_zipcode CHAR(10) ,
-  p_country VARCHAR(40)
+  ph_address_2 VARCHAR(120),
+  ph_city VARCHAR(60) ,
+  ph_state CHAR(2) ,
+  ph_zipcode CHAR(10) ,
+  ph_country VARCHAR(40)
 );
 
 CREATE TABLE IF NOT EXISTS PHARMACIES (
