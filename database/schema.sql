@@ -16,16 +16,6 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
-CREATE TABLE IF NOT EXISTS PATIENTS (
-    ID INT AUTO_INCREMENT PRIMARY KEY,
-    FIRST_NAME VARCHAR(50) NOT NULL,
-    LAST_NAME VARCHAR(50) NOT NULL,
-    EMAIL VARCHAR(100) UNIQUE NOT NULL,
-    CREATEDBY CHAR,
-    CREATEDAT DATETIME,
-    UPDATEDBY CHAR,
-    LASTUPDATED DATETIME
-);
 
 /*
 DOCTORS Table
@@ -220,17 +210,6 @@ CREATE TABLE IF NOT EXISTS LOCATIONS (
     LASTUPDATED DATETIME
 );
 
-/*
-ROOMS Table
-Room number (int)
-Medical supplies ()
-Type of room (string - multivalued attribute)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char)
-LastUpdated (datetime)
-Location ID (int) (FK)
-*/
 
 
 /*
@@ -246,32 +225,6 @@ UpdatedBy (char)
 LastUpdated (datetime)
 */
 
-
-/*
-SUPPLIES INVOICES Table
-SupplyInvoice_ID(int)(PK)
-Supply_ID(int)(FK)
-Total(float)
-Receipt_File(string)
-Date(datetime)
-SupplierName(string)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char)
-LastUpdated (datetime)
-*/
-
-
-/*
-PHARMACIES Table
-Pharmacy ID(int) (PK)
-Address (Composite)
-NPI (Pharm ID) (int)
-CreatedBy (char)
-CreatedAt (datetime)
-UpdatedBy (char)
-LastUpdated (datetime)
-*/
 
 
 /*
