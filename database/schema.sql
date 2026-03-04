@@ -1,5 +1,5 @@
-/* 
-PATIENT Table 
+/*
+PATIENT Table
 Patient ID(int) (PK)
 Name
 Address
@@ -11,7 +11,7 @@ Ethnicity (int)
 Phone
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
@@ -48,15 +48,33 @@ Staff ID (int) (FK)
 Specialties/Department (string- multi-valued attribute)
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
+CREATE TABLE IF NOT EXISTS DOCTORS (
+    DOCTOR_ID INT AUTO_INCREMENT PRIMARY KEY UNIQUE,
+    NPI VARCHAR(20) NOT NULL,
+    FOREIGN_KEY(STAFF_ID) INT NOT NULL,
+    CREATEDBY CHAR,
+    CREATEDAT DATETIME,
+    UPDATEDBY CHAR,
+    LASTUPDATED DATETIME
+);
+CREATE TABLE IF NOT EXISTS SPECIALTIES_DEPARTMENT (
+    DOCTOR_ID INT NOT NULL,
+    SPECIALTY VARCHAR(20) NOT NULL,
+    FOREIGN KEY (DOCTOR_ID) REFERENCES DOCTORS(DOCTOR_ID),
+    CREATEDBY CHAR,
+    CREATEDAT DATETIME,
+    UPDATEDBY CHAR,
+    LASTUPDATED DATETIME
+);
 
 
 /*
-STAFF Table 
-Staff ID (int) (Primary Key) 
+STAFF Table
+Staff ID (int) (Primary Key)
 User ID (int) (FK)
 Location ID (int) (Foreign Key- multi-valued attribute)
 Home Address (APT#, House#, Street, City, State, Zip, Country) (composite)
@@ -64,14 +82,14 @@ Full Name (string- composite attribute)
 Date of Birth (Datetime)
 Role (string)
 Gender (int)
-Race (int) 
+Race (int)
 Ethnicity (int)
 Phone Number (string)
 SSN (int)
 S_SSN (int)
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
@@ -82,14 +100,58 @@ Location ID (int) (Foreign Key)
 Patient ID(int) (FK)
 Doctor ID (int) (FK)
 Room ID (int) (FK)
-Appointment Time 
+Appointment Time
 Appointment Date
 Status of appointment
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
+CREATE TABLE IF NOT EXISTS APPOINTMENTS (
+    APPOINTMENT_ID INT AUTO_INCREMENT PRIMARY KEY UNIQUE,
+    FOREIGN KEY(LOCATION_ID) REFERENCES LOCATIONS(LOCATION_ID),
+    FOREIGN KEY(PATIENT_ID) REFERENCES PATIENTS(PATIENT_ID),
+    FOREIGN KEY(DOCTOR_ID) REFERENCES DOCTOR(DOCTOR_ID),
+    FOREIGN KEY(ROOM_NUMBER) REFERENCES ROOMS(ROOM_NUMBER),
+    APPOINTMENT_TIME TIME NOT NULL,
+    APPOINTMENT_DATE DATE NOT NULL,
+    APPT_STATUS BOOLEAN NOT NULL,
+    CREATEDBY CHAR,
+    CREATEDAT DATETIME,
+    UPDATEDBY CHAR,
+    LASTUPDATED DATETIME
+);
+
+
+/*
+DEPENDENTS Table
+Dependents ID (int) (PK)
+Patient ID (int) (FK)
+Staff ID (int) (FK)
+Address
+Phone Number (string)
+Relation (String)
+CreatedBy (char)
+CreatedAt (datetime)
+UpdatedBy (char)
+LastUpdated (datetime)
+*/
+
+
+/*
+MEDICAL RECORDS Table
+CreatedBy (char)
+CreatedAt (datetime)
+UpdatedBy (char)
+LastUpdated (datetime)
+Patient ID (FK) (INT)
+Diagnosis(string)
+Record details(string)
+Allergies (multi-valued)
+Family history (multi-valued)
+*/
+
 
 /*
 INVOICES Table
@@ -102,7 +164,7 @@ Patient Amount (float)
 Payment Status (Bool)
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
@@ -116,12 +178,23 @@ Date
 Method (string)
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
+CREATE TABLE IF NOT EXISTS PAYMENTS (
+    PAYMENT_ID INT AUTO_INCREMENT PRIMARY KEY UNIQUE,
+    FOREIGN KEY(INVOICE_ID) REFERENCES INVOICES(INVOICE_ID),
+    PAYMENT_AMOUNT FLOAT NOT NULL,
+    PAYMENT_DATE DATETIME NOT NULL,
+    PAYMENT_METHOD VARCHAR(10) NOT NULL,
+    CREATEDBY CHAR,
+    CREATEDAT DATETIME,
+    UPDATEDBY CHAR,
+    LASTUPDATED DATETIME
+);
 
-/* 
+/*
 LOCATIONS Table
 Location ID (int)
 City (str 20)
@@ -129,20 +202,38 @@ State (std 20)
 Address(composite)
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
+CREATE TABLE IF NOT EXISTS LOCATIONS (
+    LOCATION_ID INT PRIMARY KEY UNIQUE NOT NULL,
+    LOCATION_CITY VARCHAR(20) NOT NULL,
+    LOCATION_STATE VARCHAR(20) NOT NULL,
+    LOC_STREET_NO INT NOT NULL,
+    LOC_STREET_NAME VARCHAR(100) NOT NULL,
+    LOC_ZIP_CODE VARCHAR(10) NOT NULL,
+    CREATEDBY CHAR,
+    CREATEDAT DATETIME,
+    UPDATEDBY CHAR,
+    LASTUPDATED DATETIME
+);
+
+
+
 /*
-PHARMACIES Table
-Pharmacy ID(int) (PK)
-Address (Composite)
-NPI (Pharm ID) (int)
+SUPPLIES Table
+Supply_ID(int) (PK)
+Quantity (int)
+Department (string)
+Location ID (FK)
+Room ID(int) (FK)
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
-LastUpdated (datetime)	
+UpdatedBy (char)
+LastUpdated (datetime)
 */
+
 
 
 /*
@@ -153,7 +244,7 @@ Username (string)
 Password (string)
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
@@ -167,12 +258,12 @@ Group_Number (int)
 Is_Primary (bool)
 Effective_Date (datetime)
 Expiration_Date (datetime)
-Company Name (string) 
+Company Name (string)
 Address
 Phone number
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
@@ -186,7 +277,7 @@ Medication info (composite)
 Date (dateTime)
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
@@ -199,7 +290,7 @@ Category(string) (should have front end constraints, Diagnostic, Restorative, En
 Default_Fees (float) (strict const value for default fees of each procedure)
 CreatedBy (char)
 CreatedAt (datetime)
-UpdatedBy (char) 
+UpdatedBy (char)
 LastUpdated (datetime)
 */
 
@@ -217,8 +308,8 @@ CREATE TABLE IF NOT EXISTS ada_procedure_codes (
 /*
 DENTAL_FINDINGS Table
 Finding_ID (int) (Primary Key)
-Patient ID (int) (Foreign Key) 
-Doctor_ID (int) (Foreign Key) 
+Patient ID (int) (Foreign Key)
+Doctor_ID (int) (Foreign Key)
 Tooth_Number (string)
 Surface(string)(Domain constraint = M=Mesial, O=Occlusal, D=Distal, F=Facial, L=Lingual)
 Condition_Type (string) (Domain constraint = 'Decay', 'Missing', 'Impacted', 'Existing Amalgam')
@@ -236,10 +327,10 @@ TREATMENT_PLANS Table
 Plan_ID (int) (Primary Key)
 Patient ID (int) (Foreign Key)
 Doctor_ID (int) (Foreign Key)
-Tooth_Number (string) 
+Tooth_Number (string)
 Surface (string)(Domain constraint = M=Mesial, O=Occlusal, D=Distal, F=Facial, L=Lingual)
 Procedure_Code (string) (Foreign Key)
-Status (string) 
+Status (string)
 Estimated_Cost (float)
 Date_Proposed (datetime)
 CreatedBy (char)
