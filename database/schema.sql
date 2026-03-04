@@ -273,6 +273,8 @@ CreatedAt (datetime)
 UpdatedBy (char) 
 LastUpdated (datetime)
 */
+
+
 /*
 DENTAL_FINDINGS Table
 Finding_ID (int) (Primary Key)
@@ -322,6 +324,7 @@ CreatedAt (datetime)
 UpdatedBy (char)
 LastUpdated (datetime)
 */
+
 
 /*
 DENTAL_LAB_ORDERS Table
