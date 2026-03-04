@@ -6,7 +6,9 @@ Team 1 COSC 3380
 
 ## Prereqs
 - node js
-- vite
+- cite
+- mySql
+- frontend- react
 
 ## steps
 - npm install init -y
