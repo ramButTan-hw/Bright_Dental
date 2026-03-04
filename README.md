@@ -1,6 +1,9 @@
 # Medical-Clinic-Project
 Team 1 COSC 3380
 
+## Git rules
+- please make a branch and push your changes onto the branch before merging origin
+
 ## Prereqs
 - node js
 - cite
