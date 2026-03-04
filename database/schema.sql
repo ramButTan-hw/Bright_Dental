@@ -44,7 +44,11 @@ CREATE TABLE IF NOT EXISTS pharmacy_addresses (
     ph_city VARCHAR(60),
     ph_state CHAR(2),
     ph_zipcode CHAR(10),
-    ph_country VARCHAR(40)
+    ph_country VARCHAR(40),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
 );
 
 CREATE TABLE IF NOT EXISTS ada_procedure_codes (
@@ -99,7 +103,8 @@ CREATE TABLE IF NOT EXISTS doctors (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50)
+    updated_by VARCHAR(50),
+    FOREIGN KEY (staff_id) REFERENCES staff(staff_id)
 );
 
 
@@ -134,6 +139,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     appointment_time TIME NOT NULL,
     appointment_date DATE NOT NULL,
     appt_status VARCHAR(20) NOT NULL,
+    cancel_reason VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -165,13 +171,11 @@ CREATE TABLE IF NOT EXISTS treatment_plans (
     plan_id INT AUTO_INCREMENT PRIMARY KEY,
     patient_id INT NOT NULL,
     doctor_id INT NOT NULL,
-    surface VARCHAR(10),
+    surface VARCHAR(5),
     procedure_code VARCHAR(20),
     treatment_status VARCHAR(20),
     tooth_number VARCHAR(10),
     estimated_cost DECIMAL(10,2),
-    quantity INT,
-    refills INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -184,11 +188,11 @@ CREATE TABLE IF NOT EXISTS treatment_plans (
 CREATE TABLE IF NOT EXISTS invoices (
     invoice_id INT AUTO_INCREMENT PRIMARY KEY,
     appointment_id INT NOT NULL,
-    insurance_id INT NOT NULL,
+    insurance_id INT,
     amount DECIMAL(10,2) NOT NULL,
     insurance_covered_amount DECIMAL(10,2) NOT NULL,
     patient_amount DECIMAL(10,2) NOT NULL,
-    payment_status BOOLEAN NOT NULL,
+    payment_status VARCHAR(20) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -239,7 +243,7 @@ CREATE TABLE IF NOT EXISTS dental_findings (
     patient_id INT NOT NULL,
     doctor_id INT NOT NULL,
     tooth_number VARCHAR(10) NOT NULL,
-    surface CHAR(1),
+    surface VARCHAR(5),
     condition_type VARCHAR(30),
     notes VARCHAR(200),
     date_logged DATETIME,
@@ -249,8 +253,7 @@ CREATE TABLE IF NOT EXISTS dental_findings (
     updated_by VARCHAR(50),
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
     FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
-    CHECK (surface IN ('M', 'O', 'D', 'F', 'L')),
-    CHECK (condition_type IN ('Decay', 'Missing', 'Impacted', 'Existing Amalgam'))
+    CHECK (condition_type IN ('Decay', 'Missing', 'Impacted', 'Existing Amalgam', 'Fracture', 'Crown', 'Root Canal', 'Abscess', 'Periodontal', 'Existing Composite'))
 );
 
 CREATE TABLE IF NOT EXISTS dental_lab_orders (
@@ -272,13 +275,15 @@ CREATE TABLE IF NOT EXISTS dental_lab_orders (
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
     FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
     FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id),
-    CHECK (status IN ('Sent', 'In Production', 'Received', 'Delivered'))
+    FOREIGN KEY (procedure_code) REFERENCES ada_procedure_codes(procedure_code),
+    CHECK (status IN ('Sent', 'In Production', 'Received', 'Delivered', 'Cancelled'))
 );
 
 CREATE TABLE IF NOT EXISTS vitals (
     vitals_id INT AUTO_INCREMENT PRIMARY KEY,
     appointment_id INT NOT NULL,
-    blood_pressure INT,
+    blood_pressure_systolic INT,
+    blood_pressure_diastolic INT,
     heart_rate INT,
     oxygen_saturation INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
