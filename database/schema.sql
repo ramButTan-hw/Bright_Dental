@@ -58,6 +58,40 @@ CREATE TABLE IF NOT EXISTS ada_procedure_codes (
     updated_by VARCHAR(50)
 );
 
+CREATE TABLE IF NOT EXISTS staff (
+    staff_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    date_of_birth DATE NOT NULL,
+    gender INT,
+    race INT,
+    ethnicity INT,
+    phone_number VARCHAR(20),
+    ssn VARCHAR(11),
+    salary DECIMAL(10,2),
+    s_ssn VARCHAR(11),
+    apt VARCHAR(20),
+    house_number VARCHAR(20),
+    street VARCHAR(100),
+    city VARCHAR(50),
+    state VARCHAR(2),
+    zip_code VARCHAR(10),
+    country VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS staff_locations (
+    staff_locations_id INT AUTO_INCREMENT PRIMARY KEY,
+    staff_id INT NOT NULL,
+    location_id INT NOT NULL,
+    FOREIGN KEY (staff_id) REFERENCES staff(staff_id),
+    FOREIGN KEY (location_id) REFERENCES locations(location_id)
+);
+
 CREATE TABLE IF NOT EXISTS doctors (
     doctor_id INT AUTO_INCREMENT PRIMARY KEY,
     npi VARCHAR(20) NOT NULL,
@@ -147,6 +181,23 @@ CREATE TABLE IF NOT EXISTS treatment_plans (
     FOREIGN KEY (procedure_code) REFERENCES ada_procedure_codes(procedure_code)
 );
 
+CREATE TABLE IF NOT EXISTS invoices (
+    invoice_id INT AUTO_INCREMENT PRIMARY KEY,
+    appointment_id INT NOT NULL,
+    insurance_id INT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    insurance_covered_amount DECIMAL(10,2) NOT NULL,
+    patient_amount DECIMAL(10,2) NOT NULL,
+    payment_status BOOLEAN NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (insurance_id) REFERENCES insurance(insurance_id),
+    FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id)
+);
+
+
 CREATE TABLE IF NOT EXISTS payments (
     payment_id INT AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT,
@@ -156,7 +207,8 @@ CREATE TABLE IF NOT EXISTS payments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50)
+    updated_by VARCHAR(50),
+    FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id)
 );
 
 CREATE TABLE IF NOT EXISTS prescriptions (
