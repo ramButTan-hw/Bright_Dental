@@ -7,18 +7,14 @@
     "start": "node server.js",
     "dev": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "copy": "node database/init-db.js",
-    "server": "node backend/server.js",
-    "dev:client": "cd frontend && npm run dev"
+    "copy": "node database/init-db.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "cors": "^2.8.6",
     "dotenv": "^17.2.4",
-    "express": "^5.2.1",
     "mysql": "^2.18.1",
     "mysql2": "^3.18.1"
   }
