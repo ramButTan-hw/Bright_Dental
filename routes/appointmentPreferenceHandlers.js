@@ -133,14 +133,16 @@ function createAppointmentPreferenceHandlers(deps) {
                 const shortTime = timeValue.slice(0, 5);
                 const prefBooked = Number(timeCounts.get(timeValue) || 0);
                 const slot = slotData.get(shortTime);
+                const capacity = slot ? slot.maxPatients : maxPatientsPerTime;
                 const slotFull = slot ? (slot.currentBookings >= slot.maxPatients || !slot.isAvailable) : false;
                 const doctorOff = isOnTimeOff(dateKey, shortTime);
                 const booked = Math.max(prefBooked, slot ? slot.currentBookings : 0);
+                const remaining = (slotFull || doctorOff) ? 0 : Math.max(capacity - booked, 0);
                 return {
                   time: shortTime,
                   booked,
-                  remaining: (slotFull || doctorOff) ? 0 : Math.max(maxPatientsPerTime - prefBooked, 0),
-                  isFull: slotFull || doctorOff || prefBooked >= maxPatientsPerTime,
+                  remaining,
+                  isFull: slotFull || doctorOff || remaining <= 0,
                   timeOff: doctorOff
                 };
               });

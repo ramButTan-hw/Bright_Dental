@@ -684,25 +684,43 @@ function ReceptionistPatientProfilePage() {
                   </label>
                   <label>
                     Time
-                    <select
-                      value={form.assignedTime || ''}
-                      onChange={(e) => updateConfirmForm(req.preference_request_id, 'assignedTime', e.target.value)}
-                      disabled={!form.assignedDate || !form.doctorId}
-                    >
-                      <option value="">{!form.doctorId ? 'Select a doctor first' : !form.assignedDate ? 'Select a date first' : 'Select time'}</option>
-                      {CLINIC_TIME_OPTIONS.map((t) => {
-                        const avail = (slotAvailability[req.preference_request_id] || []).find((d) => d.date === form.assignedDate);
-                        const slotInfo = avail?.timeOptions?.find((s) => s.time === t.value.slice(0, 5));
-                        const isFull = slotInfo ? slotInfo.isFull : false;
-                        const isTimeOff = slotInfo ? slotInfo.timeOff : false;
-                        const suffix = isTimeOff ? ' (Doctor Off)' : isFull ? ' (Full)' : slotInfo ? ` (${slotInfo.remaining} open)` : '';
+                    {(() => {
+                      const avail = (slotAvailability[req.preference_request_id] || []).find((d) => d.date === form.assignedDate);
+                      const allSlots = avail?.timeOptions || [];
+                      const openSlots = allSlots.filter((s) => !s.isFull && !s.timeOff);
+                      const hasTimeOff = allSlots.some((s) => s.timeOff);
+                      const allFull = allSlots.length > 0 && openSlots.length === 0;
+
+                      if (form.doctorId && form.assignedDate && allFull) {
                         return (
-                          <option key={t.value} value={t.value} disabled={isFull}>
-                            {t.label}{suffix}
-                          </option>
+                          <p className="reception-message" style={{ color: '#b53030', margin: '0.25rem 0 0', fontSize: '0.88rem' }}>
+                            {hasTimeOff
+                              ? 'This doctor has approved time off on this date. Please choose a different date.'
+                              : 'All time slots are fully booked on this date. Please choose a different date.'}
+                          </p>
                         );
-                      })}
-                    </select>
+                      }
+
+                      return (
+                        <select
+                          value={form.assignedTime || ''}
+                          onChange={(e) => updateConfirmForm(req.preference_request_id, 'assignedTime', e.target.value)}
+                          disabled={!form.assignedDate || !form.doctorId}
+                        >
+                          <option value="">{!form.doctorId ? 'Select a doctor first' : !form.assignedDate ? 'Select a date first' : 'Select time'}</option>
+                          {openSlots.length > 0
+                            ? openSlots.map((slot) => (
+                                <option key={slot.time} value={slot.time}>
+                                  {formatTime(slot.time)} ({slot.remaining} open)
+                                </option>
+                              ))
+                            : CLINIC_TIME_OPTIONS.filter((t) => t.value.endsWith(':00')).map((t) => (
+                                <option key={t.value} value={t.value}>{t.label}</option>
+                              ))
+                          }
+                        </select>
+                      );
+                    })()}
                   </label>
                   <label>
                     Notes (optional)
@@ -787,26 +805,44 @@ function ReceptionistPatientProfilePage() {
             </label>
             <label>
               Time
-              <select
-                value={appointmentForm.appointmentTime}
-                onChange={(e) => setAppointmentForm((prev) => ({ ...prev, appointmentTime: e.target.value }))}
-                required
-                disabled={!appointmentForm.doctorId || !appointmentForm.appointmentDate}
-              >
-                <option value="">{!appointmentForm.doctorId ? 'Select a doctor first' : !appointmentForm.appointmentDate ? 'Select a date first' : 'Select time'}</option>
-                {CLINIC_TIME_OPTIONS.map((t) => {
-                  const avail = createAvailability.find((d) => d.date === appointmentForm.appointmentDate);
-                  const slotInfo = avail?.timeOptions?.find((s) => s.time === t.value.slice(0, 5));
-                  const isFull = slotInfo ? slotInfo.isFull : false;
-                  const isTimeOff = slotInfo ? slotInfo.timeOff : false;
-                  const suffix = isTimeOff ? ' (Doctor Off)' : isFull ? ' (Full)' : slotInfo ? ` (${slotInfo.remaining} open)` : '';
+              {(() => {
+                const avail = createAvailability.find((d) => d.date === appointmentForm.appointmentDate);
+                const allSlots = avail?.timeOptions || [];
+                const openSlots = allSlots.filter((s) => !s.isFull && !s.timeOff);
+                const hasTimeOff = allSlots.some((s) => s.timeOff);
+                const allFull = allSlots.length > 0 && openSlots.length === 0;
+
+                if (appointmentForm.doctorId && appointmentForm.appointmentDate && allFull) {
                   return (
-                    <option key={t.value} value={t.value} disabled={isFull}>
-                      {t.label}{suffix}
-                    </option>
+                    <p className="reception-message" style={{ color: '#b53030', margin: '0.25rem 0 0', fontSize: '0.88rem' }}>
+                      {hasTimeOff
+                        ? 'This doctor has approved time off on this date. Please choose a different date.'
+                        : 'All time slots are fully booked on this date. Please choose a different date.'}
+                    </p>
                   );
-                })}
-              </select>
+                }
+
+                return (
+                  <select
+                    value={appointmentForm.appointmentTime}
+                    onChange={(e) => setAppointmentForm((prev) => ({ ...prev, appointmentTime: e.target.value }))}
+                    required
+                    disabled={!appointmentForm.doctorId || !appointmentForm.appointmentDate}
+                  >
+                    <option value="">{!appointmentForm.doctorId ? 'Select a doctor first' : !appointmentForm.appointmentDate ? 'Select a date first' : 'Select time'}</option>
+                    {openSlots.length > 0
+                      ? openSlots.map((slot) => (
+                          <option key={slot.time} value={slot.time}>
+                            {formatTime(slot.time)} ({slot.remaining} open)
+                          </option>
+                        ))
+                      : CLINIC_TIME_OPTIONS.filter((t) => t.value.endsWith(':00')).map((t) => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))
+                    }
+                  </select>
+                );
+              })()}
             </label>
             <label>
               Notes (optional)

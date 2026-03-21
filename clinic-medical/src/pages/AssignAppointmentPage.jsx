@@ -110,9 +110,21 @@ function AssignAppointmentPage() {
   const selectedDaySlots = useMemo(() => {
     if (!assignmentDraft.assignedDate) return [];
     const dayData = availability.find((d) => d.date === assignmentDraft.assignedDate);
-    if (dayData?.timeOptions) return dayData.timeOptions;
-    return DEFAULT_TIME_SLOTS.map((s) => ({ time: s.time, booked: 0, remaining: 5, isFull: false }));
+    if (dayData?.timeOptions) return dayData.timeOptions.filter((s) => !s.isFull && !s.timeOff);
+    return DEFAULT_TIME_SLOTS.map((s) => ({ time: s.time, booked: 0, remaining: 1, isFull: false }));
   }, [assignmentDraft.assignedDate, availability]);
+
+  const selectedDayError = useMemo(() => {
+    if (!assignmentDraft.assignedDate || !assignmentDraft.assignedDoctorId) return null;
+    const dayData = availability.find((d) => d.date === assignmentDraft.assignedDate);
+    if (!dayData?.timeOptions) return null;
+    const openSlots = dayData.timeOptions.filter((s) => !s.isFull && !s.timeOff);
+    if (openSlots.length > 0) return null;
+    const hasTimeOff = dayData.timeOptions.some((s) => s.timeOff);
+    return hasTimeOff
+      ? 'This doctor has approved time off on this date. Please choose a different date.'
+      : 'All time slots are fully booked on this date. Please choose a different date.';
+  }, [assignmentDraft.assignedDate, assignmentDraft.assignedDoctorId, availability]);
 
   const assignRequest = async (event) => {
     event.preventDefault();
@@ -195,11 +207,14 @@ function AssignAppointmentPage() {
             {doctors.map((doctor) => <option key={doctor.doctor_id} value={doctor.doctor_id}>{doctor.doctor_name}</option>)}
           </select>
           <input type="date" value={assignmentDraft.assignedDate} onChange={(e) => setAssignField('assignedDate', e.target.value)} required />
-          <select value={assignmentDraft.assignedTime} onChange={(e) => setAssignField('assignedTime', e.target.value)} required disabled={!assignmentDraft.assignedDate}>
-            <option value="">{assignmentDraft.assignedDate ? 'Select a time' : 'Select a date first'}</option>
+          {selectedDayError && (
+            <p className="reception-message" style={{ color: '#b53030', margin: '0 0 8px' }}>{selectedDayError}</p>
+          )}
+          <select value={assignmentDraft.assignedTime} onChange={(e) => setAssignField('assignedTime', e.target.value)} required disabled={!assignmentDraft.assignedDate || !!selectedDayError}>
+            <option value="">{!assignmentDraft.assignedDate ? 'Select a date first' : selectedDayError ? 'No available times' : 'Select a time'}</option>
             {selectedDaySlots.map((slot) => (
-              <option key={slot.time} value={slot.time} disabled={slot.isFull}>
-                {formatTime(slot.time)}{slot.timeOff ? ' (Doctor Off)' : slot.isFull ? ' (Full)' : ` (${slot.remaining} open)`}
+              <option key={slot.time} value={slot.time}>
+                {formatTime(slot.time)} ({slot.remaining} open)
               </option>
             ))}
           </select>
