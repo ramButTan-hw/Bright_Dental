@@ -312,8 +312,19 @@ function PatientRegistrationPage() {
     });
   };
 
+  const formatPhone = (value) => {
+    const digits = value.replace(/\D/g, '').slice(0, 10);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  };
+
   const updateIdentity = (e) => {
     const { name, value } = e.target;
+    if (name === 'phone') {
+      setIdentity((prev) => ({ ...prev, phone: formatPhone(value) }));
+      return;
+    }
     setIdentity((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -334,6 +345,11 @@ function PatientRegistrationPage() {
       }
 
       setDetails((prev) => ({ ...prev, ssn: formatted }));
+      return;
+    }
+
+    if (name === 'emergencyContactPhone') {
+      setDetails((prev) => ({ ...prev, emergencyContactPhone: formatPhone(value) }));
       return;
     }
 
@@ -633,7 +649,7 @@ function PatientRegistrationPage() {
               <label>First Name<input type="text" name="firstName" placeholder="Jane" value={identity.firstName} onChange={updateIdentity} required /></label>
               <label>Last Name<input type="text" name="lastName" placeholder="Doe" value={identity.lastName} onChange={updateIdentity} required /></label>
               <label>Email Address<input type="email" name="email" placeholder="jane@email.com" value={identity.email} onChange={updateIdentity} required /></label>
-              <label>Phone Number<input type="tel" name="phone" placeholder="(555) 123-4567" value={identity.phone} onChange={updateIdentity} required /></label>
+              <label>Phone Number<input type="tel" name="phone" placeholder="(555) 123-4567" value={identity.phone} onChange={updateIdentity} pattern="\(\d{3}\) \d{3}-\d{4}" maxLength="14" inputMode="numeric" title="Use phone format: (555) 123-4567" required /></label>
             </div>
           )}
 
@@ -646,7 +662,7 @@ function PatientRegistrationPage() {
               <label>Driver's License<input type="text" name="driversLicense" placeholder="Your DL number" value={details.driversLicense} onChange={updateDetails} pattern="[A-Za-z0-9-]{5,20}" minLength="5" maxLength="20" title="Use 5-20 letters, numbers, or hyphens" required /></label>
               <label>Home Address<input type="text" name="address" placeholder="123 Main St, Houston, TX 77002" value={details.address} onChange={updateDetails} required /></label>
               <label>Emergency Contact Name<input type="text" name="emergencyContactName" placeholder="e.g., Sarah Doe" value={details.emergencyContactName} onChange={updateDetails} required /></label>
-              <label>Emergency Contact Number<input type="tel" name="emergencyContactPhone" placeholder="(555) 987-6543" value={details.emergencyContactPhone} onChange={updateDetails} required /></label>
+              <label>Emergency Contact Number<input type="tel" name="emergencyContactPhone" placeholder="(555) 987-6543" value={details.emergencyContactPhone} onChange={updateDetails} pattern="\(\d{3}\) \d{3}-\d{4}" maxLength="14" inputMode="numeric" title="Use phone format: (555) 987-6543" required /></label>
               <label>Department
                 <select name="reason" value={details.reason} onChange={updateDetails} required>
                   <option value="" disabled>Select department</option>

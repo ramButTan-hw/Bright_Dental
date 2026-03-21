@@ -50,11 +50,21 @@ function createPatientIntakeHandlers(deps) {
       return sendJSON(res, 400, { error: 'Please select a valid gender.' });
     }
 
+    const phonePattern = /^\(\d{3}\) \d{3}-\d{4}$/;
+    const normalizedPhone = String(phone).trim();
+    const normalizedEmergencyContactPhone = String(emergencyContactPhone).trim();
+
+    if (!phonePattern.test(normalizedPhone)) {
+      return sendJSON(res, 400, { error: 'Phone must be in the format (XXX) XXX-XXXX' });
+    }
+    if (!phonePattern.test(normalizedEmergencyContactPhone)) {
+      return sendJSON(res, 400, { error: 'Emergency contact phone must be in the format (XXX) XXX-XXXX' });
+    }
+
     const normalizedSsn = String(ssn).trim();
     const normalizedDriversLicense = String(driversLicense).trim().toUpperCase();
     const normalizedAddress = String(address).trim();
     const normalizedEmergencyContactName = String(emergencyContactName).trim();
-    const normalizedEmergencyContactPhone = String(emergencyContactPhone).trim();
     const ssnPattern = /^\d{3}-\d{2}-\d{4}$/;
     const driversLicensePattern = /^[A-Z0-9-]{5,20}$/;
     const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
