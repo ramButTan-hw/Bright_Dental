@@ -247,6 +247,22 @@ function createPatientCoreHandlers(deps) {
             return sendJSON(res, 404, { error: 'Appointment not found' });
           }
 
+          // Also cancel any ASSIGNED preference requests linked to this appointment
+          const [apptRows] = await conn.promise().query(
+            `SELECT doctor_id, appointment_date, appointment_time FROM appointments WHERE appointment_id = ? LIMIT 1`,
+            [appointmentId]
+          );
+          if (apptRows?.length) {
+            const appt = apptRows[0];
+            await conn.promise().query(
+              `UPDATE appointment_preference_requests
+               SET request_status = 'CANCELLED', updated_by = 'PATIENT_PORTAL'
+               WHERE patient_id = ? AND assigned_doctor_id = ? AND assigned_date = ? AND assigned_time = ?
+                 AND request_status = 'ASSIGNED'`,
+              [patientId, appt.doctor_id, appt.appointment_date, appt.appointment_time]
+            );
+          }
+
           conn.commit((commitErr) => {
             conn.release();
             if (commitErr) {

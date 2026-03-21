@@ -675,27 +675,6 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                         }
 
                         pool.query(
-                      `SELECT
-                        lab_order_id,
-                        tooth_number,
-                        procedure_code,
-                        lab_name,
-                        order_date,
-                        due_date,
-                        status,
-                        cost
-                      FROM dental_lab_orders
-                      WHERE patient_id = ?
-                      ORDER BY order_date DESC, lab_order_id DESC
-                      LIMIT 30`,
-                          [patientId],
-                          (labErr, labRows) => {
-                            if (labErr) {
-                              console.error('Error fetching dental lab orders:', labErr);
-                              return sendJSON(res, 500, { error: 'Database error' });
-                            }
-
-                            pool.query(
                           `SELECT snapshot_json
                            FROM patient_registration_snapshots
                            WHERE patient_id = ?
@@ -746,13 +725,10 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                                   treatmentPlans: treatmentRows || [],
                                   completedTreatments,
                                   dentalFindings: findingRows || [],
-                                  prescriptions: rxRows || [],
-                                  labOrders: labRows || []
+                                  prescriptions: rxRows || []
                                 });
                               }
                             );
-                          }
-                        );
                       }
                     );
                   }

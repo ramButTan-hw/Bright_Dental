@@ -304,7 +304,8 @@ const patientPortalRoutes = createPatientPortalRoutes({
   getPreferredAppointmentAvailability: appointmentPreferenceHandlers.getPreferredAppointmentAvailability,
   getAppointmentPreferenceRequests: appointmentPreferenceHandlers.getAppointmentPreferenceRequests,
   getAppointmentPreferenceRequestById: appointmentPreferenceHandlers.getAppointmentPreferenceRequestById,
-  assignAppointmentPreferenceRequest: appointmentPreferenceHandlers.assignAppointmentPreferenceRequest
+  assignAppointmentPreferenceRequest: appointmentPreferenceHandlers.assignAppointmentPreferenceRequest,
+  revertAppointmentPreferenceRequest: appointmentPreferenceHandlers.revertAppointmentPreferenceRequest
 });
 
 // ============================================================================

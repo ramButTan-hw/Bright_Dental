@@ -66,10 +66,21 @@ function createAppointmentPreferenceHandlers(deps) {
           }
 
           const processResults = (timeOffResults) => {
+            // Helper: mysql2 returns DATE as JS Date objects — normalise to YYYY-MM-DD
+            const toDateKey = (val) => {
+              if (val instanceof Date) {
+                const y = val.getFullYear();
+                const m = String(val.getMonth() + 1).padStart(2, '0');
+                const d = String(val.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+              }
+              return String(val).slice(0, 10);
+            };
+
             // Build map of preference request counts
             const usageByDate = new Map();
             (prefResults || []).forEach((row) => {
-              const dateKey = String(row.preferred_date).slice(0, 10);
+              const dateKey = toDateKey(row.preferred_date);
               const timeKey = String(row.preferred_time).slice(0, 8);
               if (!usageByDate.has(dateKey)) {
                 usageByDate.set(dateKey, new Map());
@@ -80,7 +91,7 @@ function createAppointmentPreferenceHandlers(deps) {
             // Build map of actual slot bookings
             const slotsByDate = new Map();
             (slotResults || []).forEach((row) => {
-              const dateKey = String(row.slot_date).slice(0, 10);
+              const dateKey = toDateKey(row.slot_date);
               const timeKey = String(row.slot_start_time).slice(0, 5);
               if (!slotsByDate.has(dateKey)) {
                 slotsByDate.set(dateKey, new Map());
@@ -441,11 +452,85 @@ function createAppointmentPreferenceHandlers(deps) {
     });
   }
 
+  function revertAppointmentPreferenceRequest(req, preferenceRequestId, data, res) {
+    pool.getConnection((connErr, conn) => {
+      if (connErr) {
+        console.error('Error getting connection for revert:', connErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      conn.beginTransaction(async (txErr) => {
+        if (txErr) {
+          conn.release();
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        try {
+          // Look up the assigned preference request
+          const [prefRows] = await conn.promise().query(
+            `SELECT patient_id, assigned_doctor_id, assigned_date, assigned_time
+             FROM appointment_preference_requests
+             WHERE preference_request_id = ? AND request_status = 'ASSIGNED'
+             LIMIT 1 FOR UPDATE`,
+            [preferenceRequestId]
+          );
+
+          if (!prefRows?.length) {
+            conn.release();
+            return sendJSON(res, 404, { error: 'Assigned appointment request not found' });
+          }
+
+          const pref = prefRows[0];
+
+          // Cancel the linked appointment
+          const [cancelledStatus] = await conn.promise().query(
+            `SELECT status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1`
+          );
+          if (cancelledStatus?.length) {
+            await conn.promise().query(
+              `UPDATE appointments
+               SET status_id = ?, updated_by = 'RECEPTIONIST_REVERT'
+               WHERE patient_id = ? AND doctor_id = ? AND appointment_date = ? AND appointment_time = ?
+                 AND status_id IN (SELECT status_id FROM appointment_statuses WHERE status_name IN ('SCHEDULED', 'CONFIRMED'))`,
+              [cancelledStatus[0].status_id, pref.patient_id, pref.assigned_doctor_id, pref.assigned_date, pref.assigned_time]
+            );
+          }
+
+          // Revert the preference request back to PREFERRED_PENDING
+          await conn.promise().query(
+            `UPDATE appointment_preference_requests
+             SET request_status = 'PREFERRED_PENDING',
+                 assigned_doctor_id = NULL, assigned_date = NULL, assigned_time = NULL,
+                 receptionist_notes = NULL, updated_by = 'RECEPTIONIST_REVERT'
+             WHERE preference_request_id = ?`,
+            [preferenceRequestId]
+          );
+
+          conn.commit((commitErr) => {
+            conn.release();
+            if (commitErr) {
+              console.error('Error committing revert:', commitErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            sendJSON(res, 200, { message: 'Appointment reverted to pending request' });
+          });
+        } catch (error) {
+          conn.rollback(() => {
+            conn.release();
+            console.error('Error reverting appointment:', error);
+            sendJSON(res, 500, { error: 'Database error' });
+          });
+        }
+      });
+    });
+  }
+
   return {
     getPreferredAppointmentAvailability,
     getAppointmentPreferenceRequests,
     getAppointmentPreferenceRequestById,
-    assignAppointmentPreferenceRequest
+    assignAppointmentPreferenceRequest,
+    revertAppointmentPreferenceRequest
   };
 }
 

@@ -20,6 +20,7 @@ function createPatientPortalRoutes(handlers) {
     getAppointmentPreferenceRequests,
     getAppointmentPreferenceRequestById,
     assignAppointmentPreferenceRequest,
+    revertAppointmentPreferenceRequest,
     getCancelReasons,
     cancelPatientAppointment,
     getDepartments,
@@ -342,6 +343,22 @@ function createPatientPortalRoutes(handlers) {
           return sendJSON(res, 400, { error: 'Invalid JSON' });
         }
         assignAppointmentPreferenceRequest(req, preferenceRequestId, data, res);
+      });
+      return true;
+    }
+
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'appointments' && parts[2] === 'preference-requests' && parts[3] && parts[4] === 'revert') {
+      const preferenceRequestId = Number(parts[3]);
+      if (!Number.isInteger(preferenceRequestId) || preferenceRequestId <= 0) {
+        sendJSON(res, 400, { error: 'Invalid preference request id' });
+        return true;
+      }
+
+      parseJSON(req, (err, data) => {
+        if (err) {
+          return sendJSON(res, 400, { error: 'Invalid JSON' });
+        }
+        revertAppointmentPreferenceRequest(req, preferenceRequestId, data, res);
       });
       return true;
     }

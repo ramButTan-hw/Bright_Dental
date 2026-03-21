@@ -156,9 +156,14 @@ function PatientPortalPage() {
       if (!response.ok) throw new Error(payload.error || 'Failed to cancel appointment');
       setCancelState({ open: false, reasonId: '', submitting: false });
       setError('');
-      const refreshRes = await fetch(`${API_BASE_URL}/api/patients/${session.patientId}/appointments`);
+      const [refreshRes, refreshReqRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/patients/${session.patientId}/appointments`),
+        fetch(`${API_BASE_URL}/api/patients/${session.patientId}/appointment-requests`)
+      ]);
       const refreshData = await refreshRes.json().catch(() => []);
+      const refreshReqData = await refreshReqRes.json().catch(() => []);
       setAppointments(Array.isArray(refreshData) ? refreshData : []);
+      setAppointmentRequests(Array.isArray(refreshReqData) ? refreshReqData : []);
     } catch (cancelError) {
       setError(cancelError.message || 'Failed to cancel appointment');
       setCancelState((prev) => ({ ...prev, submitting: false }));

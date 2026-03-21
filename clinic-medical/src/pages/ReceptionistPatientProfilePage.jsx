@@ -204,7 +204,27 @@ function ReceptionistPatientProfilePage() {
   };
 
   const pendingRequests = Array.isArray(patientData?.pendingRequests) ? patientData.pendingRequests : [];
-  const hasPendingRequest = pendingRequests.length > 0;
+  const hasPendingRequest = pendingRequests.some((r) => r.request_status === 'PREFERRED_PENDING');
+  const [revertingId, setRevertingId] = useState(null);
+
+  const revertAppointmentRequest = async (preferenceRequestId) => {
+    setMessage('');
+    setError('');
+    setRevertingId(preferenceRequestId);
+    try {
+      await fetch(`${API_BASE_URL}/api/appointments/preference-requests/${preferenceRequestId}/revert`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }).then(safeJson);
+      setMessage('Appointment reverted to pending request.');
+      await loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to revert appointment.');
+    } finally {
+      setRevertingId(null);
+    }
+  };
 
   const createAppointment = async (event) => {
     event.preventDefault();
@@ -610,108 +630,130 @@ function ReceptionistPatientProfilePage() {
         </article>
       </section>
 
-      {/* Confirm Pending Appointment Requests */}
+      {/* Appointment Requests */}
       {pendingRequests.length > 0 && (
         <section className="reception-panel">
-          <h2>Pending Appointment Requests</h2>
+          <h2>Appointment Requests</h2>
           {pendingRequests.map((req) => {
             const form = confirmForms[req.preference_request_id] || {};
             const isConfirming = confirmingId === req.preference_request_id;
+            const isAssigned = req.request_status === 'ASSIGNED';
+            const isReverting = revertingId === req.preference_request_id;
             return (
               <div key={req.preference_request_id} className="reception-confirm-request">
                 <div className="reception-confirm-header">
                   <p><strong>Requested:</strong> {formatDate(req.preferred_date)} at {formatTime(req.preferred_time)}</p>
                   <p><strong>Reason:</strong> {req.appointment_reason || 'N/A'}</p>
                   {req.preferred_location && <p><strong>Preferred Location:</strong> {req.preferred_location}</p>}
+                  <p><strong>Status:</strong> {isAssigned ? 'Assigned' : 'Pending'}</p>
                 </div>
-                <div className="reception-form" style={{ marginTop: '0.5rem' }}>
-                  <label>
-                    Location
-                    <select
-                      value={form.locationId || ''}
-                      onChange={(e) => {
-                        updateConfirmForm(req.preference_request_id, 'locationId', e.target.value);
-                        updateConfirmForm(req.preference_request_id, 'doctorId', '');
-                      }}
+
+                {isAssigned ? (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <p><strong>Assigned Doctor:</strong> {req.assigned_doctor_name || 'N/A'}</p>
+                    <p><strong>Assigned Date:</strong> {formatDate(req.assigned_date)}</p>
+                    <p><strong>Assigned Time:</strong> {formatTime(req.assigned_time)}</p>
+                    {req.receptionist_notes && <p><strong>Notes:</strong> {req.receptionist_notes}</p>}
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--secondary"
+                      style={{ marginTop: '0.5rem' }}
+                      disabled={isReverting}
+                      onClick={() => revertAppointmentRequest(req.preference_request_id)}
                     >
-                      <option value="">All Locations</option>
-                      {locations.map((loc) => (
-                        <option key={loc.location_id} value={loc.location_id}>{loc.full_address}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Doctor
-                    <ConfirmDoctorSelect
-                      apiBaseUrl={API_BASE_URL}
-                      locationId={form.locationId}
-                      value={form.doctorId || ''}
-                      onChange={(val) => updateConfirmForm(req.preference_request_id, 'doctorId', val)}
-                      safeJson={safeJson}
-                    />
-                  </label>
-                  <label>
-                    Date
-                    <input
-                      type="date"
-                      value={form.assignedDate || ''}
-                      min={new Date().toISOString().slice(0, 10)}
-                      onChange={(e) => updateConfirmForm(req.preference_request_id, 'assignedDate', e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Time
-                    {(() => {
-                      const avail = (slotAvailability[req.preference_request_id] || []).find((d) => d.date === form.assignedDate);
-                      const allSlots = avail?.timeOptions || [];
-                      const openSlots = allSlots.filter((s) => !s.isFull && !s.timeOff);
-                      const hasTimeOff = allSlots.some((s) => s.timeOff);
-                      const allFull = allSlots.length > 0 && openSlots.length === 0;
+                      {isReverting ? 'Reverting...' : 'Revert to Pending Request'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="reception-form" style={{ marginTop: '0.5rem' }}>
+                    <label>
+                      Location
+                      <select
+                        value={form.locationId || ''}
+                        onChange={(e) => {
+                          updateConfirmForm(req.preference_request_id, 'locationId', e.target.value);
+                          updateConfirmForm(req.preference_request_id, 'doctorId', '');
+                        }}
+                      >
+                        <option value="">All Locations</option>
+                        {locations.map((loc) => (
+                          <option key={loc.location_id} value={loc.location_id}>{loc.full_address}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Doctor
+                      <ConfirmDoctorSelect
+                        apiBaseUrl={API_BASE_URL}
+                        locationId={form.locationId}
+                        value={form.doctorId || ''}
+                        onChange={(val) => updateConfirmForm(req.preference_request_id, 'doctorId', val)}
+                        safeJson={safeJson}
+                      />
+                    </label>
+                    <label>
+                      Date
+                      <input
+                        type="date"
+                        value={form.assignedDate || ''}
+                        min={new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => updateConfirmForm(req.preference_request_id, 'assignedDate', e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Time
+                      {(() => {
+                        const avail = (slotAvailability[req.preference_request_id] || []).find((d) => d.date === form.assignedDate);
+                        const allSlots = avail?.timeOptions || [];
+                        const openSlots = allSlots.filter((s) => !s.isFull && !s.timeOff);
+                        const hasTimeOff = allSlots.some((s) => s.timeOff);
+                        const allFull = allSlots.length > 0 && openSlots.length === 0;
 
-                      if (form.doctorId && form.assignedDate && allFull) {
+                        if (form.doctorId && form.assignedDate && allFull) {
+                          return (
+                            <p className="reception-message" style={{ color: '#b53030', margin: '0.25rem 0 0', fontSize: '0.88rem' }}>
+                              {hasTimeOff
+                                ? 'This doctor has approved time off on this date. Please choose a different date.'
+                                : 'All time slots are fully booked on this date. Please choose a different date.'}
+                            </p>
+                          );
+                        }
+
                         return (
-                          <p className="reception-message" style={{ color: '#b53030', margin: '0.25rem 0 0', fontSize: '0.88rem' }}>
-                            {hasTimeOff
-                              ? 'This doctor has approved time off on this date. Please choose a different date.'
-                              : 'All time slots are fully booked on this date. Please choose a different date.'}
-                          </p>
+                          <select
+                            value={form.assignedTime || ''}
+                            onChange={(e) => updateConfirmForm(req.preference_request_id, 'assignedTime', e.target.value)}
+                            disabled={!form.assignedDate || !form.doctorId}
+                          >
+                            <option value="">{!form.doctorId ? 'Select a doctor first' : !form.assignedDate ? 'Select a date first' : 'Select time'}</option>
+                            {openSlots.map((slot) => (
+                              <option key={slot.time} value={slot.time}>
+                                {formatTime(slot.time)}
+                              </option>
+                            ))}
+                          </select>
                         );
-                      }
-
-                      return (
-                        <select
-                          value={form.assignedTime || ''}
-                          onChange={(e) => updateConfirmForm(req.preference_request_id, 'assignedTime', e.target.value)}
-                          disabled={!form.assignedDate || !form.doctorId}
-                        >
-                          <option value="">{!form.doctorId ? 'Select a doctor first' : !form.assignedDate ? 'Select a date first' : 'Select time'}</option>
-                          {openSlots.map((slot) => (
-                            <option key={slot.time} value={slot.time}>
-                              {formatTime(slot.time)}
-                            </option>
-                          ))}
-                        </select>
-                      );
-                    })()}
-                  </label>
-                  <label>
-                    Notes (optional)
-                    <input
-                      type="text"
-                      value={form.notes || ''}
-                      onChange={(e) => updateConfirmForm(req.preference_request_id, 'notes', e.target.value)}
-                      placeholder="Receptionist notes"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="reception-action-btn reception-action-btn--primary"
-                    disabled={isConfirming}
-                    onClick={() => confirmAppointmentRequest(req.preference_request_id)}
-                  >
-                    {isConfirming ? 'Confirming...' : 'Confirm Appointment'}
-                  </button>
-                </div>
+                      })()}
+                    </label>
+                    <label>
+                      Notes (optional)
+                      <input
+                        type="text"
+                        value={form.notes || ''}
+                        onChange={(e) => updateConfirmForm(req.preference_request_id, 'notes', e.target.value)}
+                        placeholder="Receptionist notes"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--primary"
+                      disabled={isConfirming}
+                      onClick={() => confirmAppointmentRequest(req.preference_request_id)}
+                    >
+                      {isConfirming ? 'Confirming...' : 'Confirm Appointment'}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}

@@ -605,29 +605,6 @@ CREATE TABLE IF NOT EXISTS dental_findings (
     CHECK (condition_type IN ('Decay', 'Missing', 'Impacted', 'Existing Amalgam', 'Fracture', 'Crown', 'Root Canal', 'Abscess', 'Periodontal', 'Existing Composite'))
 );
 
-CREATE TABLE IF NOT EXISTS dental_lab_orders (
-    lab_order_id INT AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT NOT NULL,
-    doctor_id INT NOT NULL,
-    appointment_id INT,
-    tooth_number VARCHAR(10),
-    procedure_code VARCHAR(20),
-    lab_name VARCHAR(100),
-    order_date DATETIME,
-    due_date DATETIME,
-    status VARCHAR(20),
-    cost DECIMAL(10,2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(50),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50),
-    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
-    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
-    FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id),
-    FOREIGN KEY (procedure_code) REFERENCES ada_procedure_codes(procedure_code),
-    CHECK (status IN ('Sent', 'In Production', 'Received', 'Delivered', 'Cancelled'))
-);
-
 
 CREATE TABLE IF NOT EXISTS medical_alerts (
     alert_id INT AUTO_INCREMENT PRIMARY KEY,
