@@ -466,18 +466,51 @@ function PatientPortalPage() {
                   <th>Preferred Time</th>
                   <th>Reason</th>
                   <th>Status</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {appointmentRequests.map((request) => (
-                  <tr key={request.preference_request_id}>
-                    <td>{formatDate(request.created_at)}</td>
-                    <td>{formatDate(request.preferred_date)}</td>
-                    <td>{formatTime(request.preferred_time)}</td>
-                    <td>{request.appointment_reason || 'N/A'}</td>
-                    <td>{request.request_status || 'PREFERRED_PENDING'}</td>
-                  </tr>
-                ))}
+                {appointmentRequests.map((request) => {
+                  const canCancel = request.request_status === 'PREFERRED_PENDING' || request.request_status === 'ASSIGNED';
+                  return (
+                    <tr key={request.preference_request_id}>
+                      <td>{formatDate(request.created_at)}</td>
+                      <td>{formatDate(request.preferred_date)}</td>
+                      <td>{formatTime(request.preferred_time)}</td>
+                      <td>{request.appointment_reason || 'N/A'}</td>
+                      <td>{request.request_status || 'PREFERRED_PENDING'}</td>
+                      <td>
+                        {canCancel ? (
+                          <button
+                            type="button"
+                            className="portal-secondary-btn"
+                            style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`${API_BASE_URL}/api/patients/${session.patientId}/appointment-requests/${request.preference_request_id}/cancel`, {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({})
+                                });
+                                const payload = await res.json().catch(() => ({}));
+                                if (!res.ok) throw new Error(payload.error || 'Failed to cancel request');
+                                const refreshRes = await fetch(`${API_BASE_URL}/api/patients/${session.patientId}/appointment-requests`);
+                                const refreshData = await refreshRes.json().catch(() => []);
+                                setAppointmentRequests(Array.isArray(refreshData) ? refreshData : []);
+                              } catch (cancelErr) {
+                                setError(cancelErr.message || 'Failed to cancel request');
+                              }
+                            }}
+                          >
+                            Cancel Request
+                          </button>
+                        ) : (
+                          <span style={{ color: '#888' }}>N/A</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

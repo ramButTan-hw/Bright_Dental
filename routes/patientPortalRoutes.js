@@ -141,6 +141,33 @@ function createPatientPortalRoutes(handlers) {
       return true;
     }
 
+    // Patient cancels their own appointment request
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'appointment-requests' && parts[4] && parts[5] === 'cancel') {
+      const patientId = parseInt(parts[2], 10);
+      const requestId = parseInt(parts[4], 10);
+      if (!Number.isInteger(patientId) || patientId <= 0 || !Number.isInteger(requestId) || requestId <= 0) {
+        sendJSON(res, 400, { error: 'Invalid patient or request id' });
+        return true;
+      }
+      pool.query(
+        `UPDATE appointment_preference_requests
+         SET request_status = 'CANCELLED', updated_by = 'PATIENT_PORTAL'
+         WHERE preference_request_id = ? AND patient_id = ? AND request_status IN ('PREFERRED_PENDING', 'ASSIGNED')`,
+        [requestId, patientId],
+        (err, result) => {
+          if (err) {
+            console.error('Error cancelling appointment request:', err);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          if (!result.affectedRows) {
+            return sendJSON(res, 404, { error: 'Request not found or already cancelled' });
+          }
+          sendJSON(res, 200, { message: 'Appointment request cancelled' });
+        }
+      );
+      return true;
+    }
+
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'new-appointment-prefill') {
       const patientId = parseInt(parts[2], 10);
       getPatientNewAppointmentPrefill(req, patientId, res);

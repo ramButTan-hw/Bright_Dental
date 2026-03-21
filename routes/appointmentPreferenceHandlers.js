@@ -50,14 +50,22 @@ function createAppointmentPreferenceHandlers(deps) {
           WHERE s.slot_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)${hasDoctorFilter ? ' AND s.doctor_id = ?' : ''}`;
         const slotParams = hasDoctorFilter ? [days, doctorIdParam] : [days];
 
-        // Query approved doctor time-off windows
+        // Query approved time-off from BOTH doctor_time_off and staff_time_off_requests
         const timeOffSql = hasDoctorFilter
-          ? `SELECT start_datetime, end_datetime FROM doctor_time_off
-             WHERE doctor_id = ? AND is_approved = TRUE
-               AND end_datetime >= CURDATE()
-               AND start_datetime <= DATE_ADD(CURDATE(), INTERVAL ? DAY)`
+          ? `SELECT start_datetime, end_datetime FROM (
+               SELECT start_datetime, end_datetime FROM doctor_time_off
+               WHERE doctor_id = ? AND is_approved = TRUE
+                 AND end_datetime >= CURDATE()
+                 AND start_datetime <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+               UNION ALL
+               SELECT str.start_datetime, str.end_datetime FROM staff_time_off_requests str
+               JOIN doctors d ON d.staff_id = str.staff_id
+               WHERE d.doctor_id = ? AND str.is_approved = TRUE
+                 AND str.end_datetime >= CURDATE()
+                 AND str.start_datetime <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+             ) AS combined_time_off`
           : null;
-        const timeOffParams = hasDoctorFilter ? [doctorIdParam, days] : [];
+        const timeOffParams = hasDoctorFilter ? [doctorIdParam, days, doctorIdParam, days] : [];
 
         pool.query(slotSql, slotParams, (slotErr, slotResults) => {
           if (slotErr) {
@@ -105,9 +113,9 @@ function createAppointmentPreferenceHandlers(deps) {
 
             // Build list of time-off intervals (use ms timestamps for reliable comparison)
             const toMs = (dt) => {
+              // mysql2 returns DATETIME as JS Date objects
+              if (dt instanceof Date) return dt.getTime();
               const s = String(dt);
-              // MySQL datetime may come as "2026-03-23T14:00:00.000Z" or "2026-03-23 14:00:00"
-              // Normalise to a parseable ISO string without timezone shift
               const cleaned = s.replace(' ', 'T').replace(/\.000Z$/, '');
               const parts = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
               if (!parts) return new Date(s).getTime();
@@ -122,10 +130,9 @@ function createAppointmentPreferenceHandlers(deps) {
             const isOnTimeOff = (dateKey, hourStr) => {
               if (timeOffIntervals.length === 0) return false;
               const hour = parseInt(hourStr, 10);
-              const slotStartMs = Date.UTC(
-                +dateKey.slice(0, 4), +dateKey.slice(5, 7) - 1, +dateKey.slice(8, 10),
-                hour, 0, 0
-              );
+              // Use local time to match how mysql2 returns DATETIME values
+              const slotStart = new Date(+dateKey.slice(0, 4), +dateKey.slice(5, 7) - 1, +dateKey.slice(8, 10), hour, 0, 0);
+              const slotStartMs = slotStart.getTime();
               const slotEndMs = slotStartMs + 60 * 60 * 1000;
               return timeOffIntervals.some((interval) => slotStartMs < interval.end && slotEndMs > interval.start);
             };
@@ -370,13 +377,20 @@ function createAppointmentPreferenceHandlers(deps) {
           const appointmentEndTime = addMinutesToTime(normalizedTime, 30);
           const statusId = await getAppointmentStatusId(conn, 'SCHEDULED');
 
-          // Check if doctor has approved time off during this slot
+          // Check if doctor has approved time off during this slot (both tables)
           const [timeOffRows] = await conn.promise().query(
-            `SELECT time_off_id FROM doctor_time_off
-             WHERE doctor_id = ? AND is_approved = TRUE
-               AND start_datetime <= ? AND end_datetime > ?
-             LIMIT 1`,
-            [assignedDoctorId, `${assignedDate} ${normalizedTime}`, `${assignedDate} ${normalizedTime}`]
+            `SELECT 1 FROM (
+               SELECT start_datetime, end_datetime FROM doctor_time_off
+               WHERE doctor_id = ? AND is_approved = TRUE
+                 AND start_datetime <= ? AND end_datetime > ?
+               UNION ALL
+               SELECT str.start_datetime, str.end_datetime FROM staff_time_off_requests str
+               JOIN doctors d ON d.staff_id = str.staff_id
+               WHERE d.doctor_id = ? AND str.is_approved = TRUE
+                 AND str.start_datetime <= ? AND str.end_datetime > ?
+             ) AS combined LIMIT 1`,
+            [assignedDoctorId, `${assignedDate} ${normalizedTime}`, `${assignedDate} ${normalizedTime}`,
+             assignedDoctorId, `${assignedDate} ${normalizedTime}`, `${assignedDate} ${normalizedTime}`]
           );
           if (timeOffRows?.length) {
             throw new Error('This doctor has approved time off during the selected date and time. Please choose a different time or doctor.');
