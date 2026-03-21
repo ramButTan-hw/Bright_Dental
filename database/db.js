@@ -19,9 +19,9 @@ const dbConfig = {
 };
 
 
-if (isProduction) {
+if (isProduction && process.env.DB_SSL === 'true') {
   dbConfig.ssl = {
-    rejectUnauthorized: true 
+    rejectUnauthorized: true
   };
 }
 
