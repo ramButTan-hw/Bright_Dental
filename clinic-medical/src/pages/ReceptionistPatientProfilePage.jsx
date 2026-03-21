@@ -129,6 +129,22 @@ function ReceptionistPatientProfilePage() {
         };
       });
       setConfirmForms(forms);
+
+      // Fetch availability for any pre-populated doctors
+      for (const req of pending) {
+        const docId = req.assigned_doctor_id ? String(req.assigned_doctor_id) : '';
+        if (docId) {
+          fetch(`${API_BASE_URL}/api/appointments/preferred-availability?doctorId=${docId}`)
+            .then((r) => r.json().catch(() => ({})))
+            .then((d) => {
+              setSlotAvailability((prev) => ({
+                ...prev,
+                [req.preference_request_id]: Array.isArray(d?.availability) ? d.availability : []
+              }));
+            })
+            .catch(() => {});
+        }
+      }
     } catch (err) {
       setError(err.message || 'Failed to load patient data.');
     } finally {

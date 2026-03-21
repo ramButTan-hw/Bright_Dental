@@ -92,18 +92,31 @@ function createAppointmentPreferenceHandlers(deps) {
               });
             });
 
-            // Build list of time-off intervals
+            // Build list of time-off intervals (use ms timestamps for reliable comparison)
+            const toMs = (dt) => {
+              const s = String(dt);
+              // MySQL datetime may come as "2026-03-23T14:00:00.000Z" or "2026-03-23 14:00:00"
+              // Normalise to a parseable ISO string without timezone shift
+              const cleaned = s.replace(' ', 'T').replace(/\.000Z$/, '');
+              const parts = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+              if (!parts) return new Date(s).getTime();
+              return Date.UTC(+parts[1], +parts[2] - 1, +parts[3], +parts[4], +parts[5], +parts[6]);
+            };
+
             const timeOffIntervals = (timeOffResults || []).map((row) => ({
-              start: new Date(row.start_datetime),
-              end: new Date(row.end_datetime)
+              start: toMs(row.start_datetime),
+              end: toMs(row.end_datetime)
             }));
 
             const isOnTimeOff = (dateKey, hourStr) => {
               if (timeOffIntervals.length === 0) return false;
               const hour = parseInt(hourStr, 10);
-              const slotStart = new Date(`${dateKey}T${String(hour).padStart(2, '0')}:00:00`);
-              const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
-              return timeOffIntervals.some((interval) => slotStart < interval.end && slotEnd > interval.start);
+              const slotStartMs = Date.UTC(
+                +dateKey.slice(0, 4), +dateKey.slice(5, 7) - 1, +dateKey.slice(8, 10),
+                hour, 0, 0
+              );
+              const slotEndMs = slotStartMs + 60 * 60 * 1000;
+              return timeOffIntervals.some((interval) => slotStartMs < interval.end && slotEndMs > interval.start);
             };
 
             const availability = [];
