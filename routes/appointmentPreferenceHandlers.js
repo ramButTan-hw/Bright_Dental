@@ -121,7 +121,7 @@ function createAppointmentPreferenceHandlers(deps) {
       JOIN patients p ON p.patient_id = apr.patient_id
       LEFT JOIN doctors d ON d.doctor_id = apr.assigned_doctor_id
       LEFT JOIN staff st ON st.staff_id = d.staff_id
-      WHERE apr.request_status <> 'CANCELLED'
+      WHERE apr.request_status NOT IN ('CANCELLED', 'ASSIGNED')
       ORDER BY apr.created_at DESC`,
       (err, results) => {
         if (err) {
@@ -203,6 +203,8 @@ function createAppointmentPreferenceHandlers(deps) {
     const assignedDate = String(data?.assignedDate || '').trim();
     const assignedTime = String(data?.assignedTime || '').trim();
     const receptionistNotes = data?.receptionistNotes ? String(data.receptionistNotes) : null;
+    const receptionistUsernameInput = String(data?.receptionistUsername || '').trim();
+    const receptionistStaffId = Number(data?.receptionistStaffId || 0);
 
     if (!Number.isInteger(assignedDoctorId) || assignedDoctorId <= 0) {
       return sendJSON(res, 400, { error: 'A valid assignedDoctorId is required' });
@@ -229,6 +231,24 @@ function createAppointmentPreferenceHandlers(deps) {
         }
 
         try {
+          let receptionistActor = receptionistUsernameInput;
+          if (!receptionistActor && Number.isInteger(receptionistStaffId) && receptionistStaffId > 0) {
+            const [staffUserRows] = await conn.promise().query(
+              `SELECT u.user_username
+               FROM staff st
+               JOIN users u ON u.user_id = st.user_id
+               WHERE st.staff_id = ?
+               LIMIT 1`,
+              [receptionistStaffId]
+            );
+            if (staffUserRows?.length) {
+              receptionistActor = String(staffUserRows[0].user_username || '').trim();
+            }
+          }
+          if (!receptionistActor) {
+            receptionistActor = 'RECEPTIONIST';
+          }
+
           const [prefRows] = await conn.promise().query(
             `SELECT patient_id, preferred_location FROM appointment_preference_requests
              WHERE preference_request_id = ? AND request_status <> 'CANCELLED'
@@ -263,8 +283,8 @@ function createAppointmentPreferenceHandlers(deps) {
                 doctor_id, location_id, slot_date, slot_start_time, slot_end_time,
                 duration_minutes, is_available, max_patients, current_bookings,
                 slot_type, created_by, updated_by
-              ) VALUES (?, NULL, ?, ?, ?, 30, TRUE, 1, 0, 'REGULAR', 'RECEPTIONIST', 'RECEPTIONIST')`,
-              [assignedDoctorId, assignedDate, normalizedTime, appointmentEndTime]
+                ) VALUES (?, NULL, ?, ?, ?, 30, TRUE, 1, 0, 'REGULAR', ?, ?)`,
+                [assignedDoctorId, assignedDate, normalizedTime, appointmentEndTime, receptionistActor, receptionistActor]
             );
             slotId = Number(slotInsert.insertId);
           }
@@ -274,23 +294,16 @@ function createAppointmentPreferenceHandlers(deps) {
               slot_id, location_id, patient_id, doctor_id,
               appointment_time, appointment_date, status_id,
               notes, created_by, updated_by
-            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'RECEPTIONIST', 'RECEPTIONIST')`,
-            [slotId, patientId, assignedDoctorId, normalizedTime, assignedDate, statusId, receptionistNotes]
-          );
-
-          await conn.promise().query(
-            `UPDATE appointment_slots
-             SET current_bookings = current_bookings + 1, is_available = FALSE, updated_by = 'RECEPTIONIST'
-             WHERE slot_id = ?`,
-            [slotId]
+            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [slotId, patientId, assignedDoctorId, normalizedTime, assignedDate, statusId, receptionistNotes, receptionistActor, receptionistActor]
           );
 
           await conn.promise().query(
             `UPDATE appointment_preference_requests
              SET assigned_doctor_id = ?, assigned_date = ?, assigned_time = ?,
-                 request_status = 'ASSIGNED', receptionist_notes = ?, updated_by = 'RECEPTIONIST'
+                 request_status = 'ASSIGNED', receptionist_notes = ?, updated_by = ?
              WHERE preference_request_id = ?`,
-            [assignedDoctorId, assignedDate, normalizedTime, receptionistNotes, preferenceRequestId]
+            [assignedDoctorId, assignedDate, normalizedTime, receptionistNotes, receptionistActor, preferenceRequestId]
           );
 
           conn.commit((commitErr) => {

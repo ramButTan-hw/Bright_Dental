@@ -1,13 +1,449 @@
 const url = require('url');
 
 function createDentistAppointmentRoutes({ pool, sendJSON }) {
+  function normalizeDateParam(value) {
+    const raw = String(value || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+  }
+
+  function normalizeOptionalFilter(value) {
+    return String(value || '').trim();
+  }
+
+  function createReportFiltersFromQuery(query) {
+    const fromDate = normalizeDateParam(query.fromDate);
+    const toDate = normalizeDateParam(query.toDate);
+    const procedureCode = normalizeOptionalFilter(query.procedureCode).toUpperCase();
+    const toothNumber = normalizeOptionalFilter(query.toothNumber);
+    const surface = normalizeOptionalFilter(query.surface).toUpperCase();
+
+    if (!fromDate || !toDate) {
+      return { error: 'fromDate and toDate are required in YYYY-MM-DD format' };
+    }
+    if (new Date(`${fromDate}T00:00:00`).getTime() > new Date(`${toDate}T00:00:00`).getTime()) {
+      return { error: 'fromDate must be before or equal to toDate' };
+    }
+
+    return {
+      fromDate,
+      toDate,
+      procedureCode,
+      toothNumber,
+      surface
+    };
+  }
+
+  function fetchTreatmentRowsForReport({ patientId = null, fromDate, toDate, procedureCode, toothNumber, surface }, callback) {
+    const includeAllPatients = !Number.isInteger(patientId) || patientId <= 0;
+    pool.query(
+      `SELECT
+        tp.plan_id AS treatment_id,
+        tp.patient_id,
+        CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+        tp.start_date AS visit_date,
+        tp.procedure_code,
+        apc.description AS treatment_description,
+        tp.tooth_number,
+        tp.surface,
+        tp.estimated_cost AS treatment_cost,
+        tp.notes,
+        tp.created_at
+      FROM treatment_plans tp
+      JOIN patients p ON p.patient_id = tp.patient_id
+      LEFT JOIN ada_procedure_codes apc ON apc.procedure_code = tp.procedure_code
+      WHERE (? = TRUE OR tp.patient_id = ?)
+        AND tp.start_date BETWEEN ? AND ?
+        AND (? = '' OR tp.procedure_code = ?)
+        AND (? = '' OR tp.tooth_number = ?)
+        AND (? = '' OR UPPER(COALESCE(tp.surface, '')) = ?)
+      ORDER BY tp.start_date DESC, tp.created_at DESC, tp.plan_id DESC`,
+      [includeAllPatients, patientId || 0, fromDate, toDate, procedureCode, procedureCode, toothNumber, toothNumber, surface, surface],
+      (err, rows) => callback(err, rows || [])
+    );
+  }
+
+  function fetchFindingRowsForReport({ patientId = null, fromDate, toDate, toothNumber, surface }, callback) {
+    const includeAllPatients = !Number.isInteger(patientId) || patientId <= 0;
+    pool.query(
+      `SELECT
+        df.patient_id,
+        COALESCE(a.appointment_date, DATE(df.date_logged)) AS visit_date,
+        GROUP_CONCAT(
+          CONCAT(
+            'Tooth ', COALESCE(df.tooth_number, 'N/A'),
+            CASE WHEN COALESCE(df.surface, '') <> '' THEN CONCAT(' (', df.surface, ')') ELSE '' END,
+            ': ', COALESCE(df.condition_type, 'Finding'),
+            CASE WHEN COALESCE(df.notes, '') <> '' THEN CONCAT(' - ', df.notes) ELSE '' END
+          )
+          ORDER BY df.finding_id ASC SEPARATOR ' | '
+        ) AS finding_summary
+      FROM dental_findings df
+      LEFT JOIN appointments a ON a.appointment_id = df.appointment_id
+      WHERE (? = TRUE OR df.patient_id = ?)
+        AND COALESCE(a.appointment_date, DATE(df.date_logged)) BETWEEN ? AND ?
+        AND (? = '' OR df.tooth_number = ?)
+        AND (? = '' OR UPPER(COALESCE(df.surface, '')) = ?)
+      GROUP BY df.patient_id, COALESCE(a.appointment_date, DATE(df.date_logged))
+      ORDER BY visit_date DESC`,
+      [includeAllPatients, patientId || 0, fromDate, toDate, toothNumber, toothNumber, surface, surface],
+      (err, rows) => callback(err, rows || [])
+    );
+  }
+
+  function buildGroupedReport(treatmentRows, findingRows) {
+    const findingMap = new Map();
+    findingRows.forEach((item) => {
+      const dateKey = String(item.visit_date || '').slice(0, 10) || 'Unknown date';
+      const key = `${Number(item.patient_id || 0)}::${dateKey}`;
+      findingMap.set(key, String(item.finding_summary || ''));
+    });
+
+    const grouped = new Map();
+
+    treatmentRows.forEach((row) => {
+      const dateKey = String(row.visit_date || '').slice(0, 10) || 'Unknown date';
+      const patientId = Number(row.patient_id || 0);
+      const patientName = String(row.patient_name || 'Unknown patient');
+      const groupKey = `${patientId}::${dateKey}`;
+
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, {
+          patientId,
+          patientName,
+          visitDate: dateKey,
+          visitCost: 0,
+          entries: []
+        });
+      }
+
+      const bucket = grouped.get(groupKey);
+      const numericCost = Number(row.treatment_cost);
+      if (Number.isFinite(numericCost) && numericCost > 0) {
+        bucket.visitCost += numericCost;
+      }
+
+      bucket.entries.push({
+        treatmentId: row.treatment_id,
+        procedureCode: row.procedure_code,
+        treatmentDescription: row.treatment_description,
+        toothNumber: row.tooth_number,
+        surface: row.surface,
+        cost: Number.isFinite(numericCost) ? numericCost : 0,
+        finding: findingMap.get(groupKey) || '',
+        notes: row.notes,
+        createdAt: row.created_at
+      });
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => {
+      const dateCompare = String(b.visitDate).localeCompare(String(a.visitDate));
+      if (dateCompare !== 0) return dateCompare;
+      return a.patientName.localeCompare(b.patientName);
+    });
+  }
+
+  function getDentistSinglePatientReport(req, res) {
+    const parsedUrl = url.parse(req.url, true);
+    const patientId = Number(parsedUrl.query.patientId || 0);
+
+    if (!Number.isInteger(patientId) || patientId <= 0) {
+      return sendJSON(res, 400, { error: 'A valid patientId is required' });
+    }
+
+    const filters = createReportFiltersFromQuery(parsedUrl.query);
+    if (filters.error) {
+      return sendJSON(res, 400, { error: filters.error });
+    }
+
+    fetchTreatmentRowsForReport({ patientId, ...filters }, (treatmentErr, treatmentRows) => {
+      if (treatmentErr) {
+        console.error('Error generating single-patient treatment report:', treatmentErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      fetchFindingRowsForReport({ patientId, ...filters }, (findingErr, findingRows) => {
+        if (findingErr) {
+          console.error('Error generating single-patient finding report:', findingErr);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        const groupedVisits = buildGroupedReport(treatmentRows, findingRows);
+        const totalCost = groupedVisits.reduce((sum, visit) => sum + Number(visit.visitCost || 0), 0);
+
+        return sendJSON(res, 200, {
+          reportType: 'SINGLE_PATIENT_TREATMENT_FINDING',
+          generatedAt: new Date().toISOString(),
+          filters: {
+            patientId,
+            ...filters
+          },
+          summary: {
+            totalVisits: groupedVisits.length,
+            totalEntries: treatmentRows.length,
+            totalCost
+          },
+          visits: groupedVisits
+        });
+      });
+    });
+  }
+
+  function getDentistMultiPatientReport(req, res) {
+    const parsedUrl = url.parse(req.url, true);
+    const filters = createReportFiltersFromQuery(parsedUrl.query);
+    if (filters.error) {
+      return sendJSON(res, 400, { error: filters.error });
+    }
+
+    fetchTreatmentRowsForReport({ ...filters }, (treatmentErr, treatmentRows) => {
+      if (treatmentErr) {
+        console.error('Error generating multi-patient treatment report:', treatmentErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      fetchFindingRowsForReport({ ...filters }, (findingErr, findingRows) => {
+        if (findingErr) {
+          console.error('Error generating multi-patient finding report:', findingErr);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        const groupedVisits = buildGroupedReport(treatmentRows, findingRows);
+        const uniquePatients = new Set(groupedVisits.map((visit) => visit.patientId));
+        const totalCost = groupedVisits.reduce((sum, visit) => sum + Number(visit.visitCost || 0), 0);
+
+        return sendJSON(res, 200, {
+          reportType: 'MULTI_PATIENT_TREATMENT_FINDING',
+          generatedAt: new Date().toISOString(),
+          filters,
+          summary: {
+            totalPatients: uniquePatients.size,
+            totalVisits: groupedVisits.length,
+            totalEntries: treatmentRows.length,
+            totalCost
+          },
+          visits: groupedVisits
+        });
+      });
+    });
+  }
+
+  function getAdaProcedureCodes(req, res) {
+    pool.query(
+      `SELECT procedure_code, description, category, default_fees
+       FROM ada_procedure_codes
+       ORDER BY procedure_code ASC`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching ADA procedure codes:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function getTreatmentStatusId(conn, statusName, callback) {
+    conn.query(
+      'SELECT status_id FROM treatment_statuses WHERE status_name = ? LIMIT 1',
+      [String(statusName || '').trim().toUpperCase()],
+      (err, rows) => {
+        if (err) return callback(err);
+        if (!rows?.length) return callback(new Error(`Treatment status ${statusName} not found`));
+        callback(null, Number(rows[0].status_id));
+      }
+    );
+  }
+
+  function getAppointmentContext(appointmentId, doctorId, callback) {
+    pool.query(
+      `SELECT appointment_id, patient_id, doctor_id, appointment_date
+       FROM appointments
+       WHERE appointment_id = ? AND doctor_id = ?
+       LIMIT 1`,
+      [appointmentId, doctorId],
+      (err, rows) => {
+        if (err) return callback(err);
+        if (!rows?.length) return callback(null, null);
+        callback(null, rows[0]);
+      }
+    );
+  }
+
+  function getAppointmentStatusId(statusName, callback) {
+    pool.query(
+      'SELECT status_id FROM appointment_statuses WHERE status_name = ? LIMIT 1',
+      [String(statusName || '').trim().toUpperCase()],
+      (err, rows) => {
+        if (err) return callback(err);
+        if (!rows?.length) return callback(new Error(`Appointment status ${statusName} not found`));
+        callback(null, Number(rows[0].status_id));
+      }
+    );
+  }
+
+  function markAppointmentCompleted(appointmentId, doctorId, callback) {
+    getAppointmentStatusId('COMPLETED', (statusErr, completedStatusId) => {
+      if (statusErr) return callback(statusErr);
+
+      pool.query(
+        `UPDATE appointments
+         SET status_id = ?, updated_by = 'DENTIST_PORTAL'
+         WHERE appointment_id = ? AND doctor_id = ?`,
+        [completedStatusId, appointmentId, doctorId],
+        (updateErr) => {
+          if (updateErr) return callback(updateErr);
+          generateInvoiceForAppointment(appointmentId, (invoiceErr) => {
+            if (invoiceErr) {
+              console.error('Error auto-generating invoice (non-fatal):', invoiceErr);
+            }
+            callback(null);
+          });
+        }
+      );
+    });
+  }
+
+  function generateInvoiceForAppointment(appointmentId, callback) {
+    // Check if invoice already exists for this appointment
+    pool.query(
+      'SELECT invoice_id FROM invoices WHERE appointment_id = ? LIMIT 1',
+      [appointmentId],
+      (checkErr, existing) => {
+        if (checkErr) return callback(checkErr);
+        if (existing?.length) return callback(null); // already has invoice
+
+        // Get appointment details (patient, date) and treatment costs
+        pool.query(
+          `SELECT a.patient_id, a.appointment_date
+           FROM appointments a
+           WHERE a.appointment_id = ?
+           LIMIT 1`,
+          [appointmentId],
+          (apptErr, apptRows) => {
+            if (apptErr) return callback(apptErr);
+            if (!apptRows?.length) return callback(null);
+
+            const { patient_id: patientId, appointment_date: apptDate } = apptRows[0];
+            const dateStr = String(apptDate || '').slice(0, 10);
+
+            // Get all treatment plans for this patient on this appointment date
+            pool.query(
+              `SELECT tp.procedure_code, tp.estimated_cost
+               FROM treatment_plans tp
+               WHERE tp.patient_id = ? AND tp.start_date = ?`,
+              [patientId, dateStr],
+              (tpErr, treatmentRows) => {
+                if (tpErr) return callback(tpErr);
+
+                const totalAmount = treatmentRows.reduce((sum, row) => {
+                  const cost = Number(row.estimated_cost || 0);
+                  return sum + (Number.isFinite(cost) ? cost : 0);
+                }, 0);
+
+                if (totalAmount <= 0) {
+                  // No treatments with cost — still create a zero invoice
+                  return insertInvoice(appointmentId, patientId, null, 0, 0, 0, callback);
+                }
+
+                // Get patient's primary insurance
+                pool.query(
+                  `SELECT i.insurance_id, i.company_id
+                   FROM insurance i
+                   WHERE i.patient_id = ? AND i.is_primary = TRUE
+                   LIMIT 1`,
+                  [patientId],
+                  (insErr, insRows) => {
+                    if (insErr) return callback(insErr);
+
+                    if (!insRows?.length) {
+                      // No insurance — patient pays full amount
+                      return insertInvoice(appointmentId, patientId, null, totalAmount, 0, totalAmount, callback);
+                    }
+
+                    const { insurance_id: insuranceId, company_id: companyId } = insRows[0];
+
+                    // Calculate coverage from insurance_coverage table
+                    const procedureCodes = treatmentRows
+                      .map((row) => row.procedure_code)
+                      .filter(Boolean);
+
+                    if (!procedureCodes.length) {
+                      // No procedure codes — no coverage lookup possible
+                      return insertInvoice(appointmentId, patientId, insuranceId, totalAmount, 0, totalAmount, callback);
+                    }
+
+                    const placeholders = procedureCodes.map(() => '?').join(',');
+                    pool.query(
+                      `SELECT procedure_code, coverage_percent, copay_amount
+                       FROM insurance_coverage
+                       WHERE company_id = ? AND procedure_code IN (${placeholders})`,
+                      [companyId, ...procedureCodes],
+                      (covErr, covRows) => {
+                        if (covErr) return callback(covErr);
+
+                        const coverageMap = new Map();
+                        (covRows || []).forEach((row) => {
+                          coverageMap.set(row.procedure_code, {
+                            percent: Number(row.coverage_percent || 0),
+                            copay: Number(row.copay_amount || 0)
+                          });
+                        });
+
+                        let insuranceCovered = 0;
+                        let patientOwes = 0;
+
+                        treatmentRows.forEach((row) => {
+                          const cost = Number(row.estimated_cost || 0);
+                          if (!Number.isFinite(cost) || cost <= 0) return;
+
+                          const cov = coverageMap.get(row.procedure_code);
+                          if (cov) {
+                            const covered = cost * (cov.percent / 100);
+                            const patientPortion = cost - covered + cov.copay;
+                            insuranceCovered += covered;
+                            patientOwes += patientPortion;
+                          } else {
+                            // No coverage record — patient pays full
+                            patientOwes += cost;
+                          }
+                        });
+
+                        insuranceCovered = Math.round(insuranceCovered * 100) / 100;
+                        patientOwes = Math.round(patientOwes * 100) / 100;
+
+                        insertInvoice(appointmentId, patientId, insuranceId, totalAmount, insuranceCovered, patientOwes, callback);
+                      }
+                    );
+                  }
+                );
+              }
+            );
+          }
+        );
+      }
+    );
+  }
+
+  function insertInvoice(appointmentId, patientId, insuranceId, amount, insuranceCovered, patientAmount, callback) {
+    const paymentStatus = patientAmount <= 0 ? 'Paid' : 'Unpaid';
+    pool.query(
+      `INSERT INTO invoices (appointment_id, insurance_id, amount, insurance_covered_amount, patient_amount, payment_status, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, 'SYSTEM_AUTO', 'SYSTEM_AUTO')`,
+      [appointmentId, insuranceId, amount, insuranceCovered, patientAmount, paymentStatus],
+      (err, result) => {
+        if (err) return callback(err);
+        console.log(`Auto-generated invoice #${result.insertId} for appointment ${appointmentId}: total=$${amount.toFixed(2)}, insurance=$${insuranceCovered.toFixed(2)}, patient=$${patientAmount.toFixed(2)}`);
+        callback(null);
+      }
+    );
+  }
+
   function getDentistAppointments(req, res) {
     const parsedUrl = url.parse(req.url, true);
     const doctorId = Number(parsedUrl.query.doctorId || 0);
     const requestedDate = String(parsedUrl.query.date || '').trim();
-    const resolvedDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
-      ? requestedDate
-      : new Date().toISOString().slice(0, 10);
+    const hasDateFilter = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate);
+    const resolvedDate = hasDateFilter ? requestedDate : null;
     if (!Number.isInteger(doctorId) || doctorId <= 0) {
       return sendJSON(res, 400, { error: 'A valid doctorId is required' });
     }
@@ -30,15 +466,73 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
       JOIN patients p ON p.patient_id = a.patient_id
       LEFT JOIN locations l ON l.location_id = a.location_id
       WHERE a.doctor_id = ?
-        AND a.appointment_date = ?
-      ORDER BY a.appointment_time ASC`,
-      [doctorId, resolvedDate],
+        AND (? IS NULL OR a.appointment_date = ?)
+      ORDER BY a.appointment_date ASC, a.appointment_time ASC`,
+      [doctorId, resolvedDate, resolvedDate],
       (err, rows) => {
         if (err) {
           console.error('Error fetching dentist appointments:', err);
           return sendJSON(res, 500, { error: 'Database error' });
         }
         sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function searchDentistPatientAppointmentHistory(req, res) {
+    const parsedUrl = url.parse(req.url, true);
+    const doctorId = Number(parsedUrl.query.doctorId || 0);
+    const query = String(parsedUrl.query.query || '').trim();
+    const sqlLike = `%${query}%`;
+    const parsedPatientId = Number.parseInt(query, 10);
+    const numericPatientId = Number.isInteger(parsedPatientId) && parsedPatientId > 0 ? parsedPatientId : 0;
+
+    if (!Number.isInteger(doctorId) || doctorId <= 0) {
+      return sendJSON(res, 400, { error: 'A valid doctorId is required' });
+    }
+
+    if (!query) {
+      return sendJSON(res, 200, []);
+    }
+
+    pool.query(
+      `SELECT
+        a.appointment_id,
+        a.appointment_date,
+        a.appointment_time,
+        ast.status_name,
+        ast.display_name AS appointment_status,
+        a.patient_id,
+        CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+        a.doctor_id,
+        CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+        (a.doctor_id = ?) AS can_open_in_dentist_portal
+      FROM appointments a
+      LEFT JOIN appointment_statuses ast ON ast.status_id = a.status_id
+      JOIN patients p ON p.patient_id = a.patient_id
+      LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
+      LEFT JOIN staff st ON st.staff_id = d.staff_id
+      WHERE a.patient_id IN (
+        SELECT DISTINCT p2.patient_id
+        FROM patients p2
+        JOIN appointments a2 ON a2.patient_id = p2.patient_id
+        WHERE a2.doctor_id = ?
+          AND (
+            CONCAT(p2.p_first_name, ' ', p2.p_last_name) LIKE ?
+            OR p2.p_email LIKE ?
+            OR p2.p_phone LIKE ?
+            OR (? > 0 AND p2.patient_id = ?)
+          )
+      )
+      ORDER BY a.appointment_date DESC, a.appointment_time DESC, a.appointment_id DESC
+      LIMIT 500`,
+      [doctorId, doctorId, sqlLike, sqlLike, sqlLike, numericPatientId, numericPatientId],
+      (err, rows) => {
+        if (err) {
+          console.error('Error searching dentist patient appointment history:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        return sendJSON(res, 200, rows || []);
       }
     );
   }
@@ -114,6 +608,8 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                 tp.tooth_number,
                 tp.surface,
                 tp.priority,
+                tp.start_date,
+                tp.created_at,
                 tp.notes,
                 ts.status_name,
                 apc.description AS procedure_description,
@@ -133,6 +629,31 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
 
                 pool.query(
                   `SELECT
+                    df.finding_id,
+                    df.appointment_id,
+                    df.tooth_number,
+                    df.surface,
+                    df.condition_type,
+                    df.notes,
+                    df.date_logged,
+                    a.appointment_date,
+                    a.appointment_time
+                  FROM dental_findings df
+                  LEFT JOIN appointments a ON a.appointment_id = df.appointment_id
+                  WHERE df.patient_id = ?
+                  ORDER BY COALESCE(a.appointment_date, DATE(df.date_logged)) DESC,
+                           COALESCE(a.appointment_time, TIME(df.date_logged)) DESC,
+                           df.finding_id DESC
+                  LIMIT 100`,
+                  [patientId],
+                  (findingErr, findingRows) => {
+                    if (findingErr) {
+                      console.error('Error fetching dental findings:', findingErr);
+                      return sendJSON(res, 500, { error: 'Database error' });
+                    }
+
+                    pool.query(
+                  `SELECT
                     prescription_id,
                     plan_id,
                     medication_name,
@@ -146,14 +667,14 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                   WHERE patient_id = ?
                   ORDER BY date_prescribed DESC, prescription_id DESC
                   LIMIT 30`,
-                  [patientId],
-                  (rxErr, rxRows) => {
-                    if (rxErr) {
-                      console.error('Error fetching prescriptions:', rxErr);
-                      return sendJSON(res, 500, { error: 'Database error' });
-                    }
+                      [patientId],
+                      (rxErr, rxRows) => {
+                        if (rxErr) {
+                          console.error('Error fetching prescriptions:', rxErr);
+                          return sendJSON(res, 500, { error: 'Database error' });
+                        }
 
-                    pool.query(
+                        pool.query(
                       `SELECT
                         lab_order_id,
                         tooth_number,
@@ -167,38 +688,71 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                       WHERE patient_id = ?
                       ORDER BY order_date DESC, lab_order_id DESC
                       LIMIT 30`,
-                      [patientId],
-                      (labErr, labRows) => {
-                        if (labErr) {
-                          console.error('Error fetching dental lab orders:', labErr);
-                          return sendJSON(res, 500, { error: 'Database error' });
-                        }
+                          [patientId],
+                          (labErr, labRows) => {
+                            if (labErr) {
+                              console.error('Error fetching dental lab orders:', labErr);
+                              return sendJSON(res, 500, { error: 'Database error' });
+                            }
 
-                        sendJSON(res, 200, {
-                          appointment: base,
-                          patientProfile: {
-                            patient_id: base.patient_id,
-                            first_name: base.p_first_name,
-                            last_name: base.p_last_name,
-                            date_of_birth: base.p_dob,
-                            gender: base.p_gender,
-                            race: base.p_race,
-                            ethnicity: base.p_ethnicity,
-                            phone: base.p_phone,
-                            email: base.p_email,
-                            address: base.p_address,
-                            city: base.p_city,
-                            state: base.p_state,
-                            zipcode: base.p_zipcode,
-                            country: base.p_country,
-                            emergency_contact_name: base.p_emergency_contact_name,
-                            emergency_contact_phone: base.p_emergency_contact_phone
-                          },
-                          pastAppointments: pastRows || [],
-                          treatmentPlans: treatmentRows || [],
-                          prescriptions: rxRows || [],
-                          labOrders: labRows || []
-                        });
+                            pool.query(
+                          `SELECT snapshot_json
+                           FROM patient_registration_snapshots
+                           WHERE patient_id = ?
+                           ORDER BY updated_at DESC, created_at DESC
+                           LIMIT 1`,
+                              [patientId],
+                              (snapshotErr, snapshotRows) => {
+                                if (snapshotErr) {
+                                  console.error('Error fetching patient intake snapshot:', snapshotErr);
+                                  return sendJSON(res, 500, { error: 'Database error' });
+                                }
+
+                                let intakeSnapshot = null;
+                                if (snapshotRows?.[0]?.snapshot_json) {
+                                  try {
+                                    intakeSnapshot = typeof snapshotRows[0].snapshot_json === 'string'
+                                      ? JSON.parse(snapshotRows[0].snapshot_json)
+                                      : snapshotRows[0].snapshot_json;
+                                  } catch {
+                                    intakeSnapshot = null;
+                                  }
+                                }
+
+                                const completedTreatments = (treatmentRows || []).filter((item) => String(item.status_name || '').toUpperCase() === 'COMPLETED');
+
+                                sendJSON(res, 200, {
+                                  appointment: base,
+                                  patientProfile: {
+                                    patient_id: base.patient_id,
+                                    first_name: base.p_first_name,
+                                    last_name: base.p_last_name,
+                                    date_of_birth: base.p_dob,
+                                    gender: base.p_gender,
+                                    race: base.p_race,
+                                    ethnicity: base.p_ethnicity,
+                                    phone: base.p_phone,
+                                    email: base.p_email,
+                                    address: base.p_address,
+                                    city: base.p_city,
+                                    state: base.p_state,
+                                    zipcode: base.p_zipcode,
+                                    country: base.p_country,
+                                    emergency_contact_name: base.p_emergency_contact_name,
+                                    emergency_contact_phone: base.p_emergency_contact_phone
+                                  },
+                                  intakeSnapshot,
+                                  pastAppointments: pastRows || [],
+                                  treatmentPlans: treatmentRows || [],
+                                  completedTreatments,
+                                  dentalFindings: findingRows || [],
+                                  prescriptions: rxRows || [],
+                                  labOrders: labRows || []
+                                });
+                              }
+                            );
+                          }
+                        );
                       }
                     );
                   }
@@ -231,9 +785,248 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     );
   }
 
+  function createDentistDentalFinding(req, appointmentId, doctorId, data, res) {
+    const normalizedToothNumbers = (() => {
+      const source = Array.isArray(data?.toothNumbers)
+        ? data.toothNumbers
+        : String(data?.toothNumber || '')
+          .split(',');
+
+      const seen = new Set();
+      const values = [];
+      source.forEach((item) => {
+        const value = String(item || '').trim();
+        if (!value) return;
+        if (seen.has(value)) return;
+        seen.add(value);
+        values.push(value);
+      });
+      return values;
+    })();
+    const surface = data?.surface ? String(data.surface).trim() : null;
+    const conditionType = String(data?.conditionType || '').trim();
+    const conditionTypesByTooth = (() => {
+      if (!data?.conditionTypesByTooth || typeof data.conditionTypesByTooth !== 'object') {
+        return {};
+      }
+
+      const normalized = {};
+      Object.entries(data.conditionTypesByTooth).forEach(([rawTooth, rawCondition]) => {
+        const tooth = String(rawTooth || '').trim();
+        const condition = String(rawCondition || '').trim();
+        if (!tooth || !condition) {
+          return;
+        }
+        normalized[tooth] = condition;
+      });
+      return normalized;
+    })();
+    const notes = data?.notes ? String(data.notes).trim() : null;
+
+    if (!normalizedToothNumbers.length) {
+      return sendJSON(res, 400, { error: 'At least one tooth number is required' });
+    }
+
+    const missingConditionTooth = normalizedToothNumbers.find((tooth) => {
+      const conditionForTooth = String(conditionTypesByTooth[tooth] || conditionType || '').trim();
+      return !conditionForTooth;
+    });
+
+    if (missingConditionTooth) {
+      return sendJSON(res, 400, { error: `Condition is required for tooth ${missingConditionTooth}` });
+    }
+
+    getAppointmentContext(appointmentId, doctorId, (ctxErr, context) => {
+      if (ctxErr) {
+        console.error('Error reading appointment context:', ctxErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+      if (!context) {
+        return sendJSON(res, 404, { error: 'Appointment not found' });
+      }
+
+      const values = normalizedToothNumbers.map((toothNumber) => [
+        context.patient_id,
+        doctorId,
+        appointmentId,
+        toothNumber,
+        surface,
+        String(conditionTypesByTooth[toothNumber] || conditionType || '').trim(),
+        notes
+      ]);
+
+      pool.query(
+        `INSERT INTO dental_findings (
+          patient_id,
+          doctor_id,
+          appointment_id,
+          tooth_number,
+          surface,
+          condition_type,
+          notes,
+          date_logged,
+          created_by,
+          updated_by
+        ) VALUES ?`,
+        [values.map((entry) => [...entry, new Date(), 'DENTIST_PORTAL', 'DENTIST_PORTAL'])],
+        (insertErr, insertResult) => {
+          if (insertErr) {
+            console.error('Error saving dental finding:', insertErr);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+
+          markAppointmentCompleted(appointmentId, doctorId, (statusErr) => {
+            if (statusErr) {
+              console.error('Error setting appointment to completed:', statusErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+
+            sendJSON(res, 201, {
+              message: normalizedToothNumbers.length > 1 ? 'Dental findings saved' : 'Dental finding saved',
+              savedCount: normalizedToothNumbers.length,
+              firstFindingId: insertResult.insertId,
+              appointmentStatus: 'COMPLETED'
+            });
+          });
+        }
+      );
+    });
+  }
+
+  function createDentistTreatmentEntry(req, appointmentId, doctorId, data, res) {
+    const procedureCode = data?.procedureCode ? String(data.procedureCode).trim().toUpperCase() : null;
+    const toothNumber = data?.toothNumber ? String(data.toothNumber).trim() : null;
+    const surface = data?.surface ? String(data.surface).trim() : null;
+    const estimatedCostInput = data?.estimatedCost !== undefined && data?.estimatedCost !== null
+      ? Number(data.estimatedCost)
+      : null;
+    const hasManualEstimatedCost = Number.isFinite(estimatedCostInput) && estimatedCostInput > 0;
+    const priority = data?.priority ? String(data.priority).trim() : null;
+    const notes = data?.notes ? String(data.notes).trim() : null;
+    const requestedStatus = data?.statusName ? String(data.statusName).trim().toUpperCase() : 'COMPLETED';
+
+    getAppointmentContext(appointmentId, doctorId, (ctxErr, context) => {
+      if (ctxErr) {
+        console.error('Error reading appointment context:', ctxErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+      if (!context) {
+        return sendJSON(res, 404, { error: 'Appointment not found' });
+      }
+
+      pool.getConnection((connErr, conn) => {
+        if (connErr) {
+          console.error('Error getting DB connection for treatment entry:', connErr);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        getTreatmentStatusId(conn, requestedStatus, (statusErr, statusId) => {
+          if (statusErr) {
+            conn.release();
+            console.error('Error resolving treatment status:', statusErr);
+            return sendJSON(res, 400, { error: 'Invalid treatment status' });
+          }
+
+          const resolveProcedureCode = (callback) => {
+            if (!procedureCode) {
+              return callback(null, null, null);
+            }
+
+            conn.query(
+              'SELECT procedure_code, default_fees FROM ada_procedure_codes WHERE procedure_code = ? LIMIT 1',
+              [procedureCode],
+              (codeErr, codeRows) => {
+                if (codeErr) {
+                  return callback(codeErr);
+                }
+                if (!codeRows?.length) {
+                  return callback(null, null, null);
+                }
+                callback(null, procedureCode, codeRows[0].default_fees);
+              }
+            );
+          };
+
+          resolveProcedureCode((codeErr, safeProcedureCode, adaDefaultFees) => {
+            if (codeErr) {
+              conn.release();
+              console.error('Error validating procedure code:', codeErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+
+            const autoEstimatedCost = hasManualEstimatedCost
+              ? estimatedCostInput
+              : (adaDefaultFees !== undefined && adaDefaultFees !== null ? Number(adaDefaultFees) : null);
+
+            conn.query(
+              `INSERT INTO treatment_plans (
+                patient_id,
+                doctor_id,
+                surface,
+                procedure_code,
+                status_id,
+                tooth_number,
+                estimated_cost,
+                priority,
+                start_date,
+                notes,
+                created_by,
+                updated_by
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DENTIST_PORTAL', 'DENTIST_PORTAL')`,
+              [context.patient_id, doctorId, surface, safeProcedureCode, statusId, toothNumber, autoEstimatedCost, priority, context.appointment_date || null, notes],
+              (insertErr, insertResult) => {
+                if (insertErr) {
+                  conn.release();
+                  console.error('Error saving treatment entry:', insertErr);
+                  return sendJSON(res, 500, { error: 'Database error' });
+                }
+
+                markAppointmentCompleted(appointmentId, doctorId, (markErr) => {
+                  conn.release();
+                  if (markErr) {
+                    console.error('Error setting appointment to completed after treatment save:', markErr);
+                    return sendJSON(res, 500, { error: 'Database error' });
+                  }
+
+                  sendJSON(res, 201, {
+                    message: 'Treatment entry saved',
+                    planId: insertResult.insertId,
+                    estimatedCost: autoEstimatedCost,
+                    appointmentStatus: 'COMPLETED',
+                    pricingSource: hasManualEstimatedCost ? 'MANUAL' : (safeProcedureCode && autoEstimatedCost !== null ? 'ADA_DEFAULT_FEE' : 'NONE')
+                  });
+                });
+              }
+            );
+          });
+        });
+      });
+    });
+  }
+
   function handleDentistAppointmentRoutes(req, res, method, parts, parseJSON) {
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'reports' && parts[3] === 'patient') {
+      getDentistSinglePatientReport(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'reports' && parts[3] === 'patients') {
+      getDentistMultiPatientReport(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'ada-procedure-codes') {
+      getAdaProcedureCodes(req, res);
+      return true;
+    }
+
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'appointments' && !parts[3]) {
       getDentistAppointments(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'patients' && parts[3] === 'appointments' && parts[4] === 'search') {
+      searchDentistPatientAppointmentHistory(req, res);
       return true;
     }
 
@@ -270,6 +1063,162 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
         }
         return updateDentistAppointmentNote(req, appointmentId, doctorId, data, res);
       });
+      return true;
+    }
+
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'appointments' && parts[3] && parts[4] === 'dental-findings') {
+      const appointmentId = Number(parts[3]);
+      const parsed = url.parse(req.url, true);
+      const doctorId = Number(parsed.query.doctorId || 0);
+      if (!Number.isInteger(appointmentId) || appointmentId <= 0 || !Number.isInteger(doctorId) || doctorId <= 0) {
+        sendJSON(res, 400, { error: 'Valid appointmentId and doctorId are required' });
+        return true;
+      }
+
+      parseJSON(req, (err, data) => {
+        if (err) {
+          return sendJSON(res, 400, { error: 'Invalid JSON' });
+        }
+        return createDentistDentalFinding(req, appointmentId, doctorId, data, res);
+      });
+      return true;
+    }
+
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'appointments' && parts[3] && parts[4] === 'treatments') {
+      const appointmentId = Number(parts[3]);
+      const parsed = url.parse(req.url, true);
+      const doctorId = Number(parsed.query.doctorId || 0);
+      if (!Number.isInteger(appointmentId) || appointmentId <= 0 || !Number.isInteger(doctorId) || doctorId <= 0) {
+        sendJSON(res, 400, { error: 'Valid appointmentId and doctorId are required' });
+        return true;
+      }
+
+      parseJSON(req, (err, data) => {
+        if (err) {
+          return sendJSON(res, 400, { error: 'Invalid JSON' });
+        }
+        return createDentistTreatmentEntry(req, appointmentId, doctorId, data, res);
+      });
+      return true;
+    }
+
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'appointments' && parts[3] && parts[4] === 'treatments' && parts[5]) {
+      const appointmentId = Number(parts[3]);
+      const planId = Number(parts[5]);
+      const parsed = url.parse(req.url, true);
+      const doctorId = Number(parsed.query.doctorId || 0);
+      if (!Number.isInteger(appointmentId) || appointmentId <= 0 || !Number.isInteger(planId) || planId <= 0 || !Number.isInteger(doctorId) || doctorId <= 0) {
+        sendJSON(res, 400, { error: 'Valid appointmentId, planId and doctorId are required' });
+        return true;
+      }
+
+      getAppointmentContext(appointmentId, doctorId, (ctxErr, context) => {
+        if (ctxErr) {
+          console.error('Error reading appointment context for treatment delete:', ctxErr);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        if (!context) {
+          return sendJSON(res, 404, { error: 'Appointment not found' });
+        }
+
+        pool.query(
+          `DELETE FROM treatment_plans
+           WHERE plan_id = ? AND doctor_id = ? AND patient_id = ?`,
+          [planId, doctorId, context.patient_id],
+          (deleteErr, result) => {
+            if (deleteErr) {
+              console.error('Error deleting treatment plan:', deleteErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            if (!result.affectedRows) {
+              return sendJSON(res, 404, { error: 'Treatment entry not found' });
+            }
+            return sendJSON(res, 200, { message: 'Treatment entry deleted' });
+          }
+        );
+      });
+      return true;
+    }
+
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'treatments' && parts[3]) {
+      const planId = Number(parts[3]);
+      const parsed = url.parse(req.url, true);
+      const doctorId = Number(parsed.query.doctorId || 0);
+      if (!Number.isInteger(planId) || planId <= 0 || !Number.isInteger(doctorId) || doctorId <= 0) {
+        sendJSON(res, 400, { error: 'Valid planId and doctorId are required' });
+        return true;
+      }
+
+      pool.query(
+        `DELETE FROM treatment_plans
+         WHERE plan_id = ? AND doctor_id = ?`,
+        [planId, doctorId],
+        (deleteErr, result) => {
+          if (deleteErr) {
+            console.error('Error deleting treatment plan by planId:', deleteErr);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          if (!result.affectedRows) {
+            return sendJSON(res, 404, { error: 'Treatment entry not found' });
+          }
+          return sendJSON(res, 200, { message: 'Treatment entry deleted' });
+        }
+      );
+      return true;
+    }
+
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'findings' && parts[3]) {
+      const findingId = Number(parts[3]);
+      const parsed = url.parse(req.url, true);
+      const doctorId = Number(parsed.query.doctorId || 0);
+      if (!Number.isInteger(findingId) || findingId <= 0 || !Number.isInteger(doctorId) || doctorId <= 0) {
+        sendJSON(res, 400, { error: 'Valid findingId and doctorId are required' });
+        return true;
+      }
+
+      pool.query(
+        `DELETE FROM dental_findings
+         WHERE finding_id = ? AND doctor_id = ?`,
+        [findingId, doctorId],
+        (deleteErr, result) => {
+          if (deleteErr) {
+            console.error('Error deleting dental finding:', deleteErr);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          if (!result.affectedRows) {
+            return sendJSON(res, 404, { error: 'Dental finding not found' });
+          }
+          return sendJSON(res, 200, { message: 'Dental finding deleted' });
+        }
+      );
+      return true;
+    }
+
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'appointments' && parts[3] && parts[4] === 'findings' && parts[5]) {
+      const appointmentId = Number(parts[3]);
+      const findingId = Number(parts[5]);
+      const parsed = url.parse(req.url, true);
+      const doctorId = Number(parsed.query.doctorId || 0);
+      if (!Number.isInteger(appointmentId) || appointmentId <= 0 || !Number.isInteger(findingId) || findingId <= 0 || !Number.isInteger(doctorId) || doctorId <= 0) {
+        sendJSON(res, 400, { error: 'Valid appointmentId, findingId and doctorId are required' });
+        return true;
+      }
+
+      pool.query(
+        `DELETE FROM dental_findings
+         WHERE finding_id = ? AND doctor_id = ? AND appointment_id = ?`,
+        [findingId, doctorId, appointmentId],
+        (deleteErr, result) => {
+          if (deleteErr) {
+            console.error('Error deleting dental finding by appointment route:', deleteErr);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          if (!result.affectedRows) {
+            return sendJSON(res, 404, { error: 'Dental finding not found' });
+          }
+          return sendJSON(res, 200, { message: 'Dental finding deleted' });
+        }
+      );
       return true;
     }
 

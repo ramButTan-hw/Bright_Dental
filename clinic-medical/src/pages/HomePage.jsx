@@ -1,22 +1,24 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import '../styles/HomePage.css';
 
 function HomePage() {
+  const navigate = useNavigate();
   const [currentSlide, setCurrentSlide] = useState(0);
 
   const slides = [
     {
-      image: 'https://images.unsplash.com/photo-1606811841689-23def381efa3?w=1200&q=80',
+      image: '/First.png',
       pitch: 'Clinical Sanctuary',
       description: 'Where high-end medical precision meets restorative serenity.'
     },
     {
-      image: 'https://images.unsplash.com/photo-1629909613654-28eca340c630?w=1200&q=80',
+      image: '/Second.jpg',
       pitch: 'Precision in Every Smile',
       description: 'Advanced diagnostics and restorative artistry combined.'
     },
     {
-      image: 'https://images.unsplash.com/photo-1666214280291-fbc3d8e60ba5?w=1200&q=80',
+      image: '/Third.jpg',
       pitch: 'Your Smile, Our Priority',
       description: 'Experience world-class dental care with our expert team.'
     }
@@ -56,7 +58,7 @@ function HomePage() {
               <div className="slide-content">
                 <h1 className="slide-pitch">{slide.pitch}</h1>
                 <p className="slide-description">{slide.description}</p>
-                <button className="explore-button">Explore Our Expertise</button>
+                <button className="explore-button" onClick={() => navigate('/meet-our-staff')}>Explore Our Expertise</button>
               </div>
             </div>
           ))}

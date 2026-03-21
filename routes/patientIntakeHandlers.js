@@ -21,17 +21,27 @@ function createPatientIntakeHandlers(deps) {
     );
   }
 
+  function getLocations(req, res) {
+    pool.query('SELECT * FROM locations', (err, results) => {
+      if (err) {
+        console.error('Error fetching locations:', err);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+      sendJSON(res, 200, results);
+    });
+  }
+
   function registerPatient(req, data, res) {
     const {
       firstName, lastName, dob, gender, phone, email, ssn, driversLicense,
-      username, password, location, reason,
+      username, password, locationId, reason, address, emergencyContactName, emergencyContactPhone,
       medicalHistory, medicalHistoryOtherText, adverseReactions, medications, dentalFindings, dentalHistory,
       sleepSocial, tobacco, caffeine, painAssessment, appointmentSelection
     } = data;
 
-    if (!firstName || !lastName || !dob || !gender || !phone || !email || !ssn || !driversLicense || !username || !password) {
+    if (!firstName || !lastName || !dob || !gender || !phone || !email || !ssn || !driversLicense || !username || !password || !address || !emergencyContactName || !emergencyContactPhone) {
       return sendJSON(res, 400, {
-        error: 'All identity fields including gender, SSN, drivers license, username, and password are required'
+        error: 'All identity fields including address and emergency contact details are required'
       });
     }
 
@@ -42,6 +52,9 @@ function createPatientIntakeHandlers(deps) {
 
     const normalizedSsn = String(ssn).trim();
     const normalizedDriversLicense = String(driversLicense).trim().toUpperCase();
+    const normalizedAddress = String(address).trim();
+    const normalizedEmergencyContactName = String(emergencyContactName).trim();
+    const normalizedEmergencyContactPhone = String(emergencyContactPhone).trim();
     const ssnPattern = /^\d{3}-\d{2}-\d{4}$/;
     const driversLicensePattern = /^[A-Z0-9-]{5,20}$/;
     const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -56,6 +69,18 @@ function createPatientIntakeHandlers(deps) {
       return sendJSON(res, 400, {
         error: 'Driver\'s license must be 5-20 characters using letters, numbers, or hyphens'
       });
+    }
+
+    if (!normalizedAddress) {
+      return sendJSON(res, 400, { error: 'Address is required' });
+    }
+
+    if (!normalizedEmergencyContactPhone) {
+      return sendJSON(res, 400, { error: 'Emergency contact number is required' });
+    }
+
+    if (!normalizedEmergencyContactName) {
+      return sendJSON(res, 400, { error: 'Emergency contact name is required' });
     }
 
     const isIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
@@ -103,8 +128,7 @@ function createPatientIntakeHandlers(deps) {
     const preferredTimesRaw = Array.isArray(appointmentSelection?.preferredTimes)
       ? appointmentSelection.preferredTimes
       : [];
-    const normalizedPreferredLocation = location ? String(location).trim() : null;
-
+    
     const preferredWeekdays = [...new Set(
       preferredWeekdaysRaw
         .map((day) => String(day || '').trim())
@@ -165,12 +189,25 @@ function createPatientIntakeHandlers(deps) {
           const patientQuery = `
             INSERT INTO patients (
               user_id, p_first_name, p_last_name, p_dob, p_gender, p_phone, p_email,
-              p_ssn, p_drivers_license, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PORTAL', 'PORTAL')
+              p_ssn, p_drivers_license, p_address, p_emergency_contact_name, p_emergency_contact_phone, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PORTAL', 'PORTAL')
           `;
           conn.query(
             patientQuery,
-            [userId, firstName, lastName, dob, numericGender, phone, email, normalizedSsn, normalizedDriversLicense],
+            [
+              userId,
+              firstName,
+              lastName,
+              dob,
+              numericGender,
+              phone,
+              email,
+              normalizedSsn,
+              normalizedDriversLicense,
+              normalizedAddress,
+              normalizedEmergencyContactName,
+              normalizedEmergencyContactPhone
+            ],
             (patientErr, patientResult) => {
               if (patientErr) {
                 return conn.rollback(() => {
@@ -209,7 +246,7 @@ function createPatientIntakeHandlers(deps) {
                       patient_id,
                       preferred_date,
                       preferred_time,
-                      preferred_location,
+                      location_id,
                       available_days,
                       available_times,
                       appointment_reason,
@@ -221,7 +258,7 @@ function createPatientIntakeHandlers(deps) {
                       patientId,
                       preferredDate,
                       preferredTime,
-                      normalizedPreferredLocation,
+                      locationId,
                       preferredWeekdays.join(', '),
                       preferredTimes.join(', '),
                       reason || null
@@ -235,30 +272,52 @@ function createPatientIntakeHandlers(deps) {
                         });
                       }
 
-                      conn.commit((commitErr) => {
-                        conn.release();
-                        if (commitErr) {
-                          return conn.rollback(() => {
-                            console.error('Commit failed:', commitErr);
-                            return sendJSON(res, 500, { error: 'Failed to complete registration' });
-                          });
-                        }
+                      const insurance = data.insurance || {};
+                      const insuranceCompanyId = Number(insurance.companyId);
+                      const insuranceMemberId = String(insurance.memberId || '').trim();
 
-                        sendJSON(res, 201, {
-                          message: 'Patient registered successfully',
-                          patientId,
-                          userId,
-                          appointmentPreferenceRequestId: preferenceResult.insertId,
-                          appointmentConfirmation: {
-                            date: preferredDate,
-                            startTime: preferredTime,
-                            availabilityDays: preferredWeekdays,
-                            availabilityTimes: preferredTimes,
-                            status: 'PREFERRED_PENDING',
-                            note: 'Preferences received. Our receptionist will contact you with your finalized appointment, doctor, and location.'
+                      const finishCommit = () => {
+                        conn.commit((commitErr) => {
+                          conn.release();
+                          if (commitErr) {
+                            return conn.rollback(() => {
+                              console.error('Commit failed:', commitErr);
+                              return sendJSON(res, 500, { error: 'Failed to complete registration' });
+                            });
                           }
+
+                          sendJSON(res, 201, {
+                            message: 'Patient registered successfully',
+                            patientId,
+                            userId,
+                            appointmentPreferenceRequestId: preferenceResult.insertId,
+                            appointmentConfirmation: {
+                              date: preferredDate,
+                              startTime: preferredTime,
+                              availabilityDays: preferredWeekdays,
+                              availabilityTimes: preferredTimes,
+                              status: 'PREFERRED_PENDING',
+                              note: 'Preferences received. Our receptionist will contact you with your finalized appointment, doctor, and location.'
+                            }
+                          });
                         });
-                      });
+                      };
+
+                      if (Number.isInteger(insuranceCompanyId) && insuranceCompanyId > 0 && insuranceMemberId) {
+                        conn.query(
+                          `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, created_by, updated_by)
+                           VALUES (?, ?, ?, ?, TRUE, 'PORTAL', 'PORTAL')`,
+                          [patientId, insuranceCompanyId, insuranceMemberId, String(insurance.groupNumber || '').trim() || null],
+                          (insuranceErr) => {
+                            if (insuranceErr) {
+                              console.error('Error saving insurance (non-fatal):', insuranceErr);
+                            }
+                            finishCommit();
+                          }
+                        );
+                      } else {
+                        finishCommit();
+                      }
                     }
                   );
                 }
@@ -284,7 +343,9 @@ function createPatientIntakeHandlers(deps) {
       tobacco,
       caffeine,
       painAssessment,
-      appointmentSelection
+      appointmentSelection,
+      isReschedule,
+      appointmentId
     } = data || {};
 
     const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -352,85 +413,172 @@ function createPatientIntakeHandlers(deps) {
           return sendJSON(res, 500, { error: 'Transaction failed' });
         }
 
-        saveIntakeData(
-          conn,
-          patientId,
-          medicalHistory,
-          medicalHistoryOtherText,
-          adverseReactions,
-          medications,
-          dentalFindings,
-          dentalHistory,
-          sleepSocial,
-          tobacco,
-          caffeine,
-          painAssessment,
-          (intakeErr) => {
-            if (intakeErr) {
-              return conn.rollback(() => {
-                conn.release();
-                console.error('Error saving updated intake data:', intakeErr);
-                sendJSON(res, 500, { error: 'Failed to save updated medical information' });
-              });
+        const enforceCreateRulesTask = (callback) => {
+          if (isReschedule) {
+            return callback();
+          }
+
+          conn.query(
+            `SELECT
+               SUM(CASE WHEN s.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN') THEN 1 ELSE 0 END) AS active_appointment_count,
+               (
+                 SELECT COUNT(*)
+                 FROM appointment_preference_requests apr
+                 WHERE apr.patient_id = ?
+                   AND apr.request_status IN ('PREFERRED_PENDING', 'ASSIGNED')
+               ) AS active_request_count
+             FROM appointments a
+             LEFT JOIN appointment_statuses s ON s.status_id = a.status_id
+             WHERE a.patient_id = ?`,
+            [patientId, patientId],
+            (ruleErr, ruleRows) => {
+              if (ruleErr) {
+                return callback(ruleErr);
+              }
+
+              const row = ruleRows?.[0] || {};
+              const hasActiveAppointment = Number(row.active_appointment_count || 0) > 0;
+              const hasActiveRequest = Number(row.active_request_count || 0) > 0;
+
+              if (hasActiveAppointment || hasActiveRequest) {
+                const restrictionErr = new Error('You already have an active appointment or pending request. Please use reschedule or cancel instead.');
+                restrictionErr.statusCode = 409;
+                return callback(restrictionErr);
+              }
+
+              callback();
+            }
+          );
+        };
+
+        const rescheduleTask = (callback) => {
+            if (isReschedule && appointmentId) {
+              conn.query(
+                `UPDATE appointments a
+                 JOIN appointment_statuses current_status ON current_status.status_id = a.status_id
+                 JOIN appointment_statuses s ON s.status_name = 'RESCHEDULED'
+                 SET a.status_id = s.status_id
+                 WHERE a.appointment_id = ?
+                   AND a.patient_id = ?
+                   AND current_status.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')`,
+                [appointmentId, patientId],
+                (updateErr, updateResult) => {
+                  if (updateErr) {
+                    return callback(updateErr);
+                  }
+                  if (updateResult.affectedRows === 0) {
+                    return callback(new Error('Appointment not found or not owned by patient'));
+                  }
+                  callback();
+                }
+              );
+            } else {
+              callback();
+            }
+          };
+
+        enforceCreateRulesTask((ruleErr) => {
+          if (ruleErr) {
+            return conn.rollback(() => {
+              conn.release();
+              if (ruleErr.statusCode) {
+                return sendJSON(res, ruleErr.statusCode, { error: ruleErr.message });
+              }
+              console.error('Error validating appointment request rules:', ruleErr);
+              sendJSON(res, 500, { error: 'Failed to validate appointment request rules' });
+            });
+          }
+
+          rescheduleTask((rescheduleErr) => {
+            if (rescheduleErr) {
+                return conn.rollback(() => {
+                    conn.release();
+                    console.error('Error rescheduling appointment:', rescheduleErr);
+                    sendJSON(res, 409, { error: 'Failed to reschedule appointment. Only active scheduled appointments can be rescheduled.' });
+                });
             }
 
-            conn.query(
-              `INSERT INTO appointment_preference_requests (
-                patient_id,
-                preferred_date,
-                preferred_time,
-                preferred_location,
-                available_days,
-                available_times,
-                appointment_reason,
-                request_status,
-                created_by,
-                updated_by
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
-              [
+            saveIntakeData(
+                conn,
                 patientId,
-                preferredDate,
-                preferredTime,
-                normalizedPreferredLocation,
-                preferredWeekdays.join(', '),
-                preferredTimes.join(', '),
-                String(reason).trim()
-              ],
-              (preferenceErr, preferenceResult) => {
-                if (preferenceErr) {
-                  return conn.rollback(() => {
-                    conn.release();
-                    console.error('Error saving new appointment preference request:', preferenceErr);
-                    sendJSON(res, 500, { error: 'Failed to save appointment preference' });
-                  });
-                }
-
-                conn.commit((commitErr) => {
-                  conn.release();
-                  if (commitErr) {
+                medicalHistory,
+                medicalHistoryOtherText,
+                adverseReactions,
+                medications,
+                dentalFindings,
+                dentalHistory,
+                sleepSocial,
+                tobacco,
+                caffeine,
+                painAssessment,
+                (intakeErr) => {
+                  if (intakeErr) {
                     return conn.rollback(() => {
-                      console.error('Commit failed:', commitErr);
-                      sendJSON(res, 500, { error: 'Failed to submit new appointment request' });
+                      conn.release();
+                      console.error('Error saving updated intake data:', intakeErr);
+                      sendJSON(res, 500, { error: 'Failed to save updated medical information' });
                     });
                   }
-
-                  sendJSON(res, 201, {
-                    message: 'New appointment request submitted successfully.',
-                    appointmentPreferenceRequestId: preferenceResult.insertId,
-                    appointmentConfirmation: {
-                      date: preferredDate,
-                      startTime: preferredTime,
-                      availabilityDays: preferredWeekdays,
-                      availabilityTimes: preferredTimes,
-                      status: 'PREFERRED_PENDING',
-                      note: 'Your updated medical details and availability were received. Our receptionist will contact you to finalize your appointment.'
+      
+                  conn.query(
+                    `INSERT INTO appointment_preference_requests (
+                      patient_id,
+                      preferred_date,
+                      preferred_time,
+                      preferred_location,
+                      available_days,
+                      available_times,
+                      appointment_reason,
+                      request_status,
+                      created_by,
+                      updated_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
+                    [
+                      patientId,
+                      preferredDate,
+                      preferredTime,
+                      normalizedPreferredLocation,
+                      preferredWeekdays.join(', '),
+                      preferredTimes.join(', '),
+                      String(reason).trim()
+                    ],
+                    (preferenceErr, preferenceResult) => {
+                      if (preferenceErr) {
+                        return conn.rollback(() => {
+                          conn.release();
+                          console.error('Error saving new appointment preference request:', preferenceErr);
+                          sendJSON(res, 500, { error: 'Failed to save appointment preference' });
+                        });
+                      }
+      
+                      conn.commit((commitErr) => {
+                        conn.release();
+                        if (commitErr) {
+                          return conn.rollback(() => {
+                            console.error('Commit failed:', commitErr);
+                            sendJSON(res, 500, { error: 'Failed to submit new appointment request' });
+                          });
+                        }
+      
+                        sendJSON(res, 201, {
+                          message: 'New appointment request submitted successfully.',
+                          appointmentPreferenceRequestId: preferenceResult.insertId,
+                          appointmentConfirmation: {
+                            date: preferredDate,
+                            startTime: preferredTime,
+                            availabilityDays: preferredWeekdays,
+                            availabilityTimes: preferredTimes,
+                            status: 'PREFERRED_PENDING',
+                            note: 'Your updated medical details and availability were received. Our receptionist will contact you to finalize your appointment.'
+                          }
+                        });
+                      });
                     }
-                  });
-                });
-              }
-            );
-          }
-        );
+                  );
+                }
+              );
+          });
+        });
       });
     });
   }
@@ -839,6 +987,7 @@ function createPatientIntakeHandlers(deps) {
 
   return {
     getPainSymptoms,
+    getLocations,
     registerPatient,
     createPatientNewAppointmentRequest,
     getPatientNewAppointmentPrefill

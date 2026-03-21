@@ -100,6 +100,14 @@ label[for="photo-upload"] {
   font-size: 0.95rem;
 }
 
+.dentist-profile-form select {
+  border: 1px solid #c2d9d5;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.95rem;
+  background: #fff;
+}
+
 .dentist-profile-actions {
   grid-column: 1 / -1;
   display: flex;
@@ -131,6 +139,34 @@ label[for="photo-upload"] {
   margin-top: 1rem;
   grid-column: 1 / -1;
   color: #1e6f42;
+}
+
+.dentist-profile-timeoff {
+  margin-top: 1.5rem;
+  border-top: 1px solid #d9ebe8;
+  padding-top: 1rem;
+}
+
+.dentist-profile-timeoff h2,
+.dentist-profile-timeoff h3 {
+  margin: 0 0 0.5rem;
+}
+
+.dentist-profile-timeoff-form {
+  margin-top: 0.5rem;
+}
+
+.dentist-profile-timeoff-history {
+  margin-top: 0.9rem;
+  border: 1px solid #d6e7e4;
+  border-radius: 10px;
+  background: #fbfefd;
+  padding: 0.75rem;
+}
+
+.dentist-profile-timeoff-history ul {
+  margin: 0;
+  padding-left: 1rem;
 }
 
 @media (max-width: 900px) {

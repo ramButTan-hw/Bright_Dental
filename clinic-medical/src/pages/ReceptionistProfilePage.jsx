@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDentistPortalSession, resolveApiBaseUrl } from '../utils/patientPortal';
+import { getReceptionPortalSession, resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/DentistProfilePage.css';
 
 const CLINIC_OPEN_TIME = '08:00';
@@ -49,10 +49,10 @@ const formatDateTimeWithMeridiem = (value) => {
   });
 };
 
-function DentistProfilePage() {
+function ReceptionistProfilePage() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const navigate = useNavigate();
-  const session = getDentistPortalSession();
+  const session = getReceptionPortalSession();
   const fileInputRef = useRef(null);
 
   const formatEmergencyPhone = (value) => {
@@ -85,8 +85,7 @@ function DentistProfilePage() {
     zipcode: '',
     country: '',
     emergencyContactName: '',
-    emergencyContactPhone: '',
-    npi: ''
+    emergencyContactPhone: ''
   });
   const [avatarPreview, setAvatarPreview] = useState('');
   const [status, setStatus] = useState('');
@@ -116,7 +115,7 @@ function DentistProfilePage() {
       return;
     }
 
-    fetchWithTimeout(`${API_BASE_URL}/api/dentist/profile?userId=${session.userId}`)
+    fetchWithTimeout(`${API_BASE_URL}/api/reception/profile?userId=${session.userId}`)
       .then(async (res) => {
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -139,10 +138,8 @@ function DentistProfilePage() {
           zipcode: profile.s_zipcode || '',
           country: profile.s_country || '',
           emergencyContactName: profile.emergency_contact_name || '',
-          emergencyContactPhone: formatEmergencyPhone(profile.emergency_contact_phone),
-          npi: profile.npi || ''
+          emergencyContactPhone: formatEmergencyPhone(profile.emergency_contact_phone)
         });
-        // Load profile image from DB
         if (sid) {
           fetchWithTimeout(`${API_BASE_URL}/api/staff/profile-image?staffId=${sid}`)
             .then((r) => r.json())
@@ -162,7 +159,7 @@ function DentistProfilePage() {
         setStatus(err.message || 'Unable to load profile');
       })
       .finally(() => setLoading(false));
-  }, [API_BASE_URL, navigate, session?.userId, session?.doctorId]);
+  }, [API_BASE_URL, navigate, session?.userId, session?.staffId]);
 
   useEffect(() => {
     if (!resolvedStaffId) {
@@ -206,20 +203,18 @@ function DentistProfilePage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
+  const handleFileChange = (event) => {
+    const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatarPreview(reader.result);
-      };
+      reader.onloadend = () => setAvatarPreview(reader.result);
       reader.readAsDataURL(file);
     }
   };
 
   const handleRemovePhoto = () => {
     setAvatarPreview('');
-    if(fileInputRef.current) {
+    if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
@@ -241,7 +236,7 @@ function DentistProfilePage() {
       }
     }
 
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/dentist/profile?userId=${session.userId}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/reception/profile?userId=${session.userId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form)
@@ -372,64 +367,64 @@ function DentistProfilePage() {
     <main className="dentist-profile-page">
       <section className="dentist-profile-panel">
         <h1>Update Personal Information</h1>
-        <p className="dentist-profile-subtle">Use this page to keep your contact and professional data current.</p>
+        <p className="dentist-profile-subtle">Use this page to keep your contact and profile data current.</p>
 
         <div className="dentist-profile-content">
           <div className="dentist-profile-form-container">
             <form className="dentist-profile-form" onSubmit={handleSubmit}>
               <label>
                 First Name
-                <input value={form.firstName} onChange={(e) => updateField('firstName', e.target.value)} required />
+                <input value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} required />
               </label>
 
               <label>
                 Last Name
-                <input value={form.lastName} onChange={(e) => updateField('lastName', e.target.value)} required />
+                <input value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} required />
               </label>
 
               <label>
                 Email
-                <input type="email" value={form.email} onChange={(e) => updateField('email', e.target.value)} required />
+                <input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} required />
               </label>
 
               <label>
                 Phone
-                <input value={form.phone} onChange={(e) => updateField('phone', e.target.value)} />
+                <input value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
               </label>
 
               <label>
                 Date of Birth
-                <input type="date" value={form.dateOfBirth} onChange={(e) => updateField('dateOfBirth', e.target.value)} />
+                <input type="date" value={form.dateOfBirth} onChange={(event) => updateField('dateOfBirth', event.target.value)} />
               </label>
 
               <label>
                 Address
-                <input value={form.address} onChange={(e) => updateField('address', e.target.value)} placeholder="Street address" />
+                <input value={form.address} onChange={(event) => updateField('address', event.target.value)} placeholder="Street address" />
               </label>
 
               <label>
                 City
-                <input value={form.city} onChange={(e) => updateField('city', e.target.value)} />
+                <input value={form.city} onChange={(event) => updateField('city', event.target.value)} />
               </label>
 
               <label>
                 State
-                <input value={form.state} onChange={(e) => updateField('state', e.target.value)} maxLength={2} placeholder="TX" />
+                <input value={form.state} onChange={(event) => updateField('state', event.target.value)} maxLength={2} placeholder="TX" />
               </label>
 
               <label>
                 Zip Code
-                <input value={form.zipcode} onChange={(e) => updateField('zipcode', e.target.value)} />
+                <input value={form.zipcode} onChange={(event) => updateField('zipcode', event.target.value)} />
               </label>
 
               <label>
                 Country
-                <input value={form.country} onChange={(e) => updateField('country', e.target.value)} placeholder="USA" />
+                <input value={form.country} onChange={(event) => updateField('country', event.target.value)} placeholder="USA" />
               </label>
 
               <label>
                 Emergency Contact Name
-                <input value={form.emergencyContactName} onChange={(e) => updateField('emergencyContactName', e.target.value)} placeholder="Contact full name" />
+                <input value={form.emergencyContactName} onChange={(event) => updateField('emergencyContactName', event.target.value)} placeholder="Contact full name" />
               </label>
 
               <label>
@@ -440,19 +435,19 @@ function DentistProfilePage() {
                   pattern="[0-9]{10}|[0-9]{3}-[0-9]{3}-[0-9]{4}"
                   maxLength={12}
                   value={form.emergencyContactPhone}
-                  onChange={(e) => updateField('emergencyContactPhone', e.target.value)}
+                  onChange={(event) => updateField('emergencyContactPhone', event.target.value)}
                   placeholder="123-456-7890"
                   title="Enter 10 digits (1234567890) or XXX-XXX-XXXX"
                 />
               </label>
 
               <label>
-                NPI
-                <input value={form.npi} readOnly disabled maxLength={10} />
+                Staff ID
+                <input value={session?.staffId || ''} readOnly disabled />
               </label>
 
               <div className="dentist-profile-actions">
-                <button type="button" className="dentist-profile-secondary" onClick={() => navigate('/dentist-login')}>Back to Dashboard</button>
+                <button type="button" className="dentist-profile-secondary" onClick={() => navigate('/receptionist')}>Back to Dashboard</button>
                 <button type="submit" className="dentist-profile-primary">Save Changes</button>
               </div>
             </form>
@@ -461,11 +456,14 @@ function DentistProfilePage() {
 
           <div className="dentist-profile-photo-container">
             <div className="dentist-photo-preview-wrapper">
-              <img 
+              <img
                 src={avatarPreview || 'https://i.imgur.com/832p1z4.png'}
-                alt="Profile Preview" 
-                className="dentist-photo-preview" 
-                onError={(e) => { e.target.onerror = null; e.target.src='https://i.imgur.com/832p1z4.png'; }}
+                alt="Profile Preview"
+                className="dentist-photo-preview"
+                onError={(event) => {
+                  event.target.onerror = null;
+                  event.target.src = 'https://i.imgur.com/832p1z4.png';
+                }}
               />
               {avatarPreview && (
                 <button type="button" className="dentist-photo-remove-btn" onClick={handleRemovePhoto}>
@@ -474,15 +472,15 @@ function DentistProfilePage() {
               )}
             </div>
             <div className="dentist-photo-actions">
-              <input 
-                type="file" 
-                accept="image/*" 
+              <input
+                type="file"
+                accept="image/*"
                 onChange={handleFileChange}
                 ref={fileInputRef}
-                style={{ display: 'none' }} 
-                id="photo-upload"
+                style={{ display: 'none' }}
+                id="receptionist-photo-upload"
               />
-              <label htmlFor="photo-upload" className="dentist-profile-secondary">
+              <label htmlFor="receptionist-photo-upload" className="dentist-profile-secondary">
                 {avatarPreview ? 'Change Photo' : 'Upload Photo'}
               </label>
             </div>
@@ -513,7 +511,7 @@ function DentistProfilePage() {
                     <li key={sl.locationId} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
                       <input
                         type="radio"
-                        name="primaryLocation"
+                        name="primaryLocationReceptionist"
                         checked={sl.isPrimary}
                         onChange={() => setPrimaryLocation(sl.locationId)}
                         title="Set as primary"
@@ -568,7 +566,7 @@ function DentistProfilePage() {
               >
                 <option value="">Select time (e.g., 09:00 AM)</option>
                 {CLINIC_TIME_SELECT_OPTIONS.map((timeOption) => (
-                  <option key={`dentist-profile-start-${timeOption.value}`} value={timeOption.value}>
+                  <option key={`receptionist-profile-start-${timeOption.value}`} value={timeOption.value}>
                     {timeOption.label}
                   </option>
                 ))}
@@ -594,7 +592,7 @@ function DentistProfilePage() {
               >
                 <option value="">Select time (e.g., 05:00 PM)</option>
                 {CLINIC_TIME_SELECT_OPTIONS.map((timeOption) => (
-                  <option key={`dentist-profile-end-${timeOption.value}`} value={timeOption.value}>
+                  <option key={`receptionist-profile-end-${timeOption.value}`} value={timeOption.value}>
                     {timeOption.label}
                   </option>
                 ))}
@@ -649,4 +647,4 @@ function DentistProfilePage() {
   );
 }
 
-export default DentistProfilePage;
+export default ReceptionistProfilePage;

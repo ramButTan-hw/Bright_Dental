@@ -1,5 +1,7 @@
 const http = require('http');
 const url = require('url');
+const fs = require('fs');
+const pathModule = require('path');
 const querystring = require('querystring');
 const pool = require('./database/db');
 const queries = require('./queries');
@@ -30,6 +32,62 @@ const DEFAULT_CLINIC_LOCATIONS = [
   { city: 'Sugar Land', state: 'TX', streetNo: '14000', streetName: 'University Blvd', zipCode: '77479' },
   { city: 'Houston', state: 'TX', streetNo: '1', streetName: 'Main St', zipCode: '77002' }
 ];
+
+function generateRandomNpi() {
+  return String(Math.floor(1000000000 + Math.random() * 9000000000));
+}
+
+async function getUniqueRandomNpi(db, maxAttempts = 20) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const candidate = generateRandomNpi();
+    const [rows] = await db.query('SELECT 1 FROM doctors WHERE npi = ? LIMIT 1', [candidate]);
+    if (!rows.length) {
+      return candidate;
+    }
+  }
+  throw new Error('Unable to generate a unique NPI after multiple attempts');
+}
+
+async function ensureDoctorNpiPrimaryKey() {
+  const db = pool.promise();
+
+  try {
+    const [invalidNpiDoctors] = await db.query(
+      `SELECT doctor_id
+       FROM doctors
+       WHERE npi IS NULL OR npi NOT REGEXP '^[0-9]{10}$'`
+    );
+
+    for (const row of invalidNpiDoctors) {
+      const npi = await getUniqueRandomNpi(db);
+      await db.query('UPDATE doctors SET npi = ? WHERE doctor_id = ?', [npi, row.doctor_id]);
+    }
+
+    try {
+      await db.query('ALTER TABLE doctors ADD UNIQUE INDEX uq_doctors_doctor_id (doctor_id)');
+    } catch (indexErr) {
+      if (indexErr.code !== 'ER_DUP_KEYNAME') {
+        throw indexErr;
+      }
+    }
+
+    const [primaryKeyRows] = await db.query(
+      `SELECT COLUMN_NAME
+       FROM information_schema.KEY_COLUMN_USAGE
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'doctors'
+         AND CONSTRAINT_NAME = 'PRIMARY'
+       ORDER BY ORDINAL_POSITION`
+    );
+
+    const isNpiPrimaryKey = primaryKeyRows.length === 1 && primaryKeyRows[0].COLUMN_NAME === 'npi';
+    if (!isNpiPrimaryKey) {
+      await db.query('ALTER TABLE doctors DROP PRIMARY KEY, ADD PRIMARY KEY (npi)');
+    }
+  } catch (err) {
+    console.error('Error ensuring doctor NPI primary key migration:', err.message);
+  }
+}
 
 function ensureDefaultClinicLocations() {
   const insertSql = `INSERT INTO locations (location_city, location_state, loc_street_no, loc_street_name, loc_zip_code, created_by, updated_by)
@@ -66,6 +124,59 @@ function ensureDefaultClinicLocations() {
 }
 
 ensureDefaultClinicLocations();
+ensureDoctorNpiPrimaryKey();
+
+// Ensure location contact columns exist and seed contact info
+(function ensureLocationContactColumns() {
+  const cols = [
+    { name: 'loc_phone', def: "VARCHAR(20) AFTER loc_zip_code" },
+    { name: 'loc_email', def: "VARCHAR(100) AFTER loc_phone" },
+    { name: 'loc_fax', def: "VARCHAR(20) AFTER loc_email" }
+  ];
+  cols.forEach(({ name, def }) => {
+    pool.query(`ALTER TABLE locations ADD COLUMN ${name} ${def}`, (err) => {
+      if (err && err.code !== 'ER_DUP_FIELDNAME') {
+        console.error(`Error adding ${name} column:`, err.message);
+      }
+    });
+  });
+
+  // Ensure profile_image column exists on staff
+  pool.query(`ALTER TABLE staff ADD COLUMN profile_image LONGBLOB`, (err) => {
+    if (err && err.code !== 'ER_DUP_FIELDNAME') {
+      console.error('Error adding profile_image column:', err.message);
+    }
+  });
+
+  // Seed contact data for default locations after a short delay to ensure columns exist
+  setTimeout(() => {
+    const contactData = [
+      { zip: '77004', phone: '(832) 461-3355', email: 'houston@brightdental.com', fax: '(832) 461-3356' },
+      { zip: '77479', phone: '(281) 555-0199', email: 'sugarland@brightdental.com', fax: '(281) 555-0200' },
+      { zip: '77002', phone: '(713) 555-0142', email: 'downtown@brightdental.com', fax: '(713) 555-0143' }
+    ];
+    contactData.forEach(({ zip, phone, email, fax }) => {
+      pool.query(
+        `UPDATE locations SET loc_phone = COALESCE(loc_phone, ?), loc_email = COALESCE(loc_email, ?), loc_fax = COALESCE(loc_fax, ?) WHERE loc_zip_code = ?`,
+        [phone, email, fax, zip],
+        (err) => {
+          if (err) console.error('Error seeding location contact info:', err.message);
+        }
+      );
+    });
+  }, 2000);
+})();
+
+pool.query(
+  `INSERT INTO appointment_statuses (status_name, display_name, color_code, created_by)
+   VALUES ('CHECKED_IN', 'Checked In', '#9013FE', 'SYSTEM')
+   ON DUPLICATE KEY UPDATE display_name = VALUES(display_name)`,
+  (err) => {
+    if (err) {
+      console.error('Error ensuring CHECKED_IN status:', err.message);
+    }
+  }
+);
 
 // Ensure staff time-off request storage exists for non-doctor staff workflows.
 pool.query(
@@ -162,11 +273,13 @@ const patientIntakeHandlers = createPatientIntakeHandlers({
 });
 const patientCoreHandlers = createPatientCoreHandlers({ pool, queries, sendJSON, crypto });
 const patientPortalRoutes = createPatientPortalRoutes({
+  pool,
   sendJSON,
   getDoctorAppointments: patientCoreHandlers.getDoctorAppointments,
   getPatientByUserId: patientCoreHandlers.getPatientByUserId,
   getPatientPastAppointmentReport: patientCoreHandlers.getPatientPastAppointmentReport,
   getPatientAppointments: patientCoreHandlers.getPatientAppointments,
+  getPatientAppointmentRequests: patientCoreHandlers.getPatientAppointmentRequests,
   getPatientNewAppointmentPrefill: patientIntakeHandlers.getPatientNewAppointmentPrefill,
   createPatientNewAppointmentRequest: patientIntakeHandlers.createPatientNewAppointmentRequest,
   getPatientPrimaryDentist: patientCoreHandlers.getPatientPrimaryDentist,
@@ -174,8 +287,15 @@ const patientPortalRoutes = createPatientPortalRoutes({
   getPatientById: patientCoreHandlers.getPatientById,
   loginUser: patientCoreHandlers.loginUser,
   checkPatientEmail: patientCoreHandlers.checkPatientEmail,
+  getCancelReasons: patientCoreHandlers.getCancelReasons,
+  cancelPatientAppointment: patientCoreHandlers.cancelPatientAppointment,
+  getDepartments: patientCoreHandlers.getDepartments,
+  getInsuranceCompanies: patientCoreHandlers.getInsuranceCompanies,
+  updatePatientProfile: patientCoreHandlers.updatePatientProfile,
+  addPatientInsurance: patientCoreHandlers.addPatientInsurance,
   registerPatient: patientIntakeHandlers.registerPatient,
   getPainSymptoms: patientIntakeHandlers.getPainSymptoms,
+  getLocations: patientIntakeHandlers.getLocations,
   getPreferredAppointmentAvailability: appointmentPreferenceHandlers.getPreferredAppointmentAvailability,
   getAppointmentPreferenceRequests: appointmentPreferenceHandlers.getAppointmentPreferenceRequests,
   getAppointmentPreferenceRequestById: appointmentPreferenceHandlers.getAppointmentPreferenceRequestById,
@@ -243,12 +363,42 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Health check
-  if (parsedUrl.pathname === '/' && method === 'GET') {
+  // Health check (API only)
+  if (parsedUrl.pathname === '/api/health' && method === 'GET') {
     return sendJSON(res, 200, { status: 'Medical Clinic API is running' });
   }
 
-  // 404 for undefined routes
+  // Serve React build in production
+  const buildDir = pathModule.join(__dirname, 'clinic-medical', 'dist');
+  if (fs.existsSync(buildDir)) {
+    const MIME_TYPES = {
+      '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
+      '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2',
+      '.ttf': 'font/ttf', '.webp': 'image/webp'
+    };
+
+    // Try to serve the exact static file
+    const filePath = pathModule.join(buildDir, parsedUrl.pathname);
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const ext = pathModule.extname(filePath).toLowerCase();
+      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+      const content = fs.readFileSync(filePath);
+      res.writeHead(200, { 'Content-Type': contentType });
+      return res.end(content);
+    }
+
+    // For all other routes, serve index.html (React Router handles client-side routing)
+    const indexPath = pathModule.join(buildDir, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      const html = fs.readFileSync(indexPath, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      return res.end(html);
+    }
+  }
+
+  // 404 for undefined routes (no build available)
   sendJSON(res, 404, { error: 'Route not found' });
 });
 

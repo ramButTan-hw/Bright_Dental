@@ -10,8 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
         'ADMIN',
         'PATIENT',
         'DOCTOR',
-        'RECEPTIONIST',
-        'HYGIENIST'
+        'RECEPTIONIST'
     ) NOT NULL,
     portal_last_login TIMESTAMP,
     is_deleted TINYINT NOT NULL DEFAULT 0
@@ -24,12 +23,10 @@ CREATE TABLE IF NOT EXISTS patients (
     p_first_name VARCHAR(50) NOT NULL,
     p_last_name VARCHAR(50) NOT NULL,
     p_dob DATE NOT NULL,
-    p_gender INT,
+    p_gender ENUM('Male', 'Female', 'Non-binary', 'Other', 'Prefer not to say'),
     p_race INT,
     p_race_other_text VARCHAR(100),
     p_ethnicity INT,
-    p_phone VARCHAR(20),
-    p_email VARCHAR(100) UNIQUE NOT NULL,
     p_ssn VARCHAR(11),
     p_drivers_license VARCHAR(50),
     p_emergency_contact_name VARCHAR(100),
@@ -56,6 +53,9 @@ CREATE TABLE IF NOT EXISTS locations (
     loc_street_no VARCHAR(20) NOT NULL,
     loc_street_name VARCHAR(100) NOT NULL,
     loc_zip_code VARCHAR(10) NOT NULL,
+    loc_phone VARCHAR(20),
+    loc_email VARCHAR(100),
+    loc_fax VARCHAR(20),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -128,6 +128,8 @@ CREATE TABLE IF NOT EXISTS staff (
     s_state CHAR(2),
     s_zipcode CHAR(10),
     s_country VARCHAR(40),
+    emergency_contact_name VARCHAR(100),
+    emergency_contact_phone VARCHAR(20),
     profile_image LONGBLOB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
@@ -140,23 +142,29 @@ CREATE TABLE IF NOT EXISTS staff (
     CONSTRAINT chk_staff_not_self_supervisor CHECK (s_staff_id IS NULL OR s_staff_id <> staff_id)
 );
 
+ALTER TABLE staff
+    ADD COLUMN IF NOT EXISTS emergency_contact_name VARCHAR(100) AFTER s_country,
+    ADD COLUMN IF NOT EXISTS emergency_contact_phone VARCHAR(20) AFTER emergency_contact_name;
+
 CREATE TABLE IF NOT EXISTS staff_locations (
     staff_locations_id INT AUTO_INCREMENT PRIMARY KEY,
     staff_id INT NOT NULL,
     location_id INT NOT NULL,
+    is_primary TINYINT(1) NOT NULL DEFAULT 0,
     FOREIGN KEY (staff_id) REFERENCES staff(staff_id),
     FOREIGN KEY (location_id) REFERENCES locations(location_id)
 );
 
 CREATE TABLE IF NOT EXISTS doctors (
-    doctor_id INT AUTO_INCREMENT PRIMARY KEY,
+    doctor_id INT NOT NULL AUTO_INCREMENT,
     npi VARCHAR(20) NOT NULL,
     staff_id INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
-    UNIQUE KEY uq_doctors_npi (npi),
+    PRIMARY KEY (npi),
+    UNIQUE KEY uq_doctors_doctor_id (doctor_id),
     UNIQUE KEY uq_doctors_staff (staff_id),
     FOREIGN KEY (staff_id) REFERENCES staff(staff_id)
 );
@@ -208,7 +216,8 @@ INSERT INTO appointment_statuses (status_name, display_name, color_code, created
 ('COMPLETED', 'Completed', '#50E3C2', 'SYSTEM'),
 ('CANCELLED', 'Cancelled', '#D0021B', 'SYSTEM'),
 ('NO_SHOW', 'No Show', '#F5A623', 'SYSTEM'),
-('RESCHEDULED', 'Rescheduled', '#B8E986', 'SYSTEM')
+('RESCHEDULED', 'Rescheduled', '#B8E986', 'SYSTEM'),
+('CHECKED_IN', 'Checked In', '#9013FE', 'SYSTEM')
 ON DUPLICATE KEY UPDATE display_name = VALUES(display_name);
 
 CREATE TABLE IF NOT EXISTS treatment_statuses (
@@ -280,15 +289,38 @@ CREATE TABLE IF NOT EXISTS insurance_companies (
     updated_by VARCHAR(50)
 );
 
-INSERT INTO insurance_companies (company_name, created_by) VALUES
-('Aetna', 'SYSTEM'),
-('Blue Cross Blue Shield', 'SYSTEM'),
-('Cigna', 'SYSTEM'),
-('Delta Dental', 'SYSTEM'),
-('Humana', 'SYSTEM'),
-('MetLife', 'SYSTEM'),
-('UnitedHealthcare', 'SYSTEM')
-ON DUPLICATE KEY UPDATE company_name = VALUES(company_name);
+INSERT INTO insurance_companies (company_name, address, city, state, zipcode, phone_number, fax_number, website, contact_name, created_by) VALUES
+('Aetna', 'PO Box 14079', 'Lexington', 'KY', '40512', '1-800-872-3862', '1-859-455-8650', 'www.aetna.com', 'Dental Member Services', 'SYSTEM'),
+('Blue Cross Blue Shield', 'PO Box 2291', 'Chicago', 'IL', '60690', '1-800-262-2583', '1-312-938-6100', 'www.bcbs.com', 'Dental Claims Dept', 'SYSTEM'),
+('Cigna', 'PO Box 188037', 'Chattanooga', 'TN', '37422', '1-800-244-6224', '1-860-226-2350', 'www.cigna.com', 'Dental Provider Services', 'SYSTEM'),
+('Delta Dental', 'PO Box 9089', 'Farmington Hills', 'MI', '48333', '1-800-524-0149', '1-248-559-5195', 'www.deltadental.com', 'Claims Department', 'SYSTEM'),
+('Humana', 'PO Box 14601', 'Lexington', 'KY', '40512', '1-800-233-4013', '1-502-580-3674', 'www.humana.com', 'Dental Services', 'SYSTEM'),
+('MetLife', 'PO Box 981282', 'El Paso', 'TX', '79998', '1-800-275-4638', '1-212-578-6211', 'www.metlife.com', 'Dental Claims', 'SYSTEM'),
+('UnitedHealthcare', 'PO Box 30567', 'Salt Lake City', 'UT', '84130', '1-800-328-5979', '1-801-938-4001', 'www.uhc.com', 'Dental Member Services', 'SYSTEM')
+ON DUPLICATE KEY UPDATE
+  address = VALUES(address),
+  city = VALUES(city),
+  state = VALUES(state),
+  zipcode = VALUES(zipcode),
+  phone_number = VALUES(phone_number),
+  fax_number = VALUES(fax_number),
+  website = VALUES(website),
+  contact_name = VALUES(contact_name);
+
+CREATE TABLE IF NOT EXISTS insurance_coverage (
+    coverage_id INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT NOT NULL,
+    procedure_code VARCHAR(20) NOT NULL,
+    coverage_percent DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+    copay_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (company_id) REFERENCES insurance_companies(company_id),
+    FOREIGN KEY (procedure_code) REFERENCES ada_procedure_codes(procedure_code),
+    UNIQUE KEY uq_coverage_company_procedure (company_id, procedure_code)
+);
 
 CREATE TABLE IF NOT EXISTS pharmacies (
     pharm_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -304,6 +336,20 @@ CREATE TABLE IF NOT EXISTS pharmacies (
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS patient_pharmacies (
+    patient_pharmacy_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    pharm_id INT NOT NULL,
+    is_primary TINYINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (pharm_id) REFERENCES pharmacies(pharm_id),
+    UNIQUE KEY uq_patient_pharmacy (patient_id, pharm_id)
 );
 
 CREATE TABLE IF NOT EXISTS appointment_slots (
@@ -368,9 +414,7 @@ CREATE TABLE IF NOT EXISTS appointment_preference_requests (
     patient_id INT NOT NULL,
     preferred_date DATE NOT NULL,
     preferred_time TIME NOT NULL,
-    preferred_location VARCHAR(60),
-    available_days VARCHAR(100),
-    available_times VARCHAR(255),
+    location_id INT,
     appointment_reason VARCHAR(255),
     request_status ENUM('PREFERRED_PENDING', 'ASSIGNED', 'CANCELLED') NOT NULL DEFAULT 'PREFERRED_PENDING',
     assigned_doctor_id INT,
@@ -383,11 +427,13 @@ CREATE TABLE IF NOT EXISTS appointment_preference_requests (
     updated_by VARCHAR(50),
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (assigned_doctor_id) REFERENCES doctors(doctor_id) ON DELETE SET NULL ON UPDATE CASCADE,
+    FOREIGN KEY (location_id) REFERENCES locations(location_id) ON DELETE SET NULL ON UPDATE CASCADE,
     INDEX idx_pref_requests_patient (patient_id),
     INDEX idx_pref_requests_date_time (preferred_date, preferred_time),
     INDEX idx_pref_requests_status (request_status),
     INDEX idx_pref_requests_assigned_doctor (assigned_doctor_id)
 );
+
 
 SET @has_pref_assigned_date := (
     SELECT COUNT(*)
@@ -461,58 +507,7 @@ PREPARE add_pref_available_times_stmt FROM @add_pref_available_times_sql;
 EXECUTE add_pref_available_times_stmt;
 DEALLOCATE PREPARE add_pref_available_times_stmt;
 
-CREATE TABLE IF NOT EXISTS location_business_hours (
-    location_hours_id INT AUTO_INCREMENT PRIMARY KEY,
-    location_id INT NOT NULL,
-    day_of_week TINYINT NOT NULL,
-    open_time TIME,
-    close_time TIME,
-    is_open BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(50),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50),
-    FOREIGN KEY (location_id) REFERENCES locations(location_id) ON DELETE CASCADE ON UPDATE CASCADE,
-    UNIQUE KEY uq_location_day (location_id, day_of_week),
-    INDEX idx_location_hours_location (location_id),
-    CONSTRAINT chk_location_day_range CHECK (day_of_week BETWEEN 0 AND 6),
-    CONSTRAINT chk_location_open_close CHECK (
-        (is_open = 0 AND open_time IS NULL AND close_time IS NULL) OR
-        (is_open = 1 AND open_time IS NOT NULL AND close_time IS NOT NULL AND open_time < close_time)
-    )
-);
 
-CREATE TABLE IF NOT EXISTS doctor_weekly_availability (
-    availability_id INT AUTO_INCREMENT PRIMARY KEY,
-    doctor_id INT NOT NULL,
-    location_id INT,
-    day_of_week TINYINT NOT NULL,
-    start_time TIME NOT NULL,
-    end_time TIME NOT NULL,
-    slot_duration_minutes INT NOT NULL DEFAULT 30,
-    break_start_time TIME,
-    break_end_time TIME,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    effective_start_date DATE,
-    effective_end_date DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(50),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50),
-    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id) ON DELETE CASCADE ON UPDATE CASCADE,
-    FOREIGN KEY (location_id) REFERENCES locations(location_id) ON DELETE SET NULL ON UPDATE CASCADE,
-    INDEX idx_doctor_availability_doctor_day (doctor_id, day_of_week),
-    INDEX idx_doctor_availability_location (location_id),
-    CONSTRAINT chk_doctor_day_range CHECK (day_of_week BETWEEN 0 AND 6),
-    CONSTRAINT chk_doctor_shift_times CHECK (start_time < end_time),
-    CONSTRAINT chk_doctor_break_times CHECK (
-        (break_start_time IS NULL AND break_end_time IS NULL) OR
-        (break_start_time IS NOT NULL AND break_end_time IS NOT NULL AND break_start_time < break_end_time)
-    ),
-    CONSTRAINT chk_doctor_effective_dates CHECK (
-        effective_end_date IS NULL OR effective_start_date IS NULL OR effective_start_date <= effective_end_date
-    )
-);
 
 CREATE TABLE IF NOT EXISTS doctor_time_off (
     time_off_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -552,49 +547,6 @@ CREATE TABLE IF NOT EXISTS staff_time_off_requests (
     CONSTRAINT chk_staff_time_off_range CHECK (start_datetime < end_datetime)
 );
 
-CREATE TABLE IF NOT EXISTS location_closures (
-    closure_id INT AUTO_INCREMENT PRIMARY KEY,
-    location_id INT,
-    closure_date DATE NOT NULL,
-    close_start_time TIME,
-    close_end_time TIME,
-    is_full_day BOOLEAN NOT NULL DEFAULT TRUE,
-    closure_reason VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(50),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50),
-    FOREIGN KEY (location_id) REFERENCES locations(location_id) ON DELETE CASCADE ON UPDATE CASCADE,
-    UNIQUE KEY uq_location_closure (location_id, closure_date, close_start_time, close_end_time),
-    INDEX idx_location_closure_date (closure_date),
-    CONSTRAINT chk_closure_window CHECK (
-        (is_full_day = 1 AND close_start_time IS NULL AND close_end_time IS NULL) OR
-        (is_full_day = 0 AND close_start_time IS NOT NULL AND close_end_time IS NOT NULL AND close_start_time < close_end_time)
-    )
-);
-
-CREATE OR REPLACE VIEW vw_available_appointment_slots AS
-SELECT
-    s.slot_id,
-    s.slot_date,
-    s.slot_start_time,
-    s.slot_end_time,
-    s.duration_minutes,
-    s.slot_type,
-    s.current_bookings,
-    s.max_patients,
-    (s.max_patients - s.current_bookings) AS remaining_capacity,
-    s.is_available,
-    d.doctor_id,
-    CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-    l.location_id,
-    CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location_address
-FROM appointment_slots s
-JOIN doctors d ON s.doctor_id = d.doctor_id
-LEFT JOIN staff st ON d.staff_id = st.staff_id
-LEFT JOIN locations l ON s.location_id = l.location_id
-WHERE s.is_available = TRUE
-  AND s.current_bookings < s.max_patients;
 
 CREATE TABLE IF NOT EXISTS insurance (
     insurance_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -687,6 +639,9 @@ CREATE TABLE IF NOT EXISTS prescriptions (
     strength VARCHAR(50),
     dosage VARCHAR(50),
     date_prescribed DATETIME,
+    start_date DATE,
+    end_date DATE,
+    frequency VARCHAR(100),
     quantity INT,
     refills INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -742,20 +697,6 @@ CREATE TABLE IF NOT EXISTS dental_lab_orders (
     CHECK (status IN ('Sent', 'In Production', 'Received', 'Delivered', 'Cancelled'))
 );
 
-CREATE TABLE IF NOT EXISTS vitals (
-    vitals_id INT AUTO_INCREMENT PRIMARY KEY,
-    appointment_id INT NOT NULL,
-    blood_pressure_systolic INT,
-    blood_pressure_diastolic INT,
-    heart_rate INT,
-    oxygen_saturation INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(50),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50),
-    FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id),
-    CHECK (heart_rate > 0 AND heart_rate < 300)
-);
 
 CREATE TABLE IF NOT EXISTS medical_alerts (
     alert_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1500,46 +1441,9 @@ DELIMITER ;
 
 
 
--- VIEWS - OPERATIONAL & REPORTING
+-- VIEWS - REPORTING
 
--- View 1: Organizational hierarchy
-CREATE OR REPLACE VIEW vw_staff_hierarchy AS
-SELECT
-    e.staff_id AS employee_id,
-    e.first_name AS employee_first_name,
-    e.last_name AS employee_last_name,
-    CONCAT(e.first_name, ' ', e.last_name) AS employee_full_name,
-    e.s_staff_id AS supervisor_id,
-    s.first_name AS supervisor_first_name,
-    s.last_name AS supervisor_last_name,
-    COALESCE(CONCAT(s.first_name, ' ', s.last_name), 'No Supervisor') AS supervisor_full_name,
-    e.phone_number,
-    e.salary,
-    e.created_at
-FROM staff e
-LEFT JOIN staff s ON e.s_staff_id = s.staff_id
-ORDER BY e.s_staff_id, e.last_name, e.first_name;
-
--- View 2: Doctors with their departments
-CREATE OR REPLACE VIEW vw_doctors_by_department AS
-SELECT
-    d.doctor_id,
-    s.staff_id,
-    CONCAT(s.first_name, ' ', s.last_name) AS doctor_name,
-    s.phone_number,
-    dept.department_id,
-    dept.department_name,
-    dept.description AS department_description,
-    s.created_at AS joined_date
-FROM doctors d
-LEFT JOIN staff s ON d.staff_id = s.staff_id
-LEFT JOIN specialties_department sd ON d.doctor_id = sd.doctor_id
-LEFT JOIN departments dept ON sd.department_id = dept.department_id
-ORDER BY dept.department_name, s.last_name, s.first_name;
-
--- REPORT VIEWS
-
--- Report 1: Patient Billing Summary
+-- Patient Billing Summary
 CREATE OR REPLACE VIEW vw_report_patient_billing AS
 SELECT
     p.patient_id,
@@ -1560,108 +1464,4 @@ GROUP BY p.patient_id, p.p_first_name, p.p_last_name, p.p_email, p.p_phone, p.cr
 ORDER BY patient_due DESC;
 
 
--- Report 2: Doctor Appointment Utilization & Revenue
-CREATE OR REPLACE VIEW vw_report_doctor_utilization AS
-SELECT
-    d.doctor_id,
-    s.staff_id,
-    CONCAT(s.first_name, ' ', s.last_name) AS doctor_name,
-    COUNT(DISTINCT a.appointment_id) AS total_appointments,
-    SUM(CASE WHEN ast.status_name = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_appointments,
-    SUM(CASE WHEN ast.status_name = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled_appointments,
-    ROUND(100.0 * SUM(CASE WHEN ast.status_name = 'COMPLETED' THEN 1 ELSE 0 END) / 
-        NULLIF(COUNT(DISTINCT a.appointment_id), 0), 2) AS completion_rate_percent,
-    COALESCE(SUM(i.amount), 0) AS total_revenue,
-    COALESCE(AVG(i.amount), 0) AS avg_invoice_value,
-    MIN(a.appointment_date) AS first_appointment,
-    MAX(a.appointment_date) AS last_appointment
-FROM doctors d
-LEFT JOIN staff s ON d.staff_id = s.staff_id
-LEFT JOIN appointments a ON d.doctor_id = a.doctor_id
-LEFT JOIN appointment_statuses ast ON a.status_id = ast.status_id
-LEFT JOIN invoices i ON a.appointment_id = i.appointment_id
-GROUP BY d.doctor_id, s.staff_id, s.first_name, s.last_name
-ORDER BY total_revenue DESC;
-
-
--- Report 3: Treatment Plans Progress
-CREATE OR REPLACE VIEW vw_report_treatment_progress AS
-SELECT
-    tp.plan_id,
-    CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
-    CONCAT(s.first_name, ' ', s.last_name) AS doctor_name,
-    apc.procedure_code,
-    apc.description AS procedure_name,
-    apc.category AS procedure_category,
-    tp.tooth_number,
-    tp.surface,
-    tst.display_name AS treatment_status,
-    tp.estimated_cost,
-    COALESCE(SUM(i.amount), 0) AS invoiced_amount,
-    tp.created_at AS plan_created,
-    COUNT(DISTINCT a.appointment_id) AS total_appointments
-FROM treatment_plans tp
-LEFT JOIN patients p ON tp.patient_id = p.patient_id
-LEFT JOIN doctors d ON tp.doctor_id = d.doctor_id
-LEFT JOIN staff s ON d.staff_id = s.staff_id
-LEFT JOIN ada_procedure_codes apc ON tp.procedure_code = apc.procedure_code
-LEFT JOIN treatment_statuses tst ON tp.status_id = tst.status_id
-LEFT JOIN appointments a ON a.patient_id = tp.patient_id AND a.doctor_id = tp.doctor_id
-LEFT JOIN invoices i ON a.appointment_id = i.appointment_id
-GROUP BY tp.plan_id, p.p_first_name, p.p_last_name, s.first_name, s.last_name, apc.procedure_code, apc.description, apc.category, tp.tooth_number, tp.surface, tst.display_name, tp.estimated_cost, tp.created_at
-ORDER BY tst.status_name, tp.created_at DESC;
-
-
--- Report 4: Single Patient Treatment History
-CREATE OR REPLACE VIEW vw_report_patient_treatment_history AS
-SELECT
-    p.patient_id,
-    CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
-    tp.plan_id,
-    CONCAT(s.first_name, ' ', s.last_name) AS doctor_name,
-    apc.procedure_code,
-    apc.description AS procedure_name,
-    tp.tooth_number,
-    tp.surface,
-    tst.display_name AS treatment_status,
-    tp.estimated_cost,
-    a.appointment_date,
-    ast.display_name AS appointment_status,
-    i.payment_status,
-    i.amount AS invoice_amount,
-    tp.created_at
-FROM treatment_plans tp
-LEFT JOIN patients p ON tp.patient_id = p.patient_id
-LEFT JOIN doctors d ON tp.doctor_id = d.doctor_id
-LEFT JOIN staff s ON d.staff_id = s.staff_id
-LEFT JOIN ada_procedure_codes apc ON tp.procedure_code = apc.procedure_code
-LEFT JOIN treatment_statuses tst ON tp.status_id = tst.status_id
-LEFT JOIN appointments a ON a.patient_id = p.patient_id AND a.doctor_id = d.doctor_id
-LEFT JOIN appointment_statuses ast ON a.status_id = ast.status_id
-LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
-ORDER BY p.patient_id, a.appointment_date DESC;
-
-
--- Report 5: Popular Procedures Report
-CREATE OR REPLACE VIEW vw_report_popular_procedures AS
-SELECT
-    tp.procedure_code,
-    apc.description AS procedure_name,
-    apc.category AS procedure_category,
-    COUNT(DISTINCT tp.plan_id) AS total_procedures,
-    COUNT(DISTINCT tp.patient_id) AS unique_patients,
-    SUM(CASE WHEN tst.status_name = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_count,
-    ROUND(100.0 * SUM(CASE WHEN tst.status_name = 'COMPLETED' THEN 1 ELSE 0 END) / 
-        NULLIF(COUNT(DISTINCT tp.plan_id), 0), 2) AS completion_rate_percent,
-    ROUND(AVG(tp.estimated_cost), 2) AS avg_estimated_cost,
-    ROUND(COALESCE(AVG(i.amount), 0), 2) AS avg_actual_cost,
-    COALESCE(SUM(i.amount), 0) AS total_revenue_generated
-FROM treatment_plans tp
-LEFT JOIN ada_procedure_codes apc ON tp.procedure_code = apc.procedure_code
-LEFT JOIN treatment_statuses tst ON tp.status_id = tst.status_id
-LEFT JOIN appointments a ON a.patient_id = tp.patient_id AND a.doctor_id = tp.doctor_id
-LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
-WHERE tp.procedure_code IS NOT NULL
-GROUP BY tp.procedure_code, apc.description, apc.category
-ORDER BY total_procedures DESC, total_revenue_generated DESC;
 

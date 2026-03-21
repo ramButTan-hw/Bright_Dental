@@ -33,16 +33,52 @@ function createPatientBillingRoutes({ pool, queries, sendJSON }) {
         return sendJSON(res, 404, { error: 'Invoice not found' });
       }
 
+      const invoiceRow = invoiceResults[0];
+      const appointmentId = Number(invoiceRow.appointment_id || 0);
+
       pool.query(queries.getInvoicePayments, [invoiceId], (paymentsErr, paymentResults) => {
         if (paymentsErr) {
           console.error('Error fetching invoice payments:', paymentsErr);
           return sendJSON(res, 500, { error: 'Database error' });
         }
 
-        sendJSON(res, 200, {
-          invoice: invoiceResults[0],
-          payments: paymentResults || []
-        });
+        // Fetch treatment line items with insurance coverage
+        pool.query(
+          `SELECT
+            tp.plan_id,
+            tp.procedure_code,
+            COALESCE(apc.description, 'N/A') AS procedure_description,
+            apc.category AS procedure_category,
+            tp.tooth_number,
+            tp.surface,
+            tp.estimated_cost,
+            tp.notes,
+            COALESCE(ic.coverage_percent, 0) AS coverage_percent,
+            COALESCE(ic.copay_amount, 0) AS copay_amount,
+            ROUND(COALESCE(tp.estimated_cost, 0) * COALESCE(ic.coverage_percent, 0) / 100, 2) AS insurance_covered,
+            ROUND(COALESCE(tp.estimated_cost, 0) - (COALESCE(tp.estimated_cost, 0) * COALESCE(ic.coverage_percent, 0) / 100) + COALESCE(ic.copay_amount, 0), 2) AS patient_owes
+          FROM treatment_plans tp
+          LEFT JOIN ada_procedure_codes apc ON apc.procedure_code = tp.procedure_code
+          LEFT JOIN insurance ins ON ins.insurance_id = ?
+          LEFT JOIN insurance_coverage ic ON ic.company_id = ins.company_id AND ic.procedure_code = tp.procedure_code
+          WHERE tp.patient_id = ? AND tp.start_date = (
+            SELECT DATE(a.appointment_date) FROM appointments a WHERE a.appointment_id = ? LIMIT 1
+          )
+          ORDER BY tp.plan_id ASC`,
+          [invoiceRow.insurance_id || 0, patientId, appointmentId],
+          (treatmentErr, treatmentRows) => {
+            if (treatmentErr) {
+              console.error('Error fetching invoice treatments:', treatmentErr);
+              // Non-fatal — still return invoice without treatments
+            }
+
+            sendJSON(res, 200, {
+              invoice: invoiceRow,
+              payments: paymentResults || [],
+              treatments: treatmentRows || []
+            });
+          }
+        );
       });
     });
   }

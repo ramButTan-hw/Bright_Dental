@@ -1,9 +1,0 @@
--- Medical Clinic Database Schema
--- Tables:
--- Doctors
--- Patients
--- Offices
--- Appointments
--- Doctor_Office
--- Doctor_Patient
--- Specialist_Approvals

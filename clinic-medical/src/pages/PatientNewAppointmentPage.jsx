@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { getPatientPortalSession, resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/PatientRegistrationPage.css';
 
@@ -91,6 +91,16 @@ const ALLERGIES_INITIAL_STATE = ALLERGY_OPTIONS.reduce((acc, item) => {
   return acc;
 }, {});
 
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 12000) => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
+
 function formatAsIsoLocalDate(date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
@@ -123,6 +133,7 @@ function normalizeLegacyLocation(locationValue) {
 
 function PatientNewAppointmentPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const session = useMemo(() => getPatientPortalSession(), []);
   const API_BASE_URL = resolveApiBaseUrl();
 
@@ -130,11 +141,14 @@ function PatientNewAppointmentPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [isReschedule, setIsReschedule] = useState(false);
+  const [appointmentId, setAppointmentId] = useState(null);
 
   const [details, setDetails] = useState({
     location: '',
     reason: ''
   });
+  const [departments, setDepartments] = useState([]);
 
   const [medicalHistory, setMedicalHistory] = useState(MEDICAL_HISTORY_INITIAL_STATE);
   const [hasAllergies, setHasAllergies] = useState(false);
@@ -200,13 +214,17 @@ function PatientNewAppointmentPage() {
   );
 
   useEffect(() => {
+    if (location.state?.isReschedule) {
+        setIsReschedule(true);
+        setAppointmentId(location.state.appointmentId);
+      }
     if (!session?.patientId) {
       navigate('/patient-login');
       return;
     }
 
     const fetchPainSymptoms = async () => {
-      const response = await fetch(`${API_BASE_URL}/api/intake/pain-symptoms`);
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/intake/pain-symptoms`);
       if (!response.ok) {
         return [];
       }
@@ -230,14 +248,19 @@ function PatientNewAppointmentPage() {
       setLoadingPrefill(true);
       setError('');
       try {
-        const [painRows, prefillRes] = await Promise.all([
+        const [painRows, prefillRes, patientRes, deptRes] = await Promise.all([
           fetchPainSymptoms(),
-          fetch(`${API_BASE_URL}/api/patients/${session.patientId}/new-appointment-prefill`)
+          fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/new-appointment-prefill`),
+          fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}`),
+          fetchWithTimeout(`${API_BASE_URL}/api/departments`)
         ]);
 
         const prefillPayload = prefillRes.ok ? await prefillRes.json() : {};
         const snapshot = prefillPayload?.snapshot || {};
         const latestPreference = prefillPayload?.latestPreference || {};
+        const patientData = patientRes.ok ? await patientRes.json() : {};
+        const deptData = deptRes.ok ? await deptRes.json() : [];
+        setDepartments(Array.isArray(deptData) ? deptData : []);
 
         setPainAssessment(Array.isArray(snapshot?.painAssessment) && snapshot.painAssessment.length > 0
           ? snapshot.painAssessment
@@ -305,8 +328,18 @@ function PatientNewAppointmentPage() {
         const preferredTime = String(latestPreference?.preferred_time || '').slice(0, 5);
         const preferredTimesFromLatest = parseCsv(latestPreference?.available_times);
 
+        let autoLocation = normalizeLegacyLocation(latestPreference?.preferred_location);
+        if (!autoLocation && patientData?.p_city) {
+          const city = String(patientData.p_city).trim().toLowerCase();
+          if (city.includes('sugar land')) {
+            autoLocation = '14000 University Blvd, Sugar Land, TX 77479';
+          } else if (city.includes('houston')) {
+            autoLocation = '4302 University Dr, Houston, TX 77004';
+          }
+        }
+
         setDetails({
-          location: normalizeLegacyLocation(latestPreference?.preferred_location),
+          location: autoLocation,
           reason: latestPreference?.appointment_reason || ''
         });
 
@@ -317,14 +350,15 @@ function PatientNewAppointmentPage() {
           preferredTimes: preferredTimesFromLatest.map((value) => value.slice(0, 5))
         });
       } catch (loadErr) {
-        setError(loadErr.message || 'Unable to load your previous intake details.');
+        const isTimeout = loadErr?.name === 'AbortError';
+        setError(isTimeout ? 'Prefill request timed out. Please refresh and try again.' : (loadErr.message || 'Unable to load your previous intake details.'));
       } finally {
         setLoadingPrefill(false);
       }
     };
 
     loadPrefill();
-  }, [API_BASE_URL, navigate, session?.patientId]);
+  }, [API_BASE_URL, navigate, session?.patientId, location.state]);
 
   const shouldShowOtherMedicalText = useMemo(
     () => Boolean(medicalHistory.other || medicalHistory.preMedOther || (hasAllergies && allergies.allergyOther)),
@@ -518,7 +552,9 @@ function PatientNewAppointmentPage() {
           tobacco,
           caffeine,
           painAssessment,
-          appointmentSelection
+          appointmentSelection,
+          isReschedule,
+          appointmentId
         })
       });
 
@@ -556,7 +592,14 @@ function PatientNewAppointmentPage() {
 
           <div className="form-grid">
             <label>Preferred Location<select name="location" value={details.location} onChange={updateDetails} required><option value="" disabled>Select a location</option><option value="4302 University Dr, Houston, TX 77004">4302 University Dr, Houston, TX 77004</option><option value="14000 University Blvd, Sugar Land, TX 77479">14000 University Blvd, Sugar Land, TX 77479</option><option value="1 Main St, Houston, TX 77002">1 Main St, Houston, TX 77002</option></select></label>
-            <label className="full-width">Reason for Visit<textarea name="reason" rows="3" placeholder="Tell us how we can help you today" value={details.reason} onChange={updateDetails} required /></label>
+            <label>Department
+              <select name="reason" value={details.reason} onChange={updateDetails} required>
+                <option value="" disabled>Select department</option>
+                {departments.map((dept) => (
+                  <option key={dept.department_id} value={dept.department_name}>{dept.department_name}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="form-sections">
