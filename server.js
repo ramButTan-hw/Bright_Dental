@@ -123,7 +123,12 @@ function ensureDefaultClinicLocations() {
   });
 }
 
-ensureDefaultClinicLocations();
+// Only seed locations if none exist (prevents duplicates when data is already loaded)
+pool.query('SELECT COUNT(*) AS cnt FROM locations', (err, rows) => {
+  if (!err && rows[0].cnt === 0) {
+    ensureDefaultClinicLocations();
+  }
+});
 ensureDoctorNpiPrimaryKey();
 
 // Ensure location contact columns exist and seed contact info
