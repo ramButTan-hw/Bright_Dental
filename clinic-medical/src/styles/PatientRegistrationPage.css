@@ -1,0 +1,512 @@
+.patient-registration-page {
+  width: 100%;
+  min-height: calc(100vh - 140px);
+  padding: 110px 1.5rem 4rem;
+  background: linear-gradient(180deg, #f3f8f7 0%, #ffffff 35%);
+}
+
+.registration-hero {
+  max-width: 960px;
+  margin: 0 auto 2rem;
+  text-align: center;
+}
+
+.registration-label {
+  margin: 0;
+  color: #006a6a;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.registration-hero h1 {
+  margin: 0.75rem 0;
+  color: #181c1c;
+  font-size: 2.4rem;
+  font-family: 'Manrope', sans-serif;
+}
+
+.registration-hero p {
+  margin: 0 auto;
+  color: #3e4948;
+  max-width: 700px;
+  line-height: 1.6;
+}
+
+.registration-form-section {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.registration-form {
+  background: #ffffff;
+  border: none;
+  border-radius: 0.9rem;
+  padding: 2rem;
+  box-shadow: 0 4px 16px rgba(0, 80, 80, 0.08);
+}
+
+.sequence-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: #e8f6f6;
+  color: #005b5b;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+}
+
+.registration-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  color: #2d3837;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.registration-form input,
+.registration-form select,
+.registration-form textarea {
+  border: 1px solid #e2e8e6;
+  border-radius: 0.6rem;
+  padding: 0.75rem 0.85rem;
+  font-size: 0.95rem;
+  color: #1f2a29;
+  background: #fcfefe;
+}
+
+.registration-form input:focus,
+.registration-form select:focus,
+.registration-form textarea:focus {
+  outline: 2px solid #84d4d3;
+  border-color: #006a6a;
+}
+
+.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.identity-error {
+  margin-top: 1rem;
+  color: #b53030;
+  font-weight: 600;
+}
+
+.submit-success {
+  margin-top: 1rem;
+  color: #0f6b3f;
+  font-weight: 600;
+}
+
+.submit-btn {
+  border: none;
+  background: #005050;
+  color: #ffffff;
+  padding: 0.85rem 1.5rem;
+  border-radius: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.submit-btn:hover {
+  background: #006a6a;
+  box-shadow: 0 8px 18px rgba(0, 80, 80, 0.2);
+  transform: translateY(-1px);
+}
+
+.back-btn {
+  border: 1px solid #d9e4e2;
+  background: #ffffff;
+  color: #005050;
+  padding: 0.85rem 1.2rem;
+  border-radius: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-right: auto;
+}
+
+.back-btn:hover {
+  background: #f3f8f7;
+  border-color: #006a6a;
+}
+
+.form-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.form-section {
+  border: none;
+  padding: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.form-section legend {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1a2524;
+  margin-bottom: 0.5rem;
+  padding: 0;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.checkbox-grid label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.checkbox-grid input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+}
+
+.medicines-table,
+.tobacco-table,
+.pain-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+.medicines-table th,
+.tobacco-table th,
+.pain-table th {
+  background: #f3f8f7;
+  color: #1a2524;
+  font-weight: 600;
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e2e8e6;
+}
+
+.medicines-table td,
+.tobacco-table td,
+.pain-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #e2e8e6;
+}
+
+.medicines-table input,
+.tobacco-table input,
+.tobacco-table select,
+.pain-table select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.add-row-btn {
+  align-self: flex-start;
+  border: 1px solid #d9e4e2;
+  background: #ffffff;
+  color: #005050;
+  padding: 0.65rem 1rem;
+  border-radius: 0.6rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.add-row-btn:hover {
+  background: #f3f8f7;
+  border-color: #006a6a;
+}
+
+.tobacco-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.6rem;
+}
+
+.tobacco-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #e2e8e6;
+  border-radius: 0.6rem;
+  background: #fbfdfd;
+}
+
+.tobacco-option input[type='checkbox'] {
+  margin: 0;
+}
+
+.tobacco-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  margin-top: 1rem;
+}
+
+.tobacco-multi-details,
+.tobacco-quit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin-top: 0.85rem;
+}
+
+.preferred-appointment-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.25rem;
+}
+
+.preferred-appointment-heading {
+  margin: 0 0 0.55rem;
+  color: #1a2524;
+  font-weight: 700;
+}
+
+.preferred-calendar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.preferred-calendar-field span {
+  color: #334543;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.preferred-calendar-field input[type='date'] {
+  border: 1px solid #d7e5e3;
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.72rem;
+  font: inherit;
+  color: #1f2a29;
+  background: #fff;
+}
+
+.preferred-calendar-note,
+.preferred-date-capacity-note {
+  margin: 0.55rem 0 0;
+  color: #5b6766;
+  font-size: 0.88rem;
+}
+
+.preferred-inline-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: #334543;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.availability-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+
+.availability-chip {
+  border: 1px solid #d9e4e2;
+  border-radius: 0.6rem;
+  background: #ffffff;
+  color: #1f2a29;
+  padding: 0.55rem 0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+}
+
+.availability-chip input[type='checkbox'] {
+  margin: 0;
+}
+
+.availability-chip.active {
+  border-color: #006a6a;
+  background: #e8f6f6;
+}
+
+.preferred-date-list,
+.preferred-time-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.6rem;
+}
+
+.preferred-date-btn,
+.preferred-time-btn {
+  border: 1px solid #d9e4e2;
+  border-radius: 0.6rem;
+  background: #ffffff;
+  color: #1f2a29;
+  padding: 0.6rem;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.preferred-date-btn small,
+.preferred-time-btn small {
+  color: #5f6b6a;
+}
+
+.preferred-date-btn.active,
+.preferred-time-btn.active {
+  border-color: #006a6a;
+  background: #e8f6f6;
+}
+
+.preferred-date-btn:disabled,
+.preferred-time-btn:disabled {
+  background: #edf1f1;
+  color: #8b9695;
+  border-color: #d7dddd;
+  cursor: not-allowed;
+}
+.existing-account-link-wrap {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.existing-account-link {
+  color: #006a6a;
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s ease;
+}
+
+.existing-account-link:hover {
+  border-color: #006a6a;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 31, 31, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+
+.modal-card {
+  width: min(520px, 100%);
+  background: #ffffff;
+  border-radius: 0.9rem;
+  padding: 1.5rem;
+  border: none;
+  box-shadow: 0 20px 40px rgba(12, 31, 31, 0.22);
+}
+
+.modal-card h3 {
+  margin: 0 0 0.55rem;
+  color: #1a2524;
+}
+
+.modal-card p {
+  margin: 0;
+  color: #334240;
+  line-height: 1.6;
+}
+
+.modal-actions {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.modal-login-btn,
+.modal-secondary-btn {
+  flex: 1;
+  min-width: 180px;
+  border-radius: 0.65rem;
+  padding: 0.75rem 0.9rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.modal-login-btn {
+  background: #005050;
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.modal-secondary-btn {
+  border: 1px solid #c5d2d0;
+  background: #ffffff;
+  color: #005050;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .patient-registration-page {
+    padding: 95px 1rem 3rem;
+  }
+
+  .registration-hero h1 {
+    font-size: 1.85rem;
+  }
+
+  .registration-form {
+    padding: 1.25rem;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions {
+    flex-wrap: wrap;
+  }
+
+  .back-btn,
+  .submit-btn {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  .tobacco-details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preferred-appointment-grid {
+    grid-template-columns: 1fr;
+  }
+}

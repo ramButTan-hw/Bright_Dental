@@ -1,0 +1,283 @@
+.patient-portal-page {
+  min-height: calc(100vh - 180px);
+  padding: 115px 1.2rem 3rem;
+  background: linear-gradient(180deg, #f6fbfa 0%, #eef7f5 100%);
+  color: #1c2a28;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+}
+
+.portal-header-card,
+.portal-card {
+  width: min(1120px, 100%);
+  margin: 0 auto 1rem;
+  background: #ffffff;
+  border: 1px solid #d8e6e3;
+  border-radius: 0.9rem;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 10px 20px rgba(2, 45, 39, 0.06);
+}
+
+.portal-header-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.portal-label {
+  margin: 0;
+  color: #006a6a;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.portal-header-card h1 {
+  margin: 0.2rem 0;
+  font-size: 1.7rem;
+}
+
+.portal-grid {
+  width: min(1120px, 100%);
+  margin: 0 auto 1rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.portal-grid-small {
+  width: 100%;
+  margin: 0;
+}
+
+.portal-card h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.1rem;
+}
+
+.portal-card p {
+  margin: 0.25rem 0;
+  color: #3a4a48;
+}
+
+.portal-row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 0.65rem;
+}
+
+.portal-link-row {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.portal-primary-btn,
+.portal-secondary-btn,
+.portal-link-btn {
+  border: 1px solid #c7dcda;
+  border-radius: 0.6rem;
+  padding: 0.58rem 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.portal-primary-btn {
+  background: #006a6a;
+  border-color: #006a6a;
+  color: #ffffff;
+}
+
+.portal-secondary-btn,
+.portal-link-btn {
+  background: #ffffff;
+  color: #0e4f4f;
+}
+
+.portal-link-btn-disabled {
+  background: #f1f5f4;
+  color: #6e7f7d;
+  border-color: #d5e1df;
+  cursor: not-allowed;
+}
+
+.portal-secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.portal-error {
+  width: min(1120px, 100%);
+  margin: 0 auto 1rem;
+  color: #a53030;
+  background: #ffecec;
+  border: 1px solid #f3c5c5;
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.portal-loading {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  color: #576463;
+}
+
+.portal-success {
+  width: min(1120px, 100%);
+  margin: 0 auto 1rem;
+  color: #176441;
+  background: #e9fff4;
+  border: 1px solid #b9efd1;
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.portal-section-title {
+  margin-top: 1rem;
+}
+
+.portal-table-wrap {
+  overflow-x: auto;
+}
+
+.portal-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.portal-table th,
+.portal-table td {
+  padding: 0.62rem;
+  border-bottom: 1px solid #e4ecea;
+  text-align: left;
+  vertical-align: top;
+}
+
+.portal-table th {
+  background: #f3f8f7;
+  color: #1b2a28;
+  font-weight: 700;
+}
+
+.portal-inline-link {
+  color: #0e4f4f;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.portal-inline-link:hover {
+  text-decoration: underline;
+}
+
+.portal-table-action {
+  border: 0;
+  background: transparent;
+  color: #0e4f4f;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.portal-table-action:hover {
+  text-decoration: underline;
+}
+
+.portal-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.portal-status-paid {
+  color: #155f3d;
+  background: #e9fff4;
+  border: 1px solid #b9efd1;
+}
+
+.portal-status-open {
+  color: #0e4f4f;
+  background: #ecf7f6;
+  border: 1px solid #c7dcda;
+}
+
+.portal-card-soft {
+  width: 100%;
+  margin: 0;
+  box-shadow: none;
+  background: #f9fcfb;
+}
+
+.portal-stat-label {
+  color: #60716f;
+  font-size: 0.86rem;
+  margin: 0;
+}
+
+.portal-stat-value {
+  margin: 0.2rem 0 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #1f2d2b;
+}
+
+.portal-payment-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.portal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.portal-field span {
+  font-weight: 700;
+  color: #1f2d2b;
+}
+
+.portal-field input,
+.portal-field select,
+.portal-field textarea {
+  border: 1px solid #c7dcda;
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.6rem;
+  font: inherit;
+  color: #1c2a28;
+  background: #fff;
+}
+
+.portal-field-full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .portal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-payment-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .patient-portal-page {
+    padding-top: 95px;
+  }
+
+  .portal-header-card,
+  .portal-row-between {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

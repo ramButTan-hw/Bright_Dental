@@ -1,0 +1,160 @@
+.dentist-profile-page {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 6.5rem 1rem 2.5rem;
+  color: #102624;
+}
+
+.dentist-profile-panel {
+  background: #ffffff;
+  border: 1px solid #d2e4e1;
+  border-radius: 14px;
+  box-shadow: 0 8px 18px rgba(6, 55, 53, 0.08);
+  padding: 1.2rem;
+}
+
+.dentist-profile-panel h1 {
+  margin: 0;
+}
+
+.dentist-profile-subtle {
+  color: #46625f;
+  margin-bottom: 1.5rem;
+}
+
+.dentist-profile-content {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2rem;
+}
+
+.dentist-profile-photo-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.dentist-photo-preview-wrapper {
+  position: relative;
+}
+
+.dentist-photo-preview {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid #fff;
+  box-shadow: 0 4px 12px rgba(6, 55, 53, 0.15);
+}
+
+.dentist-photo-remove-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: 2px solid #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 26px;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.dentist-photo-preview-wrapper:hover .dentist-photo-remove-btn {
+  opacity: 1;
+}
+
+.dentist-photo-actions {
+  display: flex;
+  justify-content: center;
+}
+
+label[for="photo-upload"] {
+  cursor: pointer;
+  text-align: center;
+}
+
+.dentist-profile-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+}
+
+.dentist-profile-form label {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.dentist-profile-form input {
+  border: 1px solid #c2d9d5;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.95rem;
+}
+
+.dentist-profile-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.7rem;
+  justify-content: flex-end;
+  margin-top: 0.4rem;
+}
+
+.dentist-profile-primary,
+.dentist-profile-secondary {
+  border: 0;
+  border-radius: 10px;
+  padding: 0.55rem 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dentist-profile-primary {
+  background: #0b6d68;
+  color: #fff;
+}
+
+.dentist-profile-secondary {
+  background: #e8f3f2;
+  color: #154440;
+}
+
+.dentist-profile-status {
+  margin-top: 1rem;
+  grid-column: 1 / -1;
+  color: #1e6f42;
+}
+
+@media (max-width: 900px) {
+  .dentist-profile-content {
+    grid-template-columns: 1fr;
+  }
+
+  .dentist-profile-photo-container {
+    order: -1;
+    margin-bottom: 2rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .dentist-profile-form {
+    grid-template-columns: 1fr;
+  }
+
+  .dentist-profile-actions {
+    justify-content: stretch;
+  }
+
+  .dentist-profile-primary,
+  .dentist-profile-secondary {
+    width: 100%;
+  }
+}

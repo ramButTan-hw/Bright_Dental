@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS patients (
     patient_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
     p_first_name VARCHAR(50) NOT NULL,
     p_last_name VARCHAR(50) NOT NULL,
     p_dob DATE NOT NULL,
@@ -29,6 +30,8 @@ CREATE TABLE IF NOT EXISTS patients (
     p_ethnicity INT,
     p_phone VARCHAR(20),
     p_email VARCHAR(100) UNIQUE NOT NULL,
+    p_ssn VARCHAR(11),
+    p_drivers_license VARCHAR(50),
     p_emergency_contact_name VARCHAR(100),
     p_emergency_contact_phone VARCHAR(20),
     p_address VARCHAR(120),
@@ -39,7 +42,9 @@ CREATE TABLE IF NOT EXISTS patients (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50)
+    updated_by VARCHAR(50),
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE,
+    UNIQUE KEY uq_patients_user (user_id)
 );
 
 
@@ -55,6 +60,42 @@ CREATE TABLE IF NOT EXISTS locations (
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50)
+);
+
+INSERT INTO locations (location_city, location_state, loc_street_no, loc_street_name, loc_zip_code, created_by, updated_by)
+SELECT 'Houston', 'TX', '4302', 'University Dr', '77004', 'SYSTEM', 'SYSTEM'
+WHERE NOT EXISTS (
+        SELECT 1
+        FROM locations
+        WHERE location_city = 'Houston'
+            AND location_state = 'TX'
+            AND loc_street_no = '4302'
+            AND loc_street_name = 'University Dr'
+            AND loc_zip_code = '77004'
+);
+
+INSERT INTO locations (location_city, location_state, loc_street_no, loc_street_name, loc_zip_code, created_by, updated_by)
+SELECT 'Sugar Land', 'TX', '14000', 'University Blvd', '77479', 'SYSTEM', 'SYSTEM'
+WHERE NOT EXISTS (
+        SELECT 1
+        FROM locations
+        WHERE location_city = 'Sugar Land'
+            AND location_state = 'TX'
+            AND loc_street_no = '14000'
+            AND loc_street_name = 'University Blvd'
+            AND loc_zip_code = '77479'
+);
+
+INSERT INTO locations (location_city, location_state, loc_street_no, loc_street_name, loc_zip_code, created_by, updated_by)
+SELECT 'Houston', 'TX', '1', 'Main St', '77002', 'SYSTEM', 'SYSTEM'
+WHERE NOT EXISTS (
+        SELECT 1
+        FROM locations
+        WHERE location_city = 'Houston'
+            AND location_state = 'TX'
+            AND loc_street_no = '1'
+            AND loc_street_name = 'Main St'
+            AND loc_zip_code = '77002'
 );
 
 
@@ -87,11 +128,14 @@ CREATE TABLE IF NOT EXISTS staff (
     s_state CHAR(2),
     s_zipcode CHAR(10),
     s_country VARCHAR(40),
+    profile_image LONGBLOB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
+    UNIQUE KEY uq_staff_user (user_id),
     INDEX idx_staff_supervisor (s_staff_id),
+    CONSTRAINT fk_staff_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT fk_staff_supervisor FOREIGN KEY (s_staff_id) REFERENCES staff(staff_id) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT chk_staff_not_self_supervisor CHECK (s_staff_id IS NULL OR s_staff_id <> staff_id)
 );
@@ -112,20 +156,139 @@ CREATE TABLE IF NOT EXISTS doctors (
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
+    UNIQUE KEY uq_doctors_npi (npi),
+    UNIQUE KEY uq_doctors_staff (staff_id),
     FOREIGN KEY (staff_id) REFERENCES staff(staff_id)
 );
 
+CREATE TABLE IF NOT EXISTS departments (
+    department_id INT AUTO_INCREMENT PRIMARY KEY,
+    department_name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
+);
+
+-- Insert default dental departments
+INSERT INTO departments (department_name, description, created_by) VALUES
+('General Dentistry', 'Exams, cleanings, fillings, and routine dental care', 'SYSTEM'),
+('Cosmetic Dentistry', 'Porcelain veneers, whitening, and smile aesthetics', 'SYSTEM'),
+('Surgical Dental Services', 'Extractions, periodontal services, and oral surgery', 'SYSTEM'),
+('Emergency Dental Services', 'Urgent and emergency dental treatment', 'SYSTEM'),
+('Orthodontics', 'Braces, aligners, and teeth straightening', 'SYSTEM'),
+('Pediatric Dentistry', 'Specialized dental care for children and adolescents', 'SYSTEM')
+ON DUPLICATE KEY UPDATE department_name = VALUES(department_name);
 
 CREATE TABLE IF NOT EXISTS specialties_department (
     doctor_id INT NOT NULL,
-    specialty VARCHAR(100) NOT NULL,
+    department_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
-    PRIMARY KEY (doctor_id, specialty),
-    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id)
+    PRIMARY KEY (doctor_id, department_id),
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
+    FOREIGN KEY (department_id) REFERENCES departments(department_id)
 );
+
+CREATE TABLE IF NOT EXISTS appointment_statuses (
+    status_id INT AUTO_INCREMENT PRIMARY KEY,
+    status_name VARCHAR(50) NOT NULL UNIQUE,
+    display_name VARCHAR(100),
+    color_code VARCHAR(7),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50)
+);
+
+INSERT INTO appointment_statuses (status_name, display_name, color_code, created_by) VALUES
+('SCHEDULED', 'Scheduled', '#4A90E2', 'SYSTEM'),
+('CONFIRMED', 'Confirmed', '#7ED321', 'SYSTEM'),
+('COMPLETED', 'Completed', '#50E3C2', 'SYSTEM'),
+('CANCELLED', 'Cancelled', '#D0021B', 'SYSTEM'),
+('NO_SHOW', 'No Show', '#F5A623', 'SYSTEM'),
+('RESCHEDULED', 'Rescheduled', '#B8E986', 'SYSTEM')
+ON DUPLICATE KEY UPDATE display_name = VALUES(display_name);
+
+CREATE TABLE IF NOT EXISTS treatment_statuses (
+    status_id INT AUTO_INCREMENT PRIMARY KEY,
+    status_name VARCHAR(50) NOT NULL UNIQUE,
+    display_name VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50)
+);
+
+INSERT INTO treatment_statuses (status_name, display_name, created_by) VALUES
+('PLANNED', 'Planned', 'SYSTEM'),
+('IN_PROGRESS', 'In Progress', 'SYSTEM'),
+('COMPLETED', 'Completed', 'SYSTEM'),
+('ON_HOLD', 'On Hold', 'SYSTEM'),
+('CANCELLED', 'Cancelled', 'SYSTEM')
+ON DUPLICATE KEY UPDATE display_name = VALUES(display_name);
+
+CREATE TABLE IF NOT EXISTS cancel_reasons (
+    reason_id INT AUTO_INCREMENT PRIMARY KEY,
+    reason_text VARCHAR(100) NOT NULL UNIQUE,
+    category VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50)
+);
+
+INSERT INTO cancel_reasons (reason_text, category, created_by) VALUES
+('Patient requested', 'PATIENT', 'SYSTEM'),
+('Doctor unavailable', 'DOCTOR', 'SYSTEM'),
+('Facility issue', 'FACILITY', 'SYSTEM'),
+('Emergency', 'PATIENT', 'SYSTEM'),
+('Patient no-show', 'PATIENT', 'SYSTEM'),
+('Insurance denial', 'INSURANCE', 'SYSTEM'),
+('Other', 'OTHER', 'SYSTEM')
+ON DUPLICATE KEY UPDATE category = VALUES(category);
+
+CREATE TABLE IF NOT EXISTS payment_methods (
+    method_id INT AUTO_INCREMENT PRIMARY KEY,
+    method_name VARCHAR(50) NOT NULL UNIQUE,
+    display_name VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50)
+);
+
+INSERT INTO payment_methods (method_name, display_name, created_by) VALUES
+('CASH', 'Cash', 'SYSTEM'),
+('CHECK', 'Check', 'SYSTEM'),
+('CREDIT_CARD', 'Credit Card', 'SYSTEM'),
+('DEBIT_CARD', 'Debit Card', 'SYSTEM'),
+('ACH', 'ACH Transfer', 'SYSTEM'),
+('INSURANCE', 'Insurance Payment', 'SYSTEM')
+ON DUPLICATE KEY UPDATE is_active = VALUES(is_active);
+
+CREATE TABLE IF NOT EXISTS insurance_companies (
+    company_id INT AUTO_INCREMENT PRIMARY KEY,
+    company_name VARCHAR(100) NOT NULL UNIQUE,
+    address VARCHAR(120),
+    city VARCHAR(60),
+    state CHAR(2),
+    zipcode CHAR(10),
+    phone_number VARCHAR(20),
+    fax_number VARCHAR(20),
+    website VARCHAR(255),
+    contact_name VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
+);
+
+INSERT INTO insurance_companies (company_name, created_by) VALUES
+('Aetna', 'SYSTEM'),
+('Blue Cross Blue Shield', 'SYSTEM'),
+('Cigna', 'SYSTEM'),
+('Delta Dental', 'SYSTEM'),
+('Humana', 'SYSTEM'),
+('MetLife', 'SYSTEM'),
+('UnitedHealthcare', 'SYSTEM')
+ON DUPLICATE KEY UPDATE company_name = VALUES(company_name);
 
 CREATE TABLE IF NOT EXISTS pharmacies (
     pharm_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -143,39 +306,316 @@ CREATE TABLE IF NOT EXISTS pharmacies (
     updated_by VARCHAR(50)
 );
 
+CREATE TABLE IF NOT EXISTS appointment_slots (
+    slot_id INT AUTO_INCREMENT PRIMARY KEY,
+    doctor_id INT NOT NULL,
+    location_id INT,
+    slot_date DATE NOT NULL,
+    slot_start_time TIME NOT NULL,
+    slot_end_time TIME NOT NULL,
+    duration_minutes INT DEFAULT 30,
+    is_available BOOLEAN DEFAULT TRUE,
+    max_patients INT DEFAULT 1,
+    current_bookings INT DEFAULT 0,
+    slot_type ENUM('REGULAR', 'EMERGENCY', 'FOLLOW_UP') DEFAULT 'REGULAR',
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
+    FOREIGN KEY (location_id) REFERENCES locations(location_id),
+    UNIQUE KEY uq_slot_doctor_date_time (doctor_id, slot_date, slot_start_time),
+    INDEX idx_slot_date (slot_date),
+    INDEX idx_slot_doctor (doctor_id),
+    INDEX idx_slot_available (is_available),
+    CONSTRAINT chk_slot_times CHECK (slot_start_time < slot_end_time),
+    CONSTRAINT chk_slot_single_capacity CHECK (max_patients = 1),
+    CONSTRAINT chk_slot_capacity CHECK (current_bookings <= max_patients)
+);
+
 CREATE TABLE IF NOT EXISTS appointments (
     appointment_id INT AUTO_INCREMENT PRIMARY KEY,
+    slot_id INT NOT NULL,
     location_id INT,
     patient_id INT NOT NULL,
     doctor_id INT NOT NULL,
     appointment_time TIME NOT NULL,
     appointment_date DATE NOT NULL,
-    appt_status VARCHAR(20) NOT NULL,
-    cancel_reason VARCHAR(255),
+    status_id INT NOT NULL DEFAULT 1,
+    reason_id INT,
+    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
+    FOREIGN KEY (slot_id) REFERENCES appointment_slots(slot_id),
     FOREIGN KEY (location_id) REFERENCES locations(location_id),
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
-    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id)
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
+    FOREIGN KEY (status_id) REFERENCES appointment_statuses(status_id),
+    FOREIGN KEY (reason_id) REFERENCES cancel_reasons(reason_id),
+    UNIQUE KEY uq_appointments_patient_slot (patient_id, slot_id),
+    INDEX idx_appointment_slot (slot_id),
+    INDEX idx_appointment_doctor_datetime (doctor_id, appointment_date, appointment_time),
+    INDEX idx_appointment_date (appointment_date),
+    INDEX idx_appointment_patient (patient_id),
+    INDEX idx_appointment_doctor (doctor_id)
 );
+
+CREATE TABLE IF NOT EXISTS appointment_preference_requests (
+    preference_request_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    preferred_date DATE NOT NULL,
+    preferred_time TIME NOT NULL,
+    preferred_location VARCHAR(60),
+    available_days VARCHAR(100),
+    available_times VARCHAR(255),
+    appointment_reason VARCHAR(255),
+    request_status ENUM('PREFERRED_PENDING', 'ASSIGNED', 'CANCELLED') NOT NULL DEFAULT 'PREFERRED_PENDING',
+    assigned_doctor_id INT,
+    assigned_date DATE,
+    assigned_time TIME,
+    receptionist_notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (assigned_doctor_id) REFERENCES doctors(doctor_id) ON DELETE SET NULL ON UPDATE CASCADE,
+    INDEX idx_pref_requests_patient (patient_id),
+    INDEX idx_pref_requests_date_time (preferred_date, preferred_time),
+    INDEX idx_pref_requests_status (request_status),
+    INDEX idx_pref_requests_assigned_doctor (assigned_doctor_id)
+);
+
+SET @has_pref_assigned_date := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'appointment_preference_requests'
+      AND COLUMN_NAME = 'assigned_date'
+);
+
+SET @add_pref_assigned_date_sql := IF(
+    @has_pref_assigned_date = 0,
+    'ALTER TABLE appointment_preference_requests ADD COLUMN assigned_date DATE AFTER assigned_doctor_id',
+    'SELECT 1'
+);
+
+PREPARE add_pref_assigned_date_stmt FROM @add_pref_assigned_date_sql;
+EXECUTE add_pref_assigned_date_stmt;
+DEALLOCATE PREPARE add_pref_assigned_date_stmt;
+
+SET @has_pref_assigned_time := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'appointment_preference_requests'
+      AND COLUMN_NAME = 'assigned_time'
+);
+
+SET @add_pref_assigned_time_sql := IF(
+    @has_pref_assigned_time = 0,
+    'ALTER TABLE appointment_preference_requests ADD COLUMN assigned_time TIME AFTER assigned_date',
+    'SELECT 1'
+);
+
+PREPARE add_pref_assigned_time_stmt FROM @add_pref_assigned_time_sql;
+EXECUTE add_pref_assigned_time_stmt;
+DEALLOCATE PREPARE add_pref_assigned_time_stmt;
+
+SET @has_pref_available_days := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'appointment_preference_requests'
+      AND COLUMN_NAME = 'available_days'
+);
+
+SET @add_pref_available_days_sql := IF(
+    @has_pref_available_days = 0,
+    'ALTER TABLE appointment_preference_requests ADD COLUMN available_days VARCHAR(100) AFTER preferred_location',
+    'SELECT 1'
+);
+
+PREPARE add_pref_available_days_stmt FROM @add_pref_available_days_sql;
+EXECUTE add_pref_available_days_stmt;
+DEALLOCATE PREPARE add_pref_available_days_stmt;
+
+SET @has_pref_available_times := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'appointment_preference_requests'
+      AND COLUMN_NAME = 'available_times'
+);
+
+SET @add_pref_available_times_sql := IF(
+    @has_pref_available_times = 0,
+    'ALTER TABLE appointment_preference_requests ADD COLUMN available_times VARCHAR(255) AFTER available_days',
+    'SELECT 1'
+);
+
+PREPARE add_pref_available_times_stmt FROM @add_pref_available_times_sql;
+EXECUTE add_pref_available_times_stmt;
+DEALLOCATE PREPARE add_pref_available_times_stmt;
+
+CREATE TABLE IF NOT EXISTS location_business_hours (
+    location_hours_id INT AUTO_INCREMENT PRIMARY KEY,
+    location_id INT NOT NULL,
+    day_of_week TINYINT NOT NULL,
+    open_time TIME,
+    close_time TIME,
+    is_open BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (location_id) REFERENCES locations(location_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_location_day (location_id, day_of_week),
+    INDEX idx_location_hours_location (location_id),
+    CONSTRAINT chk_location_day_range CHECK (day_of_week BETWEEN 0 AND 6),
+    CONSTRAINT chk_location_open_close CHECK (
+        (is_open = 0 AND open_time IS NULL AND close_time IS NULL) OR
+        (is_open = 1 AND open_time IS NOT NULL AND close_time IS NOT NULL AND open_time < close_time)
+    )
+);
+
+CREATE TABLE IF NOT EXISTS doctor_weekly_availability (
+    availability_id INT AUTO_INCREMENT PRIMARY KEY,
+    doctor_id INT NOT NULL,
+    location_id INT,
+    day_of_week TINYINT NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    slot_duration_minutes INT NOT NULL DEFAULT 30,
+    break_start_time TIME,
+    break_end_time TIME,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    effective_start_date DATE,
+    effective_end_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (location_id) REFERENCES locations(location_id) ON DELETE SET NULL ON UPDATE CASCADE,
+    INDEX idx_doctor_availability_doctor_day (doctor_id, day_of_week),
+    INDEX idx_doctor_availability_location (location_id),
+    CONSTRAINT chk_doctor_day_range CHECK (day_of_week BETWEEN 0 AND 6),
+    CONSTRAINT chk_doctor_shift_times CHECK (start_time < end_time),
+    CONSTRAINT chk_doctor_break_times CHECK (
+        (break_start_time IS NULL AND break_end_time IS NULL) OR
+        (break_start_time IS NOT NULL AND break_end_time IS NOT NULL AND break_start_time < break_end_time)
+    ),
+    CONSTRAINT chk_doctor_effective_dates CHECK (
+        effective_end_date IS NULL OR effective_start_date IS NULL OR effective_start_date <= effective_end_date
+    )
+);
+
+CREATE TABLE IF NOT EXISTS doctor_time_off (
+    time_off_id INT AUTO_INCREMENT PRIMARY KEY,
+    doctor_id INT NOT NULL,
+    location_id INT,
+    start_datetime DATETIME NOT NULL,
+    end_datetime DATETIME NOT NULL,
+    reason VARCHAR(100),
+    is_approved BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (location_id) REFERENCES locations(location_id) ON DELETE SET NULL ON UPDATE CASCADE,
+    INDEX idx_doctor_time_off_doctor (doctor_id),
+    INDEX idx_doctor_time_off_start (start_datetime),
+    CONSTRAINT chk_time_off_range CHECK (start_datetime < end_datetime)
+);
+
+CREATE TABLE IF NOT EXISTS staff_time_off_requests (
+    request_id INT AUTO_INCREMENT PRIMARY KEY,
+    staff_id INT NOT NULL,
+    location_id INT,
+    start_datetime DATETIME NOT NULL,
+    end_datetime DATETIME NOT NULL,
+    reason VARCHAR(100),
+    is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (staff_id) REFERENCES staff(staff_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (location_id) REFERENCES locations(location_id) ON DELETE SET NULL ON UPDATE CASCADE,
+    INDEX idx_staff_time_off_staff (staff_id),
+    INDEX idx_staff_time_off_start (start_datetime),
+    CONSTRAINT chk_staff_time_off_range CHECK (start_datetime < end_datetime)
+);
+
+CREATE TABLE IF NOT EXISTS location_closures (
+    closure_id INT AUTO_INCREMENT PRIMARY KEY,
+    location_id INT,
+    closure_date DATE NOT NULL,
+    close_start_time TIME,
+    close_end_time TIME,
+    is_full_day BOOLEAN NOT NULL DEFAULT TRUE,
+    closure_reason VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (location_id) REFERENCES locations(location_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_location_closure (location_id, closure_date, close_start_time, close_end_time),
+    INDEX idx_location_closure_date (closure_date),
+    CONSTRAINT chk_closure_window CHECK (
+        (is_full_day = 1 AND close_start_time IS NULL AND close_end_time IS NULL) OR
+        (is_full_day = 0 AND close_start_time IS NOT NULL AND close_end_time IS NOT NULL AND close_start_time < close_end_time)
+    )
+);
+
+CREATE OR REPLACE VIEW vw_available_appointment_slots AS
+SELECT
+    s.slot_id,
+    s.slot_date,
+    s.slot_start_time,
+    s.slot_end_time,
+    s.duration_minutes,
+    s.slot_type,
+    s.current_bookings,
+    s.max_patients,
+    (s.max_patients - s.current_bookings) AS remaining_capacity,
+    s.is_available,
+    d.doctor_id,
+    CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+    l.location_id,
+    CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location_address
+FROM appointment_slots s
+JOIN doctors d ON s.doctor_id = d.doctor_id
+LEFT JOIN staff st ON d.staff_id = st.staff_id
+LEFT JOIN locations l ON s.location_id = l.location_id
+WHERE s.is_available = TRUE
+  AND s.current_bookings < s.max_patients;
 
 CREATE TABLE IF NOT EXISTS insurance (
     insurance_id INT AUTO_INCREMENT PRIMARY KEY,
     patient_id INT NOT NULL,
-    member_id INT NOT NULL,
-    group_number INT NOT NULL,
-    is_primary BOOLEAN,
-    effective_date DATETIME,
-    expiration_date DATETIME,
-    company_name VARCHAR(100),
-    phone_number VARCHAR(15),
+    company_id INT NOT NULL,
+    member_id VARCHAR(50) NOT NULL,
+    group_number VARCHAR(50) NOT NULL,
+    is_primary BOOLEAN DEFAULT FALSE,
+    effective_date DATE NOT NULL,
+    expiration_date DATE,
+    policy_holder_name VARCHAR(100),
+    policy_holder_relationship VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
-    FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (company_id) REFERENCES insurance_companies(company_id),
+    UNIQUE KEY uq_insurance_patient_member_company (patient_id, member_id, company_id),
+    INDEX idx_insurance_patient (patient_id),
+    INDEX idx_insurance_company (company_id)
 );
 
 
@@ -185,16 +625,21 @@ CREATE TABLE IF NOT EXISTS treatment_plans (
     doctor_id INT NOT NULL,
     surface VARCHAR(5),
     procedure_code VARCHAR(20),
-    treatment_status VARCHAR(20),
+    status_id INT NOT NULL DEFAULT 1,
     tooth_number VARCHAR(10),
     estimated_cost DECIMAL(10,2),
+    priority VARCHAR(20),
+    start_date DATE,
+    target_completion_date DATE,
+    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
     FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
-    FOREIGN KEY (procedure_code) REFERENCES ada_procedure_codes(procedure_code)
+    FOREIGN KEY (procedure_code) REFERENCES ada_procedure_codes(procedure_code),
+    FOREIGN KEY (status_id) REFERENCES treatment_statuses(status_id)
 );
 
 CREATE TABLE IF NOT EXISTS invoices (
@@ -204,7 +649,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     amount DECIMAL(10,2) NOT NULL,
     insurance_covered_amount DECIMAL(10,2) NOT NULL,
     patient_amount DECIMAL(10,2) NOT NULL,
-    payment_status VARCHAR(20) NOT NULL,
+    payment_status ENUM('Unpaid', 'Partial', 'Paid') NOT NULL DEFAULT 'Unpaid',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -219,12 +664,16 @@ CREATE TABLE IF NOT EXISTS payments (
     invoice_id INT,
     payment_amount DECIMAL(10,2) NOT NULL,
     payment_date DATETIME NOT NULL,
-    payment_method VARCHAR(30) NOT NULL,
+    method_id INT NOT NULL,
+    reference_number VARCHAR(100),
+    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
-    FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id)
+    FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id),
+    FOREIGN KEY (method_id) REFERENCES payment_methods(method_id),
+    INDEX idx_payment_date (payment_date)
 );
 
 CREATE TABLE IF NOT EXISTS prescriptions (
@@ -254,6 +703,7 @@ CREATE TABLE IF NOT EXISTS dental_findings (
     finding_id INT AUTO_INCREMENT PRIMARY KEY,
     patient_id INT NOT NULL,
     doctor_id INT NOT NULL,
+    appointment_id INT,
     tooth_number VARCHAR(10) NOT NULL,
     surface VARCHAR(5),
     condition_type VARCHAR(30),
@@ -265,6 +715,7 @@ CREATE TABLE IF NOT EXISTS dental_findings (
     updated_by VARCHAR(50),
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
     FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
+    FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id),
     CHECK (condition_type IN ('Decay', 'Missing', 'Impacted', 'Existing Amalgam', 'Fracture', 'Crown', 'Root Canal', 'Abscess', 'Periodontal', 'Existing Composite'))
 );
 
@@ -318,6 +769,327 @@ CREATE TABLE IF NOT EXISTS medical_alerts (
     FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
 );
 
+CREATE TABLE IF NOT EXISTS clinical_checklist_items (
+    checklist_item_id INT AUTO_INCREMENT PRIMARY KEY,
+    item_category ENUM('ALLERGY', 'CONDITION', 'MEDICATION', 'ADVERSE_REACTION', 'DENTAL_SYMPTOM', 'PRE_MEDICATION') NOT NULL,
+    display_group VARCHAR(80),
+    display_order INT NOT NULL DEFAULT 0,
+    item_label VARCHAR(120) NOT NULL,
+    requires_free_text BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    UNIQUE KEY uq_checklist_category_label (item_category, item_label)
+);
+
+-- Checklist items are managed dynamically by the API from frontend selections.
+-- Backend should upsert into clinical_checklist_items by (item_category, item_label)
+-- before writing patient_checklist_responses.
+
+CREATE TABLE IF NOT EXISTS patient_checklist_responses (
+    response_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    checklist_item_id INT NOT NULL,
+    is_checked BOOLEAN NOT NULL DEFAULT TRUE,
+    other_text VARCHAR(255),
+    severity ENUM('MILD', 'MODERATE', 'SEVERE', 'UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+    onset_date DATE,
+    resolved_date DATE,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (checklist_item_id) REFERENCES clinical_checklist_items(checklist_item_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    UNIQUE KEY uq_patient_checklist_response (patient_id, checklist_item_id),
+    INDEX idx_patient_checklist_patient (patient_id),
+    INDEX idx_patient_checklist_item (checklist_item_id),
+    CONSTRAINT chk_checklist_dates CHECK (resolved_date IS NULL OR onset_date IS NULL OR onset_date <= resolved_date)
+);
+
+CREATE TABLE IF NOT EXISTS patient_current_medications (
+    patient_medication_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    medication_name VARCHAR(120) NOT NULL,
+    strength VARCHAR(50),
+    dosage VARCHAR(50),
+    frequency VARCHAR(50),
+    reason_for_use VARCHAR(255),
+    route VARCHAR(50),
+    start_date DATE,
+    end_date DATE,
+    prescribing_doctor_id INT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (prescribing_doctor_id) REFERENCES doctors(doctor_id) ON DELETE SET NULL ON UPDATE CASCADE,
+    INDEX idx_patient_medications_patient (patient_id),
+    INDEX idx_patient_medications_active (patient_id, is_active),
+    CONSTRAINT chk_medication_dates CHECK (end_date IS NULL OR start_date IS NULL OR start_date <= end_date)
+);
+
+CREATE TABLE IF NOT EXISTS intake_form_submissions (
+    submission_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    form_version VARCHAR(30) DEFAULT 'v1',
+    source ENUM('PATIENT_PORTAL', 'STAFF_ENTRY') DEFAULT 'PATIENT_PORTAL',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    INDEX idx_intake_submission_patient (patient_id)
+);
+
+CREATE TABLE IF NOT EXISTS intake_yes_no_questions (
+    question_id INT AUTO_INCREMENT PRIMARY KEY,
+    question_code VARCHAR(50) NOT NULL UNIQUE,
+    section_label VARCHAR(80) NOT NULL,
+    question_text VARCHAR(255) NOT NULL,
+    has_when_field BOOLEAN NOT NULL DEFAULT FALSE,
+    has_details_field BOOLEAN NOT NULL DEFAULT FALSE,
+    display_order INT NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50)
+);
+
+INSERT INTO intake_yes_no_questions (question_code, section_label, question_text, has_when_field, has_details_field, display_order, created_by) VALUES
+('PERIO_HISTORY', 'Additional Dental History', 'Do you have any history of periodontal disease or deep cleaning?', TRUE, FALSE, 10, 'SYSTEM'),
+('ORTHO_HISTORY', 'Additional Dental History', 'Have you ever had braces or orthodontic work?', TRUE, FALSE, 20, 'SYSTEM'),
+('WEAR_CPAP', 'Sleep and Social History', 'Do you wear C-Pap?', FALSE, FALSE, 30, 'SYSTEM'),
+('SNORE', 'Sleep and Social History', 'Do you snore?', FALSE, FALSE, 40, 'SYSTEM')
+ON DUPLICATE KEY UPDATE
+    question_text = VALUES(question_text),
+    has_when_field = VALUES(has_when_field),
+    has_details_field = VALUES(has_details_field),
+    display_order = VALUES(display_order),
+    is_active = TRUE;
+
+CREATE TABLE IF NOT EXISTS intake_yes_no_answers (
+    answer_id INT AUTO_INCREMENT PRIMARY KEY,
+    submission_id INT NOT NULL,
+    question_id INT NOT NULL,
+    answer_value ENUM('YES', 'NO', 'UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+    when_text VARCHAR(120),
+    details_text VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (submission_id) REFERENCES intake_form_submissions(submission_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (question_id) REFERENCES intake_yes_no_questions(question_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    UNIQUE KEY uq_intake_yes_no_answer (submission_id, question_id),
+    INDEX idx_intake_yes_no_submission (submission_id)
+);
+
+CREATE TABLE IF NOT EXISTS patient_registration_snapshots (
+    snapshot_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    snapshot_json JSON NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_registration_snapshot_patient (patient_id)
+);
+
+CREATE TABLE IF NOT EXISTS intake_dental_history (
+    dental_history_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    periodontal_disease_yes_no ENUM('YES', 'NO', 'UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+    periodontal_disease_date DATE,
+    braces_ortho_yes_no ENUM('YES', 'NO', 'UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+    braces_ortho_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_intake_dental_history_patient (patient_id)
+);
+
+CREATE TABLE IF NOT EXISTS intake_tobacco_types (
+    tobacco_type_id INT AUTO_INCREMENT PRIMARY KEY,
+    tobacco_label VARCHAR(80) NOT NULL UNIQUE,
+    display_order INT NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50)
+);
+
+INSERT INTO intake_tobacco_types (tobacco_label, display_order, created_by) VALUES
+('Never', 10, 'SYSTEM'),
+('Cigarettes', 20, 'SYSTEM'),
+('Cigars', 30, 'SYSTEM'),
+('Smokeless Tobacco', 40, 'SYSTEM'),
+('Quit', 50, 'SYSTEM')
+ON DUPLICATE KEY UPDATE
+    display_order = VALUES(display_order),
+    is_active = TRUE;
+
+CREATE TABLE IF NOT EXISTS intake_tobacco_use (
+    tobacco_use_id INT AUTO_INCREMENT PRIMARY KEY,
+    submission_id INT NOT NULL,
+    tobacco_type_id INT NOT NULL,
+    uses_tobacco ENUM('YES', 'NO', 'UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+    amount_text VARCHAR(120),
+    frequency_text VARCHAR(120),
+    quit_date DATE,
+    notes TEXT,
+    usage_context ENUM('CURRENT', 'FORMER', 'NEVER', 'QUIT') DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (submission_id) REFERENCES intake_form_submissions(submission_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (tobacco_type_id) REFERENCES intake_tobacco_types(tobacco_type_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    UNIQUE KEY uq_intake_tobacco_row (submission_id, tobacco_type_id),
+    INDEX idx_intake_tobacco_submission (submission_id)
+);
+
+SET @has_usage_context := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'intake_tobacco_use'
+      AND COLUMN_NAME = 'usage_context'
+);
+
+SET @add_usage_context_sql := IF(
+    @has_usage_context = 0,
+    "ALTER TABLE intake_tobacco_use ADD COLUMN usage_context ENUM('CURRENT', 'FORMER', 'NEVER', 'QUIT') DEFAULT NULL AFTER notes",
+    'SELECT 1'
+);
+
+PREPARE add_usage_context_stmt FROM @add_usage_context_sql;
+EXECUTE add_usage_context_stmt;
+DEALLOCATE PREPARE add_usage_context_stmt;
+
+SET @has_quit_date := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'intake_tobacco_use'
+      AND COLUMN_NAME = 'quit_date'
+);
+
+SET @add_quit_date_sql := IF(
+    @has_quit_date = 0,
+    'ALTER TABLE intake_tobacco_use ADD COLUMN quit_date DATE AFTER frequency_text',
+    'SELECT 1'
+);
+
+PREPARE add_quit_date_stmt FROM @add_quit_date_sql;
+EXECUTE add_quit_date_stmt;
+DEALLOCATE PREPARE add_quit_date_stmt;
+
+CREATE TABLE IF NOT EXISTS intake_caffeine_types (
+    caffeine_type_id INT AUTO_INCREMENT PRIMARY KEY,
+    caffeine_label VARCHAR(50) NOT NULL UNIQUE,
+    display_order INT NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50)
+);
+
+INSERT INTO intake_caffeine_types (caffeine_label, display_order, created_by) VALUES
+('None', 10, 'SYSTEM'),
+('Coffee', 20, 'SYSTEM'),
+('Tea', 30, 'SYSTEM'),
+('Soda', 40, 'SYSTEM')
+ON DUPLICATE KEY UPDATE
+    display_order = VALUES(display_order),
+    is_active = TRUE;
+
+CREATE TABLE IF NOT EXISTS intake_caffeine_use (
+    caffeine_use_id INT AUTO_INCREMENT PRIMARY KEY,
+    submission_id INT NOT NULL,
+    caffeine_type_id INT NOT NULL,
+    is_selected BOOLEAN NOT NULL DEFAULT FALSE,
+    amount_text VARCHAR(120),
+    frequency_text VARCHAR(120),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (submission_id) REFERENCES intake_form_submissions(submission_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (caffeine_type_id) REFERENCES intake_caffeine_types(caffeine_type_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    UNIQUE KEY uq_intake_caffeine_row (submission_id, caffeine_type_id),
+    INDEX idx_intake_caffeine_submission (submission_id)
+);
+
+CREATE TABLE IF NOT EXISTS intake_pain_symptoms (
+    pain_symptom_id INT AUTO_INCREMENT PRIMARY KEY,
+    symptom_label VARCHAR(120) NOT NULL UNIQUE,
+    display_order INT NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50)
+);
+
+INSERT INTO intake_pain_symptoms (symptom_label, display_order, created_by) VALUES
+('TMJ clicking/grating', 10, 'SYSTEM'),
+('TMJ locking/stiffness', 20, 'SYSTEM'),
+('Inability to open mouth', 30, 'SYSTEM'),
+('Mouth does not open straight', 40, 'SYSTEM'),
+('Pain when eating/chewing', 50, 'SYSTEM'),
+('Pain in jaw or jaw joint', 60, 'SYSTEM'),
+('Unstable bite', 70, 'SYSTEM'),
+('Headache', 80, 'SYSTEM'),
+('Face Pain', 90, 'SYSTEM'),
+('Ear pain/stiffness', 100, 'SYSTEM'),
+('Ringing in ears', 110, 'SYSTEM'),
+('Difficulty swallowing', 120, 'SYSTEM'),
+('Neck pain', 130, 'SYSTEM'),
+('Face muscle fatigue', 140, 'SYSTEM')
+ON DUPLICATE KEY UPDATE
+    display_order = VALUES(display_order),
+    is_active = TRUE;
+
+CREATE TABLE IF NOT EXISTS intake_pain_assessments (
+    pain_assessment_id INT AUTO_INCREMENT PRIMARY KEY,
+    submission_id INT NOT NULL,
+    pain_symptom_id INT NOT NULL,
+    pain_level TINYINT NOT NULL DEFAULT 0,
+    notes VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (submission_id) REFERENCES intake_form_submissions(submission_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (pain_symptom_id) REFERENCES intake_pain_symptoms(pain_symptom_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    UNIQUE KEY uq_intake_pain_row (submission_id, pain_symptom_id),
+    INDEX idx_intake_pain_submission (submission_id),
+    CONSTRAINT chk_pain_level_range CHECK (pain_level BETWEEN 0 AND 5)
+);
+
+CREATE TABLE IF NOT EXISTS intake_medication_rows (
+    intake_medication_id INT AUTO_INCREMENT PRIMARY KEY,
+    submission_id INT NOT NULL,
+    row_order INT NOT NULL DEFAULT 1,
+    medication_name VARCHAR(120),
+    dosage VARCHAR(50),
+    frequency VARCHAR(50),
+    reason_for_using VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (submission_id) REFERENCES intake_form_submissions(submission_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_intake_medication_row_order (submission_id, row_order),
+    INDEX idx_intake_medications_submission (submission_id)
+);
+
 
 
 -- TRIGGERS
@@ -325,15 +1097,31 @@ CREATE TABLE IF NOT EXISTS medical_alerts (
 DELIMITER $$
 
 -- Trigger 1: Enforce cancel_reason when appointment is cancelled
+DROP TRIGGER IF EXISTS trg_appointments_require_cancel_reason_on_insert $$
+CREATE TRIGGER trg_appointments_require_cancel_reason_on_insert
+BEFORE INSERT ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+    SELECT status_id INTO cancelled_status_id FROM appointment_statuses
+    WHERE status_name = 'CANCELLED' LIMIT 1;
+    IF NEW.status_id = cancelled_status_id AND NEW.reason_id IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'reason_id is required when appointment status is Cancelled';
+    END IF;
+END $$
+
 DROP TRIGGER IF EXISTS trg_appointments_require_cancel_reason $$
 CREATE TRIGGER trg_appointments_require_cancel_reason
 BEFORE UPDATE ON appointments
 FOR EACH ROW
 BEGIN
-    IF NEW.appt_status = 'Cancelled'
-       AND (NEW.cancel_reason IS NULL OR TRIM(NEW.cancel_reason) = '') THEN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+    SELECT status_id INTO cancelled_status_id FROM appointment_statuses 
+    WHERE status_name = 'CANCELLED' LIMIT 1;
+    IF NEW.status_id = cancelled_status_id AND NEW.reason_id IS NULL THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'cancel_reason is required when appointment status is Cancelled';
+            SET MESSAGE_TEXT = 'reason_id is required when appointment status is Cancelled';
     END IF;
 END $$
 
@@ -367,6 +1155,345 @@ BEGIN
     END IF;
 END $$
 
+-- Trigger 3: Auto-update invoice payment_status when payment is updated
+DROP TRIGGER IF EXISTS trg_payments_update_invoice_status_on_update $$
+CREATE TRIGGER trg_payments_update_invoice_status_on_update
+AFTER UPDATE ON payments
+FOR EACH ROW
+BEGIN
+    DECLARE total_paid_new DECIMAL(10,2) DEFAULT 0.00;
+    DECLARE patient_due_new DECIMAL(10,2) DEFAULT 0.00;
+    DECLARE total_paid_old DECIMAL(10,2) DEFAULT 0.00;
+    DECLARE patient_due_old DECIMAL(10,2) DEFAULT 0.00;
+
+    IF NEW.invoice_id IS NOT NULL THEN
+        SELECT COALESCE(SUM(payment_amount), 0.00)
+        INTO total_paid_new
+        FROM payments
+        WHERE invoice_id = NEW.invoice_id;
+
+        SELECT COALESCE(patient_amount, 0.00)
+        INTO patient_due_new
+        FROM invoices
+        WHERE invoice_id = NEW.invoice_id;
+
+        UPDATE invoices
+        SET payment_status = CASE
+            WHEN total_paid_new <= 0 THEN 'Unpaid'
+            WHEN total_paid_new < patient_due_new THEN 'Partial'
+            ELSE 'Paid'
+        END
+        WHERE invoice_id = NEW.invoice_id;
+    END IF;
+
+    IF OLD.invoice_id IS NOT NULL AND OLD.invoice_id <> NEW.invoice_id THEN
+        SELECT COALESCE(SUM(payment_amount), 0.00)
+        INTO total_paid_old
+        FROM payments
+        WHERE invoice_id = OLD.invoice_id;
+
+        SELECT COALESCE(patient_amount, 0.00)
+        INTO patient_due_old
+        FROM invoices
+        WHERE invoice_id = OLD.invoice_id;
+
+        UPDATE invoices
+        SET payment_status = CASE
+            WHEN total_paid_old <= 0 THEN 'Unpaid'
+            WHEN total_paid_old < patient_due_old THEN 'Partial'
+            ELSE 'Paid'
+        END
+        WHERE invoice_id = OLD.invoice_id;
+    END IF;
+END $$
+
+-- Trigger 4: Auto-update invoice payment_status when payment is deleted
+DROP TRIGGER IF EXISTS trg_payments_update_invoice_status_on_delete $$
+CREATE TRIGGER trg_payments_update_invoice_status_on_delete
+AFTER DELETE ON payments
+FOR EACH ROW
+BEGIN
+    DECLARE total_paid DECIMAL(10,2) DEFAULT 0.00;
+    DECLARE patient_due DECIMAL(10,2) DEFAULT 0.00;
+
+    IF OLD.invoice_id IS NOT NULL THEN
+        SELECT COALESCE(SUM(payment_amount), 0.00)
+        INTO total_paid
+        FROM payments
+        WHERE invoice_id = OLD.invoice_id;
+
+        SELECT COALESCE(patient_amount, 0.00)
+        INTO patient_due
+        FROM invoices
+        WHERE invoice_id = OLD.invoice_id;
+
+        UPDATE invoices
+        SET payment_status = CASE
+            WHEN total_paid <= 0 THEN 'Unpaid'
+            WHEN total_paid < patient_due THEN 'Partial'
+            ELSE 'Paid'
+        END
+        WHERE invoice_id = OLD.invoice_id;
+    END IF;
+END $$
+
+-- Trigger 5: Enforce one primary insurance policy per patient
+DROP TRIGGER IF EXISTS trg_insurance_single_primary_insert $$
+CREATE TRIGGER trg_insurance_single_primary_insert
+BEFORE INSERT ON insurance
+FOR EACH ROW
+BEGIN
+    IF NEW.is_primary = TRUE AND EXISTS (
+        SELECT 1
+        FROM insurance i
+        WHERE i.patient_id = NEW.patient_id
+          AND i.is_primary = TRUE
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Patient already has a primary insurance policy';
+    END IF;
+END $$
+
+DROP TRIGGER IF EXISTS trg_insurance_single_primary_update $$
+CREATE TRIGGER trg_insurance_single_primary_update
+BEFORE UPDATE ON insurance
+FOR EACH ROW
+BEGIN
+    IF NEW.is_primary = TRUE AND EXISTS (
+        SELECT 1
+        FROM insurance i
+        WHERE i.patient_id = NEW.patient_id
+          AND i.insurance_id <> NEW.insurance_id
+          AND i.is_primary = TRUE
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Patient already has a primary insurance policy';
+    END IF;
+END $$
+
+-- Trigger 6: Enforce free text when a checklist item requires it
+DROP TRIGGER IF EXISTS trg_patient_checklist_require_other_text_on_insert $$
+CREATE TRIGGER trg_patient_checklist_require_other_text_on_insert
+BEFORE INSERT ON patient_checklist_responses
+FOR EACH ROW
+BEGIN
+    IF NEW.is_checked = TRUE AND EXISTS (
+        SELECT 1
+        FROM clinical_checklist_items ci
+        WHERE ci.checklist_item_id = NEW.checklist_item_id
+          AND ci.requires_free_text = TRUE
+    ) AND (NEW.other_text IS NULL OR TRIM(NEW.other_text) = '') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'other_text is required for this checklist item';
+    END IF;
+END $$
+
+DROP TRIGGER IF EXISTS trg_patient_checklist_require_other_text_on_update $$
+CREATE TRIGGER trg_patient_checklist_require_other_text_on_update
+BEFORE UPDATE ON patient_checklist_responses
+FOR EACH ROW
+BEGIN
+    IF NEW.is_checked = TRUE AND EXISTS (
+        SELECT 1
+        FROM clinical_checklist_items ci
+        WHERE ci.checklist_item_id = NEW.checklist_item_id
+          AND ci.requires_free_text = TRUE
+    ) AND (NEW.other_text IS NULL OR TRIM(NEW.other_text) = '') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'other_text is required for this checklist item';
+    END IF;
+END $$
+
+-- Trigger 7: Ensure appointment details match selected slot
+DROP TRIGGER IF EXISTS trg_appointments_validate_slot_on_insert $$
+CREATE TRIGGER trg_appointments_validate_slot_on_insert
+BEFORE INSERT ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+
+    SELECT status_id INTO cancelled_status_id
+    FROM appointment_statuses
+    WHERE status_name = 'CANCELLED'
+    LIMIT 1;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM appointment_slots s
+        WHERE s.slot_id = NEW.slot_id
+          AND s.doctor_id = NEW.doctor_id
+          AND s.slot_date = NEW.appointment_date
+          AND s.slot_start_time = NEW.appointment_time
+          AND (
+              (NEW.location_id IS NULL AND s.location_id IS NULL) OR
+              NEW.location_id = s.location_id
+          )
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Appointment must match the selected slot (doctor, location, date, and time)';
+    END IF;
+
+    IF NEW.status_id <> cancelled_status_id AND EXISTS (
+        SELECT 1
+        FROM appointments a
+        WHERE a.slot_id = NEW.slot_id
+          AND a.status_id <> cancelled_status_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'This slot already has an active appointment';
+    END IF;
+END $$
+
+DROP TRIGGER IF EXISTS trg_appointments_validate_slot_on_update $$
+CREATE TRIGGER trg_appointments_validate_slot_on_update
+BEFORE UPDATE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+
+    SELECT status_id INTO cancelled_status_id
+    FROM appointment_statuses
+    WHERE status_name = 'CANCELLED'
+    LIMIT 1;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM appointment_slots s
+        WHERE s.slot_id = NEW.slot_id
+          AND s.doctor_id = NEW.doctor_id
+          AND s.slot_date = NEW.appointment_date
+          AND s.slot_start_time = NEW.appointment_time
+          AND (
+              (NEW.location_id IS NULL AND s.location_id IS NULL) OR
+              NEW.location_id = s.location_id
+          )
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Updated appointment must match the selected slot (doctor, location, date, and time)';
+    END IF;
+
+    IF NEW.status_id <> cancelled_status_id AND EXISTS (
+        SELECT 1
+        FROM appointments a
+        WHERE a.slot_id = NEW.slot_id
+          AND a.status_id <> cancelled_status_id
+          AND a.appointment_id <> NEW.appointment_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'This slot already has an active appointment';
+    END IF;
+END $$
+
+-- Trigger 8: Keep appointment slot counters synchronized
+DROP TRIGGER IF EXISTS trg_appointments_sync_slot_on_insert $$
+CREATE TRIGGER trg_appointments_sync_slot_on_insert
+AFTER INSERT ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+
+    SELECT status_id INTO cancelled_status_id
+    FROM appointment_statuses
+    WHERE status_name = 'CANCELLED'
+    LIMIT 1;
+
+    UPDATE appointment_slots s
+    SET s.current_bookings = (
+            SELECT COUNT(*)
+            FROM appointments a
+            WHERE a.slot_id = s.slot_id
+              AND a.status_id <> cancelled_status_id
+        ),
+        s.is_available = (
+            (
+                SELECT COUNT(*)
+                FROM appointments a
+                WHERE a.slot_id = s.slot_id
+                  AND a.status_id <> cancelled_status_id
+            ) < s.max_patients
+        )
+    WHERE s.slot_id = NEW.slot_id;
+END $$
+
+DROP TRIGGER IF EXISTS trg_appointments_sync_slot_on_update $$
+CREATE TRIGGER trg_appointments_sync_slot_on_update
+AFTER UPDATE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+
+    SELECT status_id INTO cancelled_status_id
+    FROM appointment_statuses
+    WHERE status_name = 'CANCELLED'
+    LIMIT 1;
+
+    UPDATE appointment_slots s
+    SET s.current_bookings = (
+            SELECT COUNT(*)
+            FROM appointments a
+            WHERE a.slot_id = s.slot_id
+              AND a.status_id <> cancelled_status_id
+        ),
+        s.is_available = (
+            (
+                SELECT COUNT(*)
+                FROM appointments a
+                WHERE a.slot_id = s.slot_id
+                  AND a.status_id <> cancelled_status_id
+            ) < s.max_patients
+        )
+    WHERE s.slot_id = NEW.slot_id;
+
+    IF OLD.slot_id <> NEW.slot_id THEN
+        UPDATE appointment_slots s
+        SET s.current_bookings = (
+                SELECT COUNT(*)
+                FROM appointments a
+                WHERE a.slot_id = s.slot_id
+                  AND a.status_id <> cancelled_status_id
+            ),
+            s.is_available = (
+                (
+                    SELECT COUNT(*)
+                    FROM appointments a
+                    WHERE a.slot_id = s.slot_id
+                      AND a.status_id <> cancelled_status_id
+                ) < s.max_patients
+            )
+        WHERE s.slot_id = OLD.slot_id;
+    END IF;
+END $$
+
+DROP TRIGGER IF EXISTS trg_appointments_sync_slot_on_delete $$
+CREATE TRIGGER trg_appointments_sync_slot_on_delete
+AFTER DELETE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+
+    SELECT status_id INTO cancelled_status_id
+    FROM appointment_statuses
+    WHERE status_name = 'CANCELLED'
+    LIMIT 1;
+
+    UPDATE appointment_slots s
+    SET s.current_bookings = (
+            SELECT COUNT(*)
+            FROM appointments a
+            WHERE a.slot_id = s.slot_id
+              AND a.status_id <> cancelled_status_id
+        ),
+        s.is_available = (
+            (
+                SELECT COUNT(*)
+                FROM appointments a
+                WHERE a.slot_id = s.slot_id
+                  AND a.status_id <> cancelled_status_id
+            ) < s.max_patients
+        )
+    WHERE s.slot_id = OLD.slot_id;
+END $$
+
 DELIMITER ;
 
 
@@ -393,6 +1520,22 @@ FROM staff e
 LEFT JOIN staff s ON e.s_staff_id = s.staff_id
 ORDER BY e.s_staff_id, e.last_name, e.first_name;
 
+-- View 2: Doctors with their departments
+CREATE OR REPLACE VIEW vw_doctors_by_department AS
+SELECT
+    d.doctor_id,
+    s.staff_id,
+    CONCAT(s.first_name, ' ', s.last_name) AS doctor_name,
+    s.phone_number,
+    dept.department_id,
+    dept.department_name,
+    dept.description AS department_description,
+    s.created_at AS joined_date
+FROM doctors d
+LEFT JOIN staff s ON d.staff_id = s.staff_id
+LEFT JOIN specialties_department sd ON d.doctor_id = sd.doctor_id
+LEFT JOIN departments dept ON sd.department_id = dept.department_id
+ORDER BY dept.department_name, s.last_name, s.first_name;
 
 -- REPORT VIEWS
 
@@ -424,9 +1567,9 @@ SELECT
     s.staff_id,
     CONCAT(s.first_name, ' ', s.last_name) AS doctor_name,
     COUNT(DISTINCT a.appointment_id) AS total_appointments,
-    SUM(CASE WHEN a.appt_status = 'Completed' THEN 1 ELSE 0 END) AS completed_appointments,
-    SUM(CASE WHEN a.appt_status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled_appointments,
-    ROUND(100.0 * SUM(CASE WHEN a.appt_status = 'Completed' THEN 1 ELSE 0 END) / 
+    SUM(CASE WHEN ast.status_name = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_appointments,
+    SUM(CASE WHEN ast.status_name = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled_appointments,
+    ROUND(100.0 * SUM(CASE WHEN ast.status_name = 'COMPLETED' THEN 1 ELSE 0 END) / 
         NULLIF(COUNT(DISTINCT a.appointment_id), 0), 2) AS completion_rate_percent,
     COALESCE(SUM(i.amount), 0) AS total_revenue,
     COALESCE(AVG(i.amount), 0) AS avg_invoice_value,
@@ -435,6 +1578,7 @@ SELECT
 FROM doctors d
 LEFT JOIN staff s ON d.staff_id = s.staff_id
 LEFT JOIN appointments a ON d.doctor_id = a.doctor_id
+LEFT JOIN appointment_statuses ast ON a.status_id = ast.status_id
 LEFT JOIN invoices i ON a.appointment_id = i.appointment_id
 GROUP BY d.doctor_id, s.staff_id, s.first_name, s.last_name
 ORDER BY total_revenue DESC;
@@ -451,7 +1595,7 @@ SELECT
     apc.category AS procedure_category,
     tp.tooth_number,
     tp.surface,
-    tp.treatment_status,
+    tst.display_name AS treatment_status,
     tp.estimated_cost,
     COALESCE(SUM(i.amount), 0) AS invoiced_amount,
     tp.created_at AS plan_created,
@@ -461,10 +1605,11 @@ LEFT JOIN patients p ON tp.patient_id = p.patient_id
 LEFT JOIN doctors d ON tp.doctor_id = d.doctor_id
 LEFT JOIN staff s ON d.staff_id = s.staff_id
 LEFT JOIN ada_procedure_codes apc ON tp.procedure_code = apc.procedure_code
+LEFT JOIN treatment_statuses tst ON tp.status_id = tst.status_id
 LEFT JOIN appointments a ON a.patient_id = tp.patient_id AND a.doctor_id = tp.doctor_id
 LEFT JOIN invoices i ON a.appointment_id = i.appointment_id
-GROUP BY tp.plan_id, p.p_first_name, p.p_last_name, s.first_name, s.last_name, apc.procedure_code, apc.description, apc.category, tp.tooth_number, tp.surface, tp.treatment_status, tp.estimated_cost, tp.created_at
-ORDER BY tp.treatment_status, tp.created_at DESC;
+GROUP BY tp.plan_id, p.p_first_name, p.p_last_name, s.first_name, s.last_name, apc.procedure_code, apc.description, apc.category, tp.tooth_number, tp.surface, tst.display_name, tp.estimated_cost, tp.created_at
+ORDER BY tst.status_name, tp.created_at DESC;
 
 
 -- Report 4: Single Patient Treatment History
@@ -478,10 +1623,10 @@ SELECT
     apc.description AS procedure_name,
     tp.tooth_number,
     tp.surface,
-    tp.treatment_status,
+    tst.display_name AS treatment_status,
     tp.estimated_cost,
     a.appointment_date,
-    a.appt_status,
+    ast.display_name AS appointment_status,
     i.payment_status,
     i.amount AS invoice_amount,
     tp.created_at
@@ -490,7 +1635,9 @@ LEFT JOIN patients p ON tp.patient_id = p.patient_id
 LEFT JOIN doctors d ON tp.doctor_id = d.doctor_id
 LEFT JOIN staff s ON d.staff_id = s.staff_id
 LEFT JOIN ada_procedure_codes apc ON tp.procedure_code = apc.procedure_code
+LEFT JOIN treatment_statuses tst ON tp.status_id = tst.status_id
 LEFT JOIN appointments a ON a.patient_id = p.patient_id AND a.doctor_id = d.doctor_id
+LEFT JOIN appointment_statuses ast ON a.status_id = ast.status_id
 LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
 ORDER BY p.patient_id, a.appointment_date DESC;
 
@@ -503,14 +1650,15 @@ SELECT
     apc.category AS procedure_category,
     COUNT(DISTINCT tp.plan_id) AS total_procedures,
     COUNT(DISTINCT tp.patient_id) AS unique_patients,
-    SUM(CASE WHEN tp.treatment_status = 'Completed' THEN 1 ELSE 0 END) AS completed_count,
-    ROUND(100.0 * SUM(CASE WHEN tp.treatment_status = 'Completed' THEN 1 ELSE 0 END) / 
+    SUM(CASE WHEN tst.status_name = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_count,
+    ROUND(100.0 * SUM(CASE WHEN tst.status_name = 'COMPLETED' THEN 1 ELSE 0 END) / 
         NULLIF(COUNT(DISTINCT tp.plan_id), 0), 2) AS completion_rate_percent,
     ROUND(AVG(tp.estimated_cost), 2) AS avg_estimated_cost,
     ROUND(COALESCE(AVG(i.amount), 0), 2) AS avg_actual_cost,
     COALESCE(SUM(i.amount), 0) AS total_revenue_generated
 FROM treatment_plans tp
 LEFT JOIN ada_procedure_codes apc ON tp.procedure_code = apc.procedure_code
+LEFT JOIN treatment_statuses tst ON tp.status_id = tst.status_id
 LEFT JOIN appointments a ON a.patient_id = tp.patient_id AND a.doctor_id = tp.doctor_id
 LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
 WHERE tp.procedure_code IS NOT NULL

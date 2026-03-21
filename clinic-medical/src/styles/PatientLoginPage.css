@@ -1,0 +1,211 @@
+.patient-login-page {
+  min-height: calc(100vh - 200px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5.5rem 1rem 3rem;
+  background: linear-gradient(180deg, #f3f8f7 0%, #ffffff 35%);
+  position: relative;
+  overflow: hidden;
+}
+
+.patient-login-page::before,
+.patient-login-page::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.patient-login-page::before {
+  width: 340px;
+  height: 340px;
+  top: -110px;
+  left: -90px;
+  background: radial-gradient(circle at 30% 30%, rgba(132, 212, 211, 0.35), rgba(132, 212, 211, 0.08) 65%, rgba(132, 212, 211, 0) 100%);
+}
+
+.patient-login-page::after {
+  width: 280px;
+  height: 280px;
+  right: -70px;
+  bottom: -90px;
+  background: radial-gradient(circle at 35% 35%, rgba(0, 106, 106, 0.2), rgba(0, 106, 106, 0.06) 60%, rgba(0, 106, 106, 0) 100%);
+}
+
+.patient-login-card {
+  width: min(100%, 480px);
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #d9e4e2;
+  box-shadow: 0 10px 26px rgba(0, 80, 80, 0.12);
+  padding: 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.patient-login-label {
+  margin: 0;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #006a6a;
+}
+
+.patient-login-card h1 {
+  margin: 0.5rem 0 0.25rem;
+  color: #181c1c;
+}
+
+.patient-login-subtitle {
+  margin: 0 0 1.25rem;
+  color: #3e4948;
+}
+
+.patient-login-success {
+  margin: 0 0 1rem;
+  background: #e8f7ef;
+  color: #1f6f43;
+  border: 1px solid #bfe7d0;
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.95rem;
+}
+
+.patient-login-success-wrap {
+  margin-bottom: 1rem;
+}
+
+.patient-login-success-wrap .patient-login-success {
+  margin-bottom: 0.65rem;
+}
+
+.appointment-confirmation-card {
+  border: 1px solid #c9e5e3;
+  border-radius: 12px;
+  background: #f5fcfc;
+  padding: 0.8rem 0.9rem;
+}
+
+.appointment-confirmation-title {
+  margin: 0 0 0.55rem;
+  color: #005050;
+  font-weight: 700;
+}
+
+.appointment-confirmation-card p {
+  margin: 0.3rem 0;
+  color: #2e3d3c;
+}
+
+.patient-login-form,
+.forgot-password-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.patient-login-form label,
+.forgot-password-form label {
+  display: grid;
+  gap: 0.4rem;
+  color: #2d3837;
+  font-weight: 600;
+}
+
+.patient-login-form input,
+.forgot-password-form input {
+  width: 100%;
+  border: 1px solid #e2e8e6;
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.95rem;
+  color: #1f2a29;
+  background: #fcfefe;
+}
+
+.patient-login-form input:focus,
+.forgot-password-form input:focus {
+  outline: none;
+  border-color: #006a6a;
+  box-shadow: 0 0 0 3px rgba(132, 212, 211, 0.35);
+}
+
+.patient-login-submit,
+.forgot-password-submit {
+  border: 0;
+  border-radius: 10px;
+  padding: 0.72rem 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: #005050;
+  color: #ffffff;
+}
+
+.patient-login-submit:hover,
+.forgot-password-submit:hover {
+  background: #006a6a;
+}
+
+.forgot-password-toggle {
+  margin-top: 1rem;
+  background: none;
+  border: 0;
+  color: #006a6a;
+  cursor: pointer;
+  padding: 0;
+  font-weight: 600;
+}
+
+.forgot-password-form {
+  margin-top: 0.8rem;
+  padding: 0.9rem;
+  border: 1px solid #d9e4e2;
+  border-radius: 12px;
+  background: #f8fbfb;
+}
+
+.forgot-password-message {
+  margin: 0;
+  color: #3e4948;
+  font-size: 0.9rem;
+}
+
+.signup-link-wrap {
+  margin: 1rem 0 0;
+  color: #334240;
+}
+
+.signup-link-wrap a {
+  color: #006a6a;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.signup-link-wrap a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+  .patient-login-page {
+    padding-top: 4.5rem;
+  }
+
+  .patient-login-page::before {
+    width: 260px;
+    height: 260px;
+    top: -95px;
+    left: -120px;
+  }
+
+  .patient-login-page::after {
+    width: 220px;
+    height: 220px;
+    right: -90px;
+    bottom: -80px;
+  }
+
+  .patient-login-card {
+    padding: 1.25rem;
+  }
+}
