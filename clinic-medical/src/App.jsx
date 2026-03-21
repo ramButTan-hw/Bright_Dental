@@ -7,15 +7,21 @@ import PatientPortalPage from './pages/PatientPortalPage';
 import PatientInvoicesPage from './pages/PatientInvoicesPage';
 import PatientInvoiceCheckoutPage from './pages/PatientInvoiceCheckoutPage';
 import PatientNewAppointmentPage from './pages/PatientNewAppointmentPage';
+import PatientSettingsPage from './pages/PatientSettingsPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import StaffLoginPage from './pages/StaffLoginPage';
 import DentistLoginPage from './pages/DentistLoginPage';
 import DentistProfilePage from './pages/DentistProfilePage';
+import DentistPatientProfilePage from './pages/DentistPatientProfilePage';
 import ReceptionistPage from './pages/ReceptionistPage';
+import ReceptionistProfilePage from './pages/ReceptionistProfilePage';
+import ReceptionistPatientProfilePage from './pages/ReceptionistPatientProfilePage';
 import CreateAppointmentPage from './pages/CreateAppointmentPage';
 import RegisterPatientPage from './pages/RegisterPatientPage';
-import PatientProfilePage from './pages/PatientProfilePage';
 import AssignAppointmentPage from './pages/AssignAppointmentPage';
+import PatientDashboardPage from './pages/PatientDashboardPage';
+import MeetOurStaffPage from './pages/MeetOurStaffPage';
+import ContactUsPage from './pages/ContactUsPage';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { getAdminPortalSession, getReceptionPortalSession } from './utils/patientPortal';
 import './App.css';
@@ -39,7 +45,7 @@ function RequireStaff({ children }) {
 function App() {
   const location = useLocation();
 
-  const staffRoutes = ['/staff-login', '/dentist-login', '/dentist-profile', '/receptionist', '/admin'];
+  const staffRoutes = ['/staff-login', '/dentist-login', '/dentist-profile', '/receptionist', '/receptionist-profile', '/receptionist/patient-profile', '/admin'];
   const isStaffPage = staffRoutes.some((route) => location.pathname.startsWith(route));
 
   return (
@@ -47,20 +53,33 @@ function App() {
       <Navbar />
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/meet-our-staff" element={<MeetOurStaffPage />} />
+        <Route path="/contact-us" element={<ContactUsPage />} />
         <Route path="/patient-registration" element={<PatientRegistrationPage />} />
         <Route path="/patient-login" element={<PatientLoginPage />} />
         <Route path="/patient-portal" element={<PatientPortalPage />} />
+        <Route path="/patient-portal/settings" element={<PatientSettingsPage />} />
         <Route path="/patient-portal/new-appointment" element={<PatientNewAppointmentPage />} />
+        <Route path="/patient-portal/dashboard" element={<PatientDashboardPage />} />
         <Route path="/patient-portal/invoices" element={<PatientInvoicesPage />} />
         <Route path="/patient-portal/invoices/:invoiceId/checkout" element={<PatientInvoiceCheckoutPage />} />
         <Route path="/staff-login" element={<StaffLoginPage />} />
         <Route path="/dentist-login" element={<DentistLoginPage />} />
         <Route path="/dentist-profile" element={<DentistProfilePage />} />
+        <Route path="/dentist/patient/:appointmentId" element={<DentistPatientProfilePage />} />
         <Route
           path="/receptionist"
           element={
             <RequireStaff>
               <ReceptionistPage />
+            </RequireStaff>
+          }
+        />
+        <Route
+          path="/receptionist-profile"
+          element={
+            <RequireStaff>
+              <ReceptionistProfilePage />
             </RequireStaff>
           }
         />
@@ -81,10 +100,18 @@ function App() {
           }
         />
         <Route
+          path="/patient-dashboard/:patientId"
+          element={
+            <RequireStaff>
+              <PatientDashboardPage />
+            </RequireStaff>
+          }
+        />
+        <Route
           path="/receptionist/patient-profile/:patientId"
           element={
             <RequireStaff>
-              <PatientProfilePage />
+              <ReceptionistPatientProfilePage />
             </RequireStaff>
           }
         />

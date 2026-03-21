@@ -1,10 +1,12 @@
 function createPatientPortalRoutes(handlers) {
+  const pool = handlers.pool;
   const {
     sendJSON,
     getDoctorAppointments,
     getPatientByUserId,
     getPatientPastAppointmentReport,
     getPatientAppointments,
+    getPatientAppointmentRequests,
     getPatientNewAppointmentPrefill,
     createPatientNewAppointmentRequest,
     getPatientPrimaryDentist,
@@ -17,10 +19,85 @@ function createPatientPortalRoutes(handlers) {
     getPreferredAppointmentAvailability,
     getAppointmentPreferenceRequests,
     getAppointmentPreferenceRequestById,
-    assignAppointmentPreferenceRequest
+    assignAppointmentPreferenceRequest,
+    getCancelReasons,
+    cancelPatientAppointment,
+    getDepartments,
+    getInsuranceCompanies,
+    updatePatientProfile,
+    addPatientInsurance,
+    getLocations
   } = handlers;
 
   function handlePatientPortalRoutes(req, res, method, parts, parseJSON) {
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'locations') {
+        getLocations(req, res);
+        return true;
+    }
+
+    // Public: all locations with contact info
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'public' && parts[2] === 'locations') {
+      pool.query(
+        `SELECT location_id, location_city, location_state, loc_street_no, loc_street_name, loc_zip_code, loc_phone, loc_email, loc_fax
+         FROM locations
+         ORDER BY location_city`,
+        (err, rows) => {
+          if (err) {
+            console.error('Error fetching public locations:', err);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          sendJSON(res, 200, rows || []);
+        }
+      );
+      return true;
+    }
+
+    // Public: all staff grouped by role for Meet Our Staff page
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'public' && parts[2] === 'staff') {
+      // First check if profile_image column exists
+      pool.query(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'staff' AND COLUMN_NAME = 'profile_image'`,
+        (colErr, colRows) => {
+          const hasImage = !colErr && colRows && colRows.length > 0;
+          const imageSelect = hasImage ? ', TO_BASE64(s.profile_image) AS profile_image_base64' : ', NULL AS profile_image_base64';
+
+          pool.query(
+            `SELECT
+               s.staff_id,
+               s.first_name,
+               s.last_name,
+               s.phone_number,
+               u.user_email,
+               u.user_role,
+               d.doctor_id,
+               d.npi,
+               GROUP_CONCAT(
+                 DISTINCT CONCAT(l.location_city, ', ', l.location_state, ' - ', l.loc_street_no, ' ', l.loc_street_name)
+                 SEPARATOR '||'
+               ) AS locations
+               ${imageSelect}
+             FROM staff s
+             JOIN users u ON u.user_id = s.user_id
+             LEFT JOIN doctors d ON d.staff_id = s.staff_id
+             LEFT JOIN staff_locations sl ON sl.staff_id = s.staff_id
+             LEFT JOIN locations l ON l.location_id = sl.location_id
+             WHERE u.is_deleted = 0
+             GROUP BY s.staff_id
+             ORDER BY u.user_role, s.last_name, s.first_name`,
+            (err, rows) => {
+              if (err) {
+                console.error('Error fetching public staff:', err);
+                return sendJSON(res, 500, { error: 'Database error' });
+              }
+              sendJSON(res, 200, rows || []);
+            }
+          );
+        }
+      );
+      return true;
+    }
+
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'doctors' && parts[2] && parts[3] === 'appointments') {
       const doctorId = parseInt(parts[2], 10);
       getDoctorAppointments(req, doctorId, res);
@@ -33,6 +110,18 @@ function createPatientPortalRoutes(handlers) {
       return true;
     }
 
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'appointments' && parts[4] && parts[5] === 'cancel') {
+      const patientId = parseInt(parts[2], 10);
+      const appointmentId = parseInt(parts[4], 10);
+      parseJSON(req, (err, data) => {
+        if (err) {
+          return sendJSON(res, 400, { error: 'Invalid JSON' });
+        }
+        cancelPatientAppointment(req, patientId, appointmentId, data, res);
+      });
+      return true;
+    }
+
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'appointments') {
       if (parts[4] && parts[5] === 'report') {
         const patientId = parseInt(parts[2], 10);
@@ -42,6 +131,12 @@ function createPatientPortalRoutes(handlers) {
       }
       const patientId = parseInt(parts[2], 10);
       getPatientAppointments(req, patientId, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'appointment-requests') {
+      const patientId = parseInt(parts[2], 10);
+      getPatientAppointmentRequests(req, patientId, res);
       return true;
     }
 
@@ -107,6 +202,107 @@ function createPatientPortalRoutes(handlers) {
         }
         registerPatient(req, data, res);
       });
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'cancel-reasons') {
+      getCancelReasons(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'departments') {
+      getDepartments(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'insurance-companies') {
+      getInsuranceCompanies(req, res);
+      return true;
+    }
+
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'profile') {
+      const patientId = parseInt(parts[2], 10);
+      parseJSON(req, (err, data) => {
+        if (err) {
+          return sendJSON(res, 400, { error: 'Invalid JSON' });
+        }
+        updatePatientProfile(req, patientId, data, res);
+      });
+      return true;
+    }
+
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'insurance') {
+      const patientId = parseInt(parts[2], 10);
+      parseJSON(req, (err, data) => {
+        if (err) {
+          return sendJSON(res, 400, { error: 'Invalid JSON' });
+        }
+        addPatientInsurance(req, patientId, data, res);
+      });
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'prescriptions') {
+      const patientId = parseInt(parts[2], 10);
+      pool.query(
+        `SELECT
+          rx.prescription_id,
+          rx.medication_name,
+          rx.strength,
+          rx.dosage,
+          rx.frequency,
+          rx.instructions,
+          rx.date_prescribed,
+          rx.start_date,
+          rx.end_date,
+          rx.quantity,
+          rx.refills,
+          CONCAT(st.first_name, ' ', st.last_name) AS prescribing_doctor,
+          ph.pharm_name AS pharmacy_name,
+          ph.pharm_phone AS pharmacy_phone
+        FROM prescriptions rx
+        LEFT JOIN doctors d ON d.doctor_id = rx.doctor_id
+        LEFT JOIN staff st ON st.staff_id = d.staff_id
+        LEFT JOIN pharmacies ph ON ph.pharm_id = rx.pharm_id
+        WHERE rx.patient_id = ?
+        ORDER BY rx.date_prescribed DESC, rx.prescription_id DESC`,
+        [patientId],
+        (err, rows) => {
+          if (err) {
+            console.error('Error fetching patient prescriptions:', err);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          sendJSON(res, 200, rows || []);
+        }
+      );
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'pharmacy') {
+      const patientId = parseInt(parts[2], 10);
+      pool.query(
+        `SELECT
+          ph.pharm_id,
+          ph.pharm_name,
+          ph.pharm_phone,
+          ph.ph_address_1,
+          ph.ph_city,
+          ph.ph_state,
+          ph.ph_zipcode,
+          pp.is_primary
+        FROM patient_pharmacies pp
+        JOIN pharmacies ph ON ph.pharm_id = pp.pharm_id
+        WHERE pp.patient_id = ?
+        ORDER BY pp.is_primary DESC`,
+        [patientId],
+        (err, rows) => {
+          if (err) {
+            console.error('Error fetching patient pharmacy:', err);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          sendJSON(res, 200, rows || []);
+        }
+      );
       return true;
     }
 

@@ -47,6 +47,16 @@ function createPatientCoreHandlers(deps) {
     });
   }
 
+  function getPatientAppointmentRequests(req, patientId, res) {
+    pool.query(queries.getPatientAppointmentRequests, [patientId], (err, results) => {
+      if (err) {
+        console.error('Error fetching patient appointment requests:', err);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+      sendJSON(res, 200, results || []);
+    });
+  }
+
   function getPatientPrimaryDentist(req, patientId, res) {
     pool.query(queries.getPatientPrimaryDentist, [patientId], (err, results) => {
       if (err) {
@@ -187,16 +197,186 @@ function createPatientCoreHandlers(deps) {
     });
   }
 
+  function getCancelReasons(req, res) {
+    pool.query(
+      `SELECT reason_id, reason_text, category FROM cancel_reasons ORDER BY reason_id ASC`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching cancel reasons:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function cancelPatientAppointment(req, patientId, appointmentId, data, res) {
+    const reasonId = Number(data?.reasonId);
+    if (!Number.isInteger(reasonId) || reasonId <= 0) {
+      return sendJSON(res, 400, { error: 'A valid reasonId is required' });
+    }
+
+    pool.getConnection((connErr, conn) => {
+      if (connErr) {
+        console.error('Error getting connection for cancel:', connErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      conn.beginTransaction(async (txErr) => {
+        if (txErr) {
+          conn.release();
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        try {
+          const [statusRows] = await conn.promise().query(
+            `SELECT status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1`
+          );
+          if (!statusRows?.length) throw new Error('CANCELLED status not found');
+          const cancelledStatusId = Number(statusRows[0].status_id);
+
+          const [updateResult] = await conn.promise().query(
+            `UPDATE appointments
+             SET status_id = ?, reason_id = ?, updated_by = 'PATIENT_PORTAL'
+             WHERE appointment_id = ? AND patient_id = ?`,
+            [cancelledStatusId, reasonId, appointmentId, patientId]
+          );
+
+          if (!updateResult.affectedRows) {
+            conn.release();
+            return sendJSON(res, 404, { error: 'Appointment not found' });
+          }
+
+          conn.commit((commitErr) => {
+            conn.release();
+            if (commitErr) {
+              console.error('Error committing cancel:', commitErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            sendJSON(res, 200, { message: 'Appointment cancelled successfully' });
+          });
+        } catch (error) {
+          conn.rollback(() => {
+            conn.release();
+            console.error('Error cancelling appointment:', error);
+            sendJSON(res, 500, { error: 'Database error' });
+          });
+        }
+      });
+    });
+  }
+
+  function getDepartments(req, res) {
+    pool.query(
+      `SELECT department_id, department_name, description FROM departments ORDER BY department_name ASC`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching departments:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function getInsuranceCompanies(req, res) {
+    pool.query(
+      `SELECT company_id, company_name, phone_number FROM insurance_companies ORDER BY company_name ASC`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching insurance companies:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function updatePatientProfile(req, patientId, data, res) {
+    const fields = {};
+    if (data.firstName !== undefined) fields.p_first_name = String(data.firstName).trim();
+    if (data.lastName !== undefined) fields.p_last_name = String(data.lastName).trim();
+    if (data.phone !== undefined) fields.p_phone = String(data.phone).trim() || null;
+    if (data.email !== undefined) fields.p_email = String(data.email).trim();
+    if (data.address !== undefined) fields.p_address = String(data.address).trim() || null;
+    if (data.city !== undefined) fields.p_city = String(data.city).trim() || null;
+    if (data.state !== undefined) fields.p_state = String(data.state).trim().toUpperCase() || null;
+    if (data.zipcode !== undefined) fields.p_zipcode = String(data.zipcode).trim() || null;
+    if (data.emergencyContactName !== undefined) fields.p_emergency_contact_name = String(data.emergencyContactName).trim() || null;
+    if (data.emergencyContactPhone !== undefined) fields.p_emergency_contact_phone = String(data.emergencyContactPhone).trim() || null;
+
+    const keys = Object.keys(fields);
+    if (!keys.length) {
+      return sendJSON(res, 400, { error: 'No fields to update' });
+    }
+
+    const setClauses = keys.map((k) => `${k} = ?`).join(', ');
+    const values = keys.map((k) => fields[k]);
+    values.push(patientId);
+
+    pool.query(
+      `UPDATE patients SET ${setClauses}, updated_by = 'PATIENT_PORTAL' WHERE patient_id = ?`,
+      values,
+      (err, result) => {
+        if (err) {
+          if (err.code === 'ER_DUP_ENTRY') {
+            return sendJSON(res, 409, { error: 'Email already in use' });
+          }
+          console.error('Error updating patient profile:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        if (!result.affectedRows) {
+          return sendJSON(res, 404, { error: 'Patient not found' });
+        }
+        sendJSON(res, 200, { message: 'Profile updated successfully' });
+      }
+    );
+  }
+
+  function addPatientInsurance(req, patientId, data, res) {
+    const companyId = Number(data?.companyId);
+    const memberId = String(data?.memberId || '').trim();
+    const groupNumber = String(data?.groupNumber || '').trim();
+
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      return sendJSON(res, 400, { error: 'A valid insurance company is required' });
+    }
+    if (!memberId) {
+      return sendJSON(res, 400, { error: 'Member ID is required' });
+    }
+
+    pool.query(
+      `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, created_by, updated_by)
+       VALUES (?, ?, ?, ?, TRUE, 'PATIENT_PORTAL', 'PATIENT_PORTAL')
+       ON DUPLICATE KEY UPDATE member_id = VALUES(member_id), group_number = VALUES(group_number), updated_by = 'PATIENT_PORTAL'`,
+      [patientId, companyId, memberId, groupNumber || null],
+      (err) => {
+        if (err) {
+          console.error('Error adding patient insurance:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, { message: 'Insurance saved successfully' });
+      }
+    );
+  }
+
   return {
     getPatientById,
     getDoctorAppointments,
     getPatientByUserId,
     getPatientAppointments,
+    getPatientAppointmentRequests,
     getPatientPrimaryDentist,
     getPatientAppointmentReport,
     getPatientPastAppointmentReport,
     loginUser,
-    checkPatientEmail
+    checkPatientEmail,
+    getCancelReasons,
+    cancelPatientAppointment,
+    getDepartments,
+    getInsuranceCompanies,
+    updatePatientProfile,
+    addPatientInsurance
   };
 }
 

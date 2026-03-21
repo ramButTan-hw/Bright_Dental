@@ -107,7 +107,9 @@ function AssignAppointmentPage() {
           assignedDoctorId: Number(assignmentDraft.assignedDoctorId),
           assignedDate: assignmentDraft.assignedDate,
           assignedTime: assignmentDraft.assignedTime,
-          receptionistNotes: assignmentDraft.receptionistNotes || ''
+          receptionistNotes: assignmentDraft.receptionistNotes || '',
+          receptionistUsername: session?.username || '',
+          receptionistStaffId: session?.staffId || null
         })
       });
       const payload = await response.json().catch(() => ({}));

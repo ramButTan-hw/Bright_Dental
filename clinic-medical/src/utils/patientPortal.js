@@ -13,6 +13,11 @@ export function resolveApiBaseUrl() {
     return 'http://localhost:3001';
   }
 
+  // In local Vite dev, keep API calls pinned to the backend service.
+  if (window.location.port === '5173') {
+    return 'http://localhost:3001';
+  }
+
   return window.location.origin.replace(/\/+$/, '');
 }
 

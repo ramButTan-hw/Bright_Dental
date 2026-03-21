@@ -93,13 +93,25 @@ function createAdminHandlers(deps) {
           s.status_name,
           CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
           CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-          CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location_address
+          COALESCE(
+            CONCAT(rst.first_name, ' ', rst.last_name),
+            NULLIF(TRIM(a.updated_by), ''),
+            NULLIF(TRIM(a.created_by), ''),
+            'Unassigned'
+          ) AS receptionist_name,
+          CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location_address,
+          i.payment_status,
+          i.patient_amount AS invoice_patient_amount,
+          ROUND(COALESCE(i.patient_amount, 0) - COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0), 2) AS amount_due
         FROM appointments a
         JOIN appointment_statuses s ON s.status_id = a.status_id
         JOIN patients p ON p.patient_id = a.patient_id
         LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
         LEFT JOIN staff st ON st.staff_id = d.staff_id
+        LEFT JOIN users ru ON ru.user_username = COALESCE(NULLIF(TRIM(a.updated_by), ''), NULLIF(TRIM(a.created_by), ''))
+        LEFT JOIN staff rst ON rst.user_id = ru.user_id
         LEFT JOIN locations l ON l.location_id = a.location_id
+        LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
         WHERE a.appointment_date = ?
           AND s.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED')
         ORDER BY a.appointment_time ASC`,
@@ -204,7 +216,8 @@ function createAdminHandlers(deps) {
         CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
         CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location_address,
         COALESCE(i.patient_amount, 0) AS expected_patient_amount,
-        COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS paid_amount
+        COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS paid_amount,
+        i.payment_status
       FROM appointments a
       JOIN appointment_statuses s ON s.status_id = a.status_id
       JOIN patients p ON p.patient_id = a.patient_id
@@ -230,13 +243,43 @@ function createAdminHandlers(deps) {
           totalPaidAmount: reportRows.reduce((sum, row) => sum + Number(row.paid_amount || 0), 0)
         };
 
-        sendJSON(res, 200, {
-          date,
-          status: hasStatusFilter ? statusFilter : 'ALL',
-          generatedAt: new Date().toISOString(),
-          summary,
-          rows: reportRows
-        });
+        // Financial follow-up: per-patient summary across ALL invoices
+        pool.query(
+          `SELECT
+            p.patient_id,
+            CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+            p.p_phone,
+            p.p_email,
+            COUNT(i.invoice_id) AS total_invoices,
+            SUM(CASE WHEN i.payment_status = 'Unpaid' THEN 1 ELSE 0 END) AS unpaid_invoices,
+            SUM(CASE WHEN i.payment_status = 'Partial' THEN 1 ELSE 0 END) AS partial_invoices,
+            SUM(CASE WHEN i.payment_status = 'Paid' THEN 1 ELSE 0 END) AS paid_invoices,
+            COALESCE(SUM(i.amount), 0) AS total_charged,
+            COALESCE(SUM(i.insurance_covered_amount), 0) AS total_insurance_covered,
+            COALESCE(SUM(i.patient_amount), 0) AS total_patient_responsibility,
+            COALESCE(SUM((SELECT COALESCE(SUM(pay.payment_amount), 0) FROM payments pay WHERE pay.invoice_id = i.invoice_id)), 0) AS total_paid,
+            COALESCE(SUM(i.patient_amount), 0) - COALESCE(SUM((SELECT COALESCE(SUM(pay.payment_amount), 0) FROM payments pay WHERE pay.invoice_id = i.invoice_id)), 0) AS total_outstanding
+          FROM patients p
+          JOIN appointments a ON a.patient_id = p.patient_id
+          JOIN invoices i ON i.appointment_id = a.appointment_id
+          GROUP BY p.patient_id, p.p_first_name, p.p_last_name, p.p_phone, p.p_email
+          ORDER BY total_outstanding DESC, p.p_last_name ASC`,
+          (finErr, finRows) => {
+            if (finErr) {
+              console.error('Error generating financial follow-up:', finErr);
+              // Non-fatal: still return the date-based report
+            }
+
+            sendJSON(res, 200, {
+              date,
+              status: hasStatusFilter ? statusFilter : 'ALL',
+              generatedAt: new Date().toISOString(),
+              summary,
+              rows: reportRows,
+              financialFollowUp: finRows || []
+            });
+          }
+        );
       }
     );
   }
@@ -254,13 +297,18 @@ function createAdminHandlers(deps) {
         st.phone_number,
         u.user_username,
         u.user_role,
-        sl.location_id,
-        CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location_address
+        GROUP_CONCAT(DISTINCT sl.location_id) AS location_id,
+        GROUP_CONCAT(
+          DISTINCT CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code)
+          SEPARATOR ' | '
+        ) AS location_address
       FROM doctors d
       JOIN staff st ON st.staff_id = d.staff_id
       LEFT JOIN users u ON u.user_id = st.user_id
       LEFT JOIN staff_locations sl ON sl.staff_id = st.staff_id
       LEFT JOIN locations l ON l.location_id = sl.location_id
+      GROUP BY d.doctor_id, d.npi, st.staff_id, st.first_name, st.last_name,
+               st.date_of_birth, st.gender, st.phone_number, u.user_username, u.user_role
       ORDER BY st.last_name ASC, st.first_name ASC`,
       (err, rows) => {
         if (err) {
@@ -299,6 +347,7 @@ function createAdminHandlers(deps) {
     const username = String(data?.username || '').trim();
     const password = String(data?.password || '').trim();
     const email = String(data?.email || '').trim();
+    const npi = String(data?.npi || '').trim();
 
     if (!firstName || !lastName || !dob) {
       return sendJSON(res, 400, { error: 'firstName, lastName, and dob are required' });
@@ -310,6 +359,10 @@ function createAdminHandlers(deps) {
 
     if (!username || !password || !normalizedPhone) {
       return sendJSON(res, 400, { error: 'username, password, and phone are required' });
+    }
+
+    if (!/^\d{10}$/.test(npi)) {
+      return sendJSON(res, 400, { error: 'npi is required and must be a 10-digit number' });
     }
 
     if (password.length < 4) {
@@ -360,18 +413,16 @@ function createAdminHandlers(deps) {
                 }
 
                 const staffId = staffResult.insertId;
-                const pendingNpi = `PENDING-${staffId}`;
-
                 conn.query(
                   `INSERT INTO doctors (npi, staff_id, created_by, updated_by)
                    VALUES (?, ?, 'ADMIN_PORTAL', 'ADMIN_PORTAL')`,
-                  [pendingNpi, staffId],
+                  [npi, staffId],
                   (doctorErr, doctorResult) => {
                     if (doctorErr) {
                       return conn.rollback(() => {
                         conn.release();
                         if (doctorErr.code === 'ER_DUP_ENTRY') {
-                          return sendJSON(res, 409, { error: 'Unable to assign temporary NPI' });
+                          return sendJSON(res, 409, { error: 'NPI already exists' });
                         }
                         console.error('Error creating doctor row:', doctorErr);
                         sendJSON(res, 500, { error: 'Failed to create doctor record' });
@@ -388,6 +439,7 @@ function createAdminHandlers(deps) {
                         sendJSON(res, 201, {
                           message: 'Doctor created successfully',
                           doctorId: doctorResult.insertId,
+                          npi,
                           staffId,
                           userId
                         });
@@ -638,6 +690,40 @@ function createAdminHandlers(deps) {
     );
   }
 
+  function getStaffTimeOffRequestsByStaffId(req, res, staffId) {
+    pool.query(
+      `SELECT
+        str.request_id,
+        str.staff_id,
+        str.location_id,
+        COALESCE(
+          CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code),
+          'Any location'
+        ) AS location_address,
+        str.start_datetime,
+        str.end_datetime,
+        str.reason,
+        str.is_approved,
+        CASE
+          WHEN str.is_approved = TRUE THEN 'APPROVED'
+          ELSE 'PENDING'
+        END AS request_status
+      FROM staff_time_off_requests str
+      LEFT JOIN locations l ON l.location_id = str.location_id
+      WHERE str.staff_id = ?
+      ORDER BY str.start_datetime DESC
+      LIMIT 100`,
+      [staffId],
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching staff time-off requests by staff id:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
   function getAdminStaffTimeOffRequests(req, res) {
     pool.query(
       `SELECT
@@ -859,14 +945,19 @@ function createAdminHandlers(deps) {
         u.user_username,
         u.user_email,
         u.user_role,
-        sl.location_id,
-        CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location_address
+        GROUP_CONCAT(DISTINCT sl.location_id) AS location_id,
+        GROUP_CONCAT(
+          DISTINCT CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code)
+          SEPARATOR ' | '
+        ) AS location_address
       FROM staff st
       JOIN users u ON u.user_id = st.user_id
       LEFT JOIN staff_locations sl ON sl.staff_id = st.staff_id
       LEFT JOIN locations l ON l.location_id = sl.location_id
       WHERE u.user_role = ?
         AND COALESCE(u.is_deleted, 0) = 0
+      GROUP BY st.staff_id, st.first_name, st.last_name, st.date_of_birth,
+               st.gender, st.phone_number, u.user_username, u.user_email, u.user_role
       ORDER BY st.last_name ASC, st.first_name ASC
       LIMIT 200`,
       [role],
@@ -924,13 +1015,24 @@ function createAdminHandlers(deps) {
           s.status_name,
           CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
           p.p_phone AS patient_phone,
-          CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state) AS location_address
+          COALESCE(
+            CONCAT(rst.first_name, ' ', rst.last_name),
+            NULLIF(TRIM(a.updated_by), ''),
+            NULLIF(TRIM(a.created_by), ''),
+            'Unassigned'
+          ) AS receptionist_name,
+          CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state) AS location_address,
+          inv.payment_status,
+          ROUND(COALESCE(inv.patient_amount, 0) - COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = inv.invoice_id), 0), 2) AS amount_due
         FROM appointments a
         JOIN appointment_statuses s ON s.status_id = a.status_id
         JOIN patients p ON p.patient_id = a.patient_id
         JOIN doctors d ON d.doctor_id = a.doctor_id
         JOIN staff st ON st.staff_id = d.staff_id
+        LEFT JOIN users ru ON ru.user_username = COALESCE(NULLIF(TRIM(a.updated_by), ''), NULLIF(TRIM(a.created_by), ''))
+        LEFT JOIN staff rst ON rst.user_id = ru.user_id
         LEFT JOIN locations l ON l.location_id = a.location_id
+        LEFT JOIN invoices inv ON inv.appointment_id = a.appointment_id
         WHERE a.appointment_date BETWEEN ? AND ?
         ORDER BY a.appointment_date ASC, a.appointment_time ASC, st.last_name ASC`,
         [resolvedFrom, resolvedTo]
@@ -938,22 +1040,52 @@ function createAdminHandlers(deps) {
 
       const [timeOff] = await db.query(
         `SELECT
-          dto.time_off_id,
-          CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-          dto.start_datetime,
-          dto.end_datetime,
-          dto.reason,
-          dto.is_approved,
+          CONCAT(unified.request_source, '-', unified.request_id) AS request_key,
+          unified.request_source,
+          unified.requester_name,
+          unified.requester_role,
+          unified.start_datetime,
+          unified.end_datetime,
+          unified.reason,
+          unified.is_approved,
           COALESCE(
             CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state),
             'All Locations'
           ) AS location_address
-        FROM doctor_time_off dto
-        JOIN doctors d ON d.doctor_id = dto.doctor_id
-        JOIN staff st ON st.staff_id = d.staff_id
-        LEFT JOIN locations l ON l.location_id = dto.location_id
-        ORDER BY dto.start_datetime DESC
-        LIMIT 200`
+        FROM (
+          SELECT
+            dto.time_off_id AS request_id,
+            'DOCTOR_TIME_OFF' AS request_source,
+            CONCAT(st.first_name, ' ', st.last_name) AS requester_name,
+            'DOCTOR' AS requester_role,
+            dto.location_id,
+            dto.start_datetime,
+            dto.end_datetime,
+            dto.reason,
+            dto.is_approved
+          FROM doctor_time_off dto
+          JOIN doctors d ON d.doctor_id = dto.doctor_id
+          JOIN staff st ON st.staff_id = d.staff_id
+
+          UNION ALL
+
+          SELECT
+            str.request_id,
+            'STAFF_TIME_OFF' AS request_source,
+            CONCAT(st.first_name, ' ', st.last_name) AS requester_name,
+            COALESCE(u.user_role, 'STAFF') AS requester_role,
+            str.location_id,
+            str.start_datetime,
+            str.end_datetime,
+            str.reason,
+            str.is_approved
+          FROM staff_time_off_requests str
+          JOIN staff st ON st.staff_id = str.staff_id
+          LEFT JOIN users u ON u.user_id = st.user_id
+        ) AS unified
+        LEFT JOIN locations l ON l.location_id = unified.location_id
+        ORDER BY unified.start_datetime DESC
+        LIMIT 300`
       );
 
       sendJSON(res, 200, {
@@ -986,6 +1118,7 @@ function createAdminHandlers(deps) {
     approveAdminDoctorTimeOff,
     denyAdminDoctorTimeOff,
     createStaffTimeOffRequest,
+    getStaffTimeOffRequestsByStaffId,
     approveAdminStaffTimeOffRequest,
     denyAdminStaffTimeOffRequest,
     getAdminStaffMembersByRole,

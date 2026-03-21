@@ -56,11 +56,16 @@ function PatientInvoicesPage() {
               const label = key
                 .replace(/_/g, ' ')
                 .replace(/\b\w/g, (char) => char.toUpperCase());
-              const maybeMoney = /amount|balance|total|cost|covered|paid|due/i.test(key);
+              const isCount = /total_invoices/i.test(key);
+              const isDate = /since|created_at|updated_at/i.test(key);
+              const maybeMoney = !isCount && /amount|balance|total|cost|covered|paid|due/i.test(key);
+              let displayValue = String(value ?? 'N/A');
+              if (maybeMoney) displayValue = formatMoney(value);
+              else if (isDate && value) displayValue = new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
               return (
                 <article key={key} className="portal-card portal-card-soft">
                   <p className="portal-stat-label">{label}</p>
-                  <p className="portal-stat-value">{maybeMoney ? formatMoney(value) : String(value ?? 'N/A')}</p>
+                  <p className="portal-stat-value">{displayValue}</p>
                 </article>
               );
             })}

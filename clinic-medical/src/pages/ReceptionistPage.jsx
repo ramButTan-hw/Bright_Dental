@@ -1,20 +1,85 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { formatDate, formatTime, getReceptionPortalSession, resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/ReceptionistPage.css';
+
+const CLINIC_OPEN_TIME = '08:00';
+const CLINIC_CLOSE_TIME = '19:00';
+
+const buildClinicTimeOptions = (openTime, closeTime) => {
+  const [openHour, openMinute] = openTime.split(':').map(Number);
+  const [closeHour, closeMinute] = closeTime.split(':').map(Number);
+
+  const cursor = new Date(2000, 0, 1, openHour, openMinute, 0, 0);
+  const close = new Date(2000, 0, 1, closeHour, closeMinute, 0, 0);
+  const options = [];
+
+  while (cursor.getTime() <= close.getTime()) {
+    const hours = String(cursor.getHours()).padStart(2, '0');
+    const minutes = String(cursor.getMinutes()).padStart(2, '0');
+    const value = `${hours}:${minutes}`;
+    options.push({
+      value,
+      label: new Date(`2000-01-01T${value}:00`).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })
+    });
+    cursor.setMinutes(cursor.getMinutes() + 30);
+  }
+
+  return options;
+};
+
+const CLINIC_TIME_SELECT_OPTIONS = buildClinicTimeOptions(CLINIC_OPEN_TIME, CLINIC_CLOSE_TIME);
+
+const formatDateTimeWithMeridiem = (value) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return 'N/A';
+  }
+  return parsed.toLocaleString([], {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+};
 
 function PatientSearch() {
   const navigate = useNavigate();
   const [patientQuery, setPatientQuery] = useState('');
   const [patientSearchResults, setPatientSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
+  const debounceRef = useRef(null);
 
-  const searchPatients = async () => {
-    const data = await fetch(`${API_BASE_URL}/api/reception/patients/search?query=${encodeURIComponent(patientQuery)}`).then(
-      (res) => res.json()
-    );
-    setPatientSearchResults(Array.isArray(data) ? data : []);
-  };
+  useEffect(() => {
+    const query = String(patientQuery || '').trim();
+    if (!query) {
+      setPatientSearchResults([]);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/reception/patients/search?query=${encodeURIComponent(query)}`);
+        const data = await response.json().catch(() => []);
+        setPatientSearchResults(Array.isArray(data) ? data : []);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [patientQuery, API_BASE_URL]);
 
   const goToPatientProfile = (patientId) => {
     navigate(`/receptionist/patient-profile/${patientId}`);
@@ -23,25 +88,42 @@ function PatientSearch() {
   return (
     <article className="reception-panel">
       <h2>Search Patient</h2>
-      <div className="reception-inline-grid">
-        <input
-          value={patientQuery}
-          onChange={(e) => setPatientQuery(e.target.value)}
-          placeholder="Search name, email, phone, SSN"
-        />
-        <button type="button" className="reception-action-btn reception-action-btn--primary" onClick={searchPatients}>
-          Search
-        </button>
-      </div>
-      <ul className="reception-list">
-        {patientSearchResults.map((patient) => (
-          <li key={patient.patient_id}>
-            <button type="button" onClick={() => goToPatientProfile(patient.patient_id)}>
-              ID: {patient.patient_id} — {patient.p_first_name} {patient.p_last_name} - {patient.p_email}
-            </button>
-          </li>
-        ))}
-      </ul>
+      <input
+        value={patientQuery}
+        onChange={(e) => setPatientQuery(e.target.value)}
+        placeholder="Search name, email, phone, SSN"
+        className="reception-search-input"
+      />
+      {patientSearchResults.length > 0 && (
+        <div className="reception-table-wrap" style={{ marginTop: '0.75rem' }}>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>Date of Birth</th>
+              </tr>
+            </thead>
+            <tbody>
+              {patientSearchResults.map((patient) => (
+                <tr key={patient.patient_id} className="reception-clickable-row" onClick={() => goToPatientProfile(patient.patient_id)}>
+                  <td>{patient.patient_id}</td>
+                  <td>{patient.p_first_name} {patient.p_last_name}</td>
+                  <td>{patient.p_phone || 'N/A'}</td>
+                  <td>{patient.p_email || 'N/A'}</td>
+                  <td>{patient.p_dob ? formatDate(patient.p_dob) : 'N/A'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!isSearching && patientQuery.trim() && !patientSearchResults.length && (
+        <p style={{ marginTop: '0.5rem', color: '#4b6966' }}>No patients found for this search.</p>
+      )}
+      {isSearching && <p style={{ marginTop: '0.5rem', color: '#4b6966' }}>Searching...</p>}
     </article>
   );
 }
@@ -51,11 +133,443 @@ function ReceptionistPage() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const session = getReceptionPortalSession();
 
+  const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  };
+
   const [requests, setRequests] = useState([]);
-  const [appointments, setAppointments] = useState([]);
-  const [futureAppointments, setFutureAppointments] = useState([]);
-  const [pastAppointments, setPastAppointments] = useState([]);
+  const [allAppointmentsForDate, setAllAppointmentsForDate] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [statusFilters, setStatusFilters] = useState(new Set(['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN']));
   const [message, setMessage] = useState('');
+  const [singleReportForm, setSingleReportForm] = useState({
+    patientId: '',
+    fromDate: new Date().toISOString().slice(0, 10),
+    toDate: new Date().toISOString().slice(0, 10),
+    procedureCode: '',
+    toothNumber: '',
+    surface: ''
+  });
+  const [multiReportForm, setMultiReportForm] = useState({
+    fromDate: new Date().toISOString().slice(0, 10),
+    toDate: new Date().toISOString().slice(0, 10),
+    procedureCode: '',
+    toothNumber: '',
+    surface: ''
+  });
+  const [singleReportFormat, setSingleReportFormat] = useState('PDF');
+  const [multiReportFormat, setMultiReportFormat] = useState('CSV');
+  const [isGeneratingSingleReport, setIsGeneratingSingleReport] = useState(false);
+  const [isGeneratingMultiReport, setIsGeneratingMultiReport] = useState(false);
+  const [singleApptReportForm, setSingleApptReportForm] = useState({
+    patientId: '',
+    fromDate: new Date().toISOString().slice(0, 10),
+    toDate: new Date().toISOString().slice(0, 10),
+    status: '',
+    reason: ''
+  });
+  const [multiApptReportForm, setMultiApptReportForm] = useState({
+    fromDate: new Date().toISOString().slice(0, 10),
+    toDate: new Date().toISOString().slice(0, 10),
+    status: '',
+    reason: '',
+    preferredLocation: ''
+  });
+  const [singleApptReportFormat, setSingleApptReportFormat] = useState('PDF');
+  const [multiApptReportFormat, setMultiApptReportFormat] = useState('CSV');
+  const [isGeneratingSingleApptReport, setIsGeneratingSingleApptReport] = useState(false);
+  const [isGeneratingMultiApptReport, setIsGeneratingMultiApptReport] = useState(false);
+  const [timeOffForm, setTimeOffForm] = useState({
+    startDate: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
+    locationId: '',
+    reason: ''
+  });
+  const [timeOffHistory, setTimeOffHistory] = useState([]);
+  const [timeOffLocations, setTimeOffLocations] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [isSubmittingTimeOff, setIsSubmittingTimeOff] = useState(false);
+
+  const buildReportQueryString = (formValues) => {
+    const params = new URLSearchParams();
+    Object.entries(formValues).forEach(([key, value]) => {
+      const safeValue = String(value || '').trim();
+      if (safeValue) {
+        params.set(key, safeValue);
+      }
+    });
+    return params.toString();
+  };
+
+  const flattenReportRows = (payload) => {
+    const visits = Array.isArray(payload?.visits) ? payload.visits : [];
+    const rows = [];
+
+    visits.forEach((visit) => {
+      const entries = Array.isArray(visit?.entries) ? visit.entries : [];
+      if (!entries.length) {
+        rows.push({
+          patientId: visit.patientId,
+          patientName: visit.patientName,
+          visitDate: visit.visitDate,
+          visitCost: Number(visit.visitCost || 0),
+          procedureCode: '',
+          treatmentDescription: '',
+          toothNumber: '',
+          surface: '',
+          treatmentCost: 0,
+          finding: '',
+          notes: ''
+        });
+        return;
+      }
+
+      entries.forEach((entry) => {
+        rows.push({
+          patientId: visit.patientId,
+          patientName: visit.patientName,
+          visitDate: visit.visitDate,
+          visitCost: Number(visit.visitCost || 0),
+          procedureCode: entry.procedureCode || '',
+          treatmentDescription: entry.treatmentDescription || '',
+          toothNumber: entry.toothNumber || '',
+          surface: entry.surface || '',
+          treatmentCost: Number(entry.cost || 0),
+          finding: entry.finding || '',
+          notes: entry.notes || ''
+        });
+      });
+    });
+
+    return rows;
+  };
+
+  const escapeCsvValue = (value) => {
+    const raw = String(value ?? '');
+    if (/[",\n]/.test(raw)) {
+      return `"${raw.replace(/"/g, '""')}"`;
+    }
+    return raw;
+  };
+
+  const downloadTextFile = (text, filename, mimeType) => {
+    const blob = new Blob([text], { type: mimeType });
+    const fileUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = fileUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(fileUrl);
+  };
+
+  const downloadReportJson = (payload, filename) => {
+    downloadTextFile(JSON.stringify(payload, null, 2), filename, 'application/json');
+  };
+
+  const downloadReportCsv = (payload, filename) => {
+    const rows = flattenReportRows(payload);
+    const header = [
+      'Patient ID',
+      'Patient Name',
+      'Visit Date',
+      'Visit Cost',
+      'ADA Code',
+      'Treatment',
+      'Tooth Number',
+      'Surface',
+      'Treatment Cost',
+      'Finding',
+      'Notes'
+    ];
+    const csvLines = [header.join(',')];
+
+    rows.forEach((row) => {
+      csvLines.push([
+        row.patientId,
+        row.patientName,
+        row.visitDate,
+        row.visitCost.toFixed(2),
+        row.procedureCode,
+        row.treatmentDescription,
+        row.toothNumber,
+        row.surface,
+        row.treatmentCost.toFixed(2),
+        row.finding,
+        row.notes
+      ].map(escapeCsvValue).join(','));
+    });
+
+    downloadTextFile(csvLines.join('\n'), filename, 'text/csv;charset=utf-8');
+  };
+
+  const downloadReportPdf = (payload, filename, title) => {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const rows = flattenReportRows(payload);
+    const summary = payload?.summary || {};
+    const isMultiPatientReport = String(payload?.reportType || '').includes('MULTI_PATIENT');
+    const summaryParts = [];
+    if (isMultiPatientReport) {
+      summaryParts.push(`Patients: ${summary.totalPatients ?? 0}`);
+    }
+    summaryParts.push(`Visits: ${summary.totalVisits ?? 0}`);
+    summaryParts.push(`Entries: ${summary.totalEntries ?? 0}`);
+    summaryParts.push(`Total Cost: $${Number(summary.totalCost || 0).toFixed(2)}`);
+
+    doc.setFontSize(14);
+    doc.text(title, 14, 14);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${String(payload?.generatedAt || '').slice(0, 19).replace('T', ' ')}`, 14, 20);
+    doc.text(summaryParts.join('  '), 14, 26);
+
+    autoTable(doc, {
+      startY: 30,
+      styles: { fontSize: 8 },
+      head: [[
+        'Patient ID',
+        'Patient Name',
+        'Visit Date',
+        'Visit Cost',
+        'ADA',
+        'Treatment',
+        'Tooth',
+        'Surface',
+        'Treatment Cost',
+        'Finding'
+      ]],
+      body: rows.map((row) => [
+        String(row.patientId || ''),
+        row.patientName,
+        row.visitDate,
+        `$${row.visitCost.toFixed(2)}`,
+        row.procedureCode,
+        row.treatmentDescription,
+        row.toothNumber,
+        row.surface,
+        `$${row.treatmentCost.toFixed(2)}`,
+        row.finding
+      ])
+    });
+
+    doc.save(filename);
+  };
+
+  const exportReportPayload = (payload, format, baseFilename, title) => {
+    const safeFormat = String(format || 'JSON').toUpperCase();
+    if (safeFormat === 'CSV') {
+      downloadReportCsv(payload, `${baseFilename}.csv`);
+      return;
+    }
+    if (safeFormat === 'PDF') {
+      downloadReportPdf(payload, `${baseFilename}.pdf`, title);
+      return;
+    }
+    downloadReportJson(payload, `${baseFilename}.json`);
+  };
+
+  const generateSinglePatientReport = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    const patientId = Number(singleReportForm.patientId || 0);
+    if (!Number.isInteger(patientId) || patientId <= 0) {
+      setMessage('Please enter a valid patient ID for the single-patient report.');
+      return;
+    }
+
+    setIsGeneratingSingleReport(true);
+    try {
+      const queryString = buildReportQueryString(singleReportForm);
+      const response = await fetch(`${API_BASE_URL}/api/reception/reports/patient?${queryString}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to generate single-patient report.');
+      }
+
+      exportReportPayload(
+        payload,
+        singleReportFormat,
+        `reception-patient-${patientId}-report-${singleReportForm.fromDate}-to-${singleReportForm.toDate}`,
+        'Reception Single Patient Treatment and Finding Report'
+      );
+      setMessage(`Single-patient report generated and downloaded as ${singleReportFormat}.`);
+    } catch (err) {
+      setMessage(err.message || 'Failed to generate single-patient report.');
+    } finally {
+      setIsGeneratingSingleReport(false);
+    }
+  };
+
+  const generateMultiPatientReport = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    setIsGeneratingMultiReport(true);
+    try {
+      const queryString = buildReportQueryString(multiReportForm);
+      const response = await fetch(`${API_BASE_URL}/api/reception/reports/patients?${queryString}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to generate multi-patient report.');
+      }
+
+      exportReportPayload(
+        payload,
+        multiReportFormat,
+        `reception-multi-patient-report-${multiReportForm.fromDate}-to-${multiReportForm.toDate}`,
+        'Reception Multi Patient Treatment and Finding Report'
+      );
+      setMessage(`Multi-patient report generated and downloaded as ${multiReportFormat}.`);
+    } catch (err) {
+      setMessage(err.message || 'Failed to generate multi-patient report.');
+    } finally {
+      setIsGeneratingMultiReport(false);
+    }
+  };
+
+  const flattenApptReportRows = (payload) => {
+    const appointments = Array.isArray(payload?.appointments) ? payload.appointments : [];
+    return appointments.map((a) => ({
+      appointmentId: a.appointmentId,
+      patientId: a.patientId,
+      patientName: a.patientName || '',
+      appointmentDate: a.appointmentDate || '',
+      appointmentTime: a.appointmentTime || '',
+      status: a.statusDisplay || a.status || '',
+      doctorName: a.doctorName || '',
+      location: a.location || '',
+      notes: a.notes || ''
+    }));
+  };
+
+  const downloadApptReportCsv = (payload, filename) => {
+    const rows = flattenApptReportRows(payload);
+    const header = ['Appt ID', 'Patient ID', 'Patient Name', 'Date', 'Time', 'Status', 'Doctor', 'Location', 'Notes'];
+    const csvLines = [header.join(',')];
+    rows.forEach((row) => {
+      csvLines.push([
+        row.appointmentId,
+        row.patientId,
+        row.patientName,
+        row.appointmentDate,
+        row.appointmentTime,
+        row.status,
+        row.doctorName,
+        row.location,
+        row.notes
+      ].map(escapeCsvValue).join(','));
+    });
+    downloadTextFile(csvLines.join('\n'), filename, 'text/csv;charset=utf-8');
+  };
+
+  const downloadApptReportPdf = (payload, filename, title) => {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const rows = flattenApptReportRows(payload);
+    const summary = payload?.summary || {};
+
+    doc.setFontSize(14);
+    doc.text(title, 14, 14);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${String(payload?.generatedAt || '').slice(0, 19).replace('T', ' ')}`, 14, 20);
+    doc.text(`Patients: ${summary.totalPatients ?? 0}  Appointments: ${summary.totalAppointments ?? 0}`, 14, 26);
+
+    autoTable(doc, {
+      startY: 30,
+      styles: { fontSize: 8 },
+      head: [['Appt ID', 'Patient ID', 'Patient', 'Date', 'Time', 'Status', 'Doctor', 'Location', 'Notes']],
+      body: rows.map((row) => [
+        String(row.appointmentId || ''),
+        String(row.patientId || ''),
+        row.patientName,
+        row.appointmentDate,
+        row.appointmentTime,
+        row.status,
+        row.doctorName,
+        row.location,
+        row.notes
+      ])
+    });
+
+    doc.save(filename);
+  };
+
+  const exportApptReportPayload = (payload, format, baseFilename, title) => {
+    const safeFormat = String(format || 'JSON').toUpperCase();
+    if (safeFormat === 'CSV') {
+      downloadApptReportCsv(payload, `${baseFilename}.csv`);
+      return;
+    }
+    if (safeFormat === 'PDF') {
+      downloadApptReportPdf(payload, `${baseFilename}.pdf`, title);
+      return;
+    }
+    downloadReportJson(payload, `${baseFilename}.json`);
+  };
+
+  const generateSinglePatientApptReport = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    const patientId = Number(singleApptReportForm.patientId || 0);
+    if (!Number.isInteger(patientId) || patientId <= 0) {
+      setMessage('Please enter a valid patient ID for the single-patient appointment report.');
+      return;
+    }
+
+    setIsGeneratingSingleApptReport(true);
+    try {
+      const queryString = buildReportQueryString(singleApptReportForm);
+      const response = await fetch(`${API_BASE_URL}/api/reception/reports/patient-appointments?${queryString}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to generate single-patient appointment report.');
+      }
+
+      exportApptReportPayload(
+        payload,
+        singleApptReportFormat,
+        `reception-patient-${patientId}-appointments-${singleApptReportForm.fromDate}-to-${singleApptReportForm.toDate}`,
+        'Single Patient Appointment Report'
+      );
+      setMessage(`Single-patient appointment report generated and downloaded as ${singleApptReportFormat}.`);
+    } catch (err) {
+      setMessage(err.message || 'Failed to generate single-patient appointment report.');
+    } finally {
+      setIsGeneratingSingleApptReport(false);
+    }
+  };
+
+  const generateMultiPatientApptReport = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    setIsGeneratingMultiApptReport(true);
+    try {
+      const queryString = buildReportQueryString(multiApptReportForm);
+      const response = await fetch(`${API_BASE_URL}/api/reception/reports/appointments?${queryString}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to generate multi-patient appointment report.');
+      }
+
+      exportApptReportPayload(
+        payload,
+        multiApptReportFormat,
+        `reception-multi-patient-appointments-${multiApptReportForm.fromDate}-to-${multiApptReportForm.toDate}`,
+        'Multi Patient Appointment Report'
+      );
+      setMessage(`Multi-patient appointment report generated and downloaded as ${multiApptReportFormat}.`);
+    } catch (err) {
+      setMessage(err.message || 'Failed to generate multi-patient appointment report.');
+    } finally {
+      setIsGeneratingMultiApptReport(false);
+    }
+  };
 
   const safeJson = async (response) => {
     const payload = await response.json().catch(() => ({}));
@@ -65,18 +579,121 @@ function ReceptionistPage() {
     return payload;
   };
 
+  const loadAppointmentsForDate = async (date) => {
+    const appointmentsData = await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments?date=${date}`).then(safeJson);
+    setAllAppointmentsForDate(Array.isArray(appointmentsData) ? appointmentsData : []);
+  };
+
   const loadCore = async () => {
-    const [requestsData, appointmentsData, futureData, pastData] = await Promise.all([
-      fetch(`${API_BASE_URL}/api/appointments/preference-requests`).then(safeJson),
-      fetch(`${API_BASE_URL}/api/reception/appointments?date=${new Date().toISOString().slice(0, 10)}`).then(safeJson),
-      fetch(`${API_BASE_URL}/api/reception/appointments/future`).then(safeJson),
-      fetch(`${API_BASE_URL}/api/reception/appointments/past`).then(safeJson),
+    const [requestsData, timeOffData, locationData, departmentsData] = await Promise.all([
+      fetchWithTimeout(`${API_BASE_URL}/api/appointments/preference-requests`).then(safeJson),
+      session?.staffId
+        ? fetchWithTimeout(`${API_BASE_URL}/api/staff/time-off-requests?staffId=${encodeURIComponent(session.staffId)}`).then(safeJson)
+        : Promise.resolve([]),
+      fetchWithTimeout(`${API_BASE_URL}/api/admin/locations`).then(safeJson),
+      fetchWithTimeout(`${API_BASE_URL}/api/departments`).then(safeJson)
     ]);
 
     setRequests(Array.isArray(requestsData) ? requestsData : []);
-    setAppointments(Array.isArray(appointmentsData) ? appointmentsData : []);
-    setFutureAppointments(Array.isArray(futureData) ? futureData : []);
-    setPastAppointments(Array.isArray(pastData) ? pastData : []);
+    setTimeOffHistory(Array.isArray(timeOffData) ? timeOffData : []);
+    setTimeOffLocations(Array.isArray(locationData) ? locationData : []);
+    setDepartments(Array.isArray(departmentsData) ? departmentsData : []);
+    await loadAppointmentsForDate(selectedDate);
+  };
+
+
+  const shiftDate = (offset) => {
+    const d = new Date(`${selectedDate}T00:00:00`);
+    d.setDate(d.getDate() + offset);
+    setSelectedDate(d.toISOString().slice(0, 10));
+  };
+
+  const selectedDateLabel = (() => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (selectedDate === today) return 'Today';
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (selectedDate === tomorrow.toISOString().slice(0, 10)) return 'Tomorrow';
+    return formatDate(selectedDate);
+  })();
+
+  const ALL_STATUS_OPTIONS = ['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN', 'CANCELLED', 'NO_SHOW', 'COMPLETED'];
+
+  const toggleStatusFilter = (status) => {
+    setStatusFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(status)) {
+        next.delete(status);
+      } else {
+        next.add(status);
+      }
+      return next;
+    });
+  };
+
+  const filteredAppointments = allAppointmentsForDate.filter((appt) => {
+    const status = String(appt?.status_name || appt?.appointment_status || '').toUpperCase();
+    return statusFilters.has(status);
+  });
+
+  const markNoShow = async (appointmentId) => {
+    await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/no-show`, {
+      method: 'PUT',
+    }).then(safeJson);
+
+    setMessage('Appointment marked as no-show.');
+    await loadAppointmentsForDate(selectedDate);
+  };
+
+  useEffect(() => {
+    if (!session?.staffId) return;
+    loadAppointmentsForDate(selectedDate).catch(() => {});
+  }, [selectedDate]);
+
+  const submitTimeOffRequest = async (event) => {
+    event.preventDefault();
+    setMessage('');
+
+    if (!session?.staffId) {
+      setMessage('Staff session missing. Please sign in again.');
+      return;
+    }
+    if (!timeOffForm.startDate || !timeOffForm.startTime || !timeOffForm.endDate || !timeOffForm.endTime) {
+      setMessage('Please provide start/end date and start/end time for time off.');
+      return;
+    }
+
+    const clinicTimes = new Set(CLINIC_TIME_SELECT_OPTIONS.map((option) => option.value));
+    if (!clinicTimes.has(timeOffForm.startTime) || !clinicTimes.has(timeOffForm.endTime)) {
+      setMessage('Please select times within clinic hours.');
+      return;
+    }
+
+    const startDateTime = `${timeOffForm.startDate}T${timeOffForm.startTime}:00`;
+    const endDateTime = `${timeOffForm.endDate}T${timeOffForm.endTime}:00`;
+
+    setIsSubmittingTimeOff(true);
+    try {
+      await fetchWithTimeout(`${API_BASE_URL}/api/staff/time-off-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          staffId: Number(session.staffId),
+          startDateTime,
+          endDateTime,
+          locationId: timeOffForm.locationId ? Number(timeOffForm.locationId) : null,
+          reason: timeOffForm.reason
+        })
+      }).then(safeJson);
+
+      setMessage('Time-off request submitted. Admin will review it shortly.');
+      setTimeOffForm({ startDate: '', startTime: '', endDate: '', endTime: '', locationId: '', reason: '' });
+      await loadCore();
+    } catch (err) {
+      setMessage(err.message || 'Failed to submit time-off request.');
+    } finally {
+      setIsSubmittingTimeOff(false);
+    }
   };
 
   useEffect(() => {
@@ -86,23 +703,25 @@ function ReceptionistPage() {
     }
 
     const timeoutId = window.setTimeout(() => {
-      loadCore().catch((error) => setMessage(error.message || 'Failed to load receptionist data'));
+      loadCore().catch((error) => {
+        setMessage(error.message || 'Failed to load receptionist data');
+      });
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
   }, [API_BASE_URL, navigate, session?.staffId]);
 
   const checkInPatient = async (appointmentId) => {
-    await fetch(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/check-in`, {
+    await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/check-in`, {
       method: 'PUT',
     }).then(safeJson);
 
     setMessage('Patient checked in.');
-    await loadCore();
+    await loadAppointmentsForDate(selectedDate);
   };
 
-  const navigateToAssignAppointment = (requestId) => {
-    navigate(`/receptionist/assign-appointment/${requestId}`);
+  const navigateToPatientProfile = (patientId) => {
+    navigate(`/receptionist/patient-profile/${patientId}`);
   };
 
   return (
@@ -111,9 +730,6 @@ function ReceptionistPage() {
         <h1>Receptionist Page</h1>
         <p>Manage appointment requests, check-in patients, and search for patients.</p>
         <div className="reception-actions">
-          <button className="reception-action-btn reception-action-btn--secondary" onClick={() => navigate('/receptionist/create-appointment')}>
-            <span className="btn-icon">+</span> Create Appointment
-          </button>
           <button className="reception-action-btn reception-action-btn--primary" onClick={() => navigate('/receptionist/register-patient')}>
             <span className="btn-icon">+</span> Register New Patient
           </button>
@@ -126,31 +742,27 @@ function ReceptionistPage() {
 
       <section className="reception-panel">
         <h2>Appointment Requests</h2>
-        <div className="reception-table-wrap">
+        <div className="reception-table-wrap reception-table-scroll">
           <table>
             <thead>
               <tr>
                 <th>Patient</th>
                 <th>Requested Date/Time</th>
+                <th>Preferred Location</th>
                 <th>Reason</th>
-                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {requests.map((request) => (
-                <tr key={request.preference_request_id}>
+                <tr key={request.preference_request_id} className="reception-clickable-row" onClick={() => navigateToPatientProfile(request.patient_id)}>
                   <td>
                     {request.p_first_name} {request.p_last_name}
                   </td>
                   <td>
                     {formatDate(request.preferred_date)} {formatTime(request.preferred_time)}
                   </td>
+                  <td>{request.preferred_location || 'N/A'}</td>
                   <td>{request.appointment_reason || 'N/A'}</td>
-                  <td>
-                    <button onClick={() => navigateToAssignAppointment(request.preference_request_id)}>
-                      Assign Appointment
-                    </button>
-                  </td>
                 </tr>
               ))}
               {!requests.length && (
@@ -164,7 +776,29 @@ function ReceptionistPage() {
       </section>
 
       <section className="reception-panel">
-        <h2>Today's Appointments</h2>
+        <div className="reception-date-nav">
+          <h2>Appointments — {selectedDateLabel}</h2>
+          <div className="reception-date-controls">
+            <button type="button" className="reception-nav-btn" onClick={() => shiftDate(-1)}>&#8592; Prev</button>
+            <button type="button" className="reception-nav-btn" onClick={() => shiftDate(1)}>Next &#8594;</button>
+            <label className="reception-jump-date">
+              <span>Jump to date</span>
+              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
+            </label>
+          </div>
+        </div>
+        <div className="reception-status-filters">
+          {ALL_STATUS_OPTIONS.map((status) => (
+            <button
+              key={status}
+              type="button"
+              className={`reception-filter-chip ${statusFilters.has(status) ? 'is-active' : ''}`}
+              onClick={() => toggleStatusFilter(status)}
+            >
+              {status.replace(/_/g, ' ')}
+            </button>
+          ))}
+        </div>
         <div className="reception-table-wrap">
           <table>
             <thead>
@@ -177,22 +811,34 @@ function ReceptionistPage() {
               </tr>
             </thead>
             <tbody>
-              {appointments.map((appointment) => (
-                <tr key={appointment.appointment_id}>
-                  <td>{formatTime(appointment.appointment_time)}</td>
-                  <td>{appointment.patient_name}</td>
-                  <td>{appointment.doctor_name}</td>
-                  <td>{appointment.appointment_status || appointment.status_name}</td>
-                  <td>
-                    <button type="button" onClick={() => checkInPatient(appointment.appointment_id)}>
-                      Check In
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {!appointments.length && (
+              {filteredAppointments.map((appointment) => {
+                const status = String(appointment.status_name || appointment.appointment_status || '').toUpperCase();
+                const canCheckIn = status === 'SCHEDULED' || status === 'CONFIRMED' || status === 'RESCHEDULED';
+                const canMarkNoShow = status !== 'NO_SHOW' && status !== 'CANCELLED' && status !== 'COMPLETED';
+                return (
+                  <tr key={appointment.appointment_id} className="reception-clickable-row" onClick={() => navigateToPatientProfile(appointment.patient_id)}>
+                    <td>{formatTime(appointment.appointment_time)}</td>
+                    <td>{appointment.patient_name}</td>
+                    <td>{appointment.doctor_name}</td>
+                    <td>{appointment.appointment_status || appointment.status_name}</td>
+                    <td className="reception-action-cell" onClick={(e) => e.stopPropagation()}>
+                      {canCheckIn && (
+                        <button type="button" onClick={() => checkInPatient(appointment.appointment_id)}>
+                          Check In
+                        </button>
+                      )}
+                      {canMarkNoShow && (
+                        <button type="button" className="reception-noshow-btn" onClick={() => markNoShow(appointment.appointment_id)}>
+                          No Show
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!filteredAppointments.length && (
                 <tr>
-                  <td colSpan="5">No appointments today.</td>
+                  <td colSpan="5">No appointments match the selected filters for this date.</td>
                 </tr>
               )}
             </tbody>
@@ -201,68 +847,309 @@ function ReceptionistPage() {
       </section>
 
       <section className="reception-panel">
-        <h2>Upcoming Appointments</h2>
-        <div className="reception-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Patient</th>
-                <th>Dentist</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {futureAppointments.map((appointment) => (
-                <tr key={appointment.appointment_id}>
-                  <td>{formatDate(appointment.appointment_date)}</td>
-                  <td>{formatTime(appointment.appointment_time)}</td>
-                  <td>{appointment.patient_name}</td>
-                  <td>{appointment.doctor_name}</td>
-                  <td>{appointment.appointment_status || appointment.status_name}</td>
-                </tr>
-              ))}
-              {!futureAppointments.length && (
-                <tr>
-                  <td colSpan="5">No upcoming appointments.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+        <h2>Reports</h2>
+        <div className="reception-report-grid">
+          <form className="reception-report-form" onSubmit={generateSinglePatientReport}>
+            <h3>Single Patient Report</h3>
+            <p>Includes all treatments and findings for one patient in the selected date range.</p>
+            <label>
+              <span>Patient ID</span>
+              <input
+                type="number"
+                min="1"
+                value={singleReportForm.patientId}
+                onChange={(event) => setSingleReportForm((prev) => ({ ...prev, patientId: event.target.value }))}
+                required
+              />
+            </label>
+            <div className="reception-report-row">
+              <label>
+                <span>From Date</span>
+                <input
+                  type="date"
+                  value={singleReportForm.fromDate}
+                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                <span>To Date</span>
+                <input
+                  type="date"
+                  value={singleReportForm.toDate}
+                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
+                  required
+                />
+              </label>
+            </div>
+            <label>
+              <span>ADA Code (optional)</span>
+              <input
+                type="text"
+                value={singleReportForm.procedureCode}
+                onChange={(event) => setSingleReportForm((prev) => ({ ...prev, procedureCode: event.target.value.toUpperCase() }))}
+                placeholder="D1110"
+              />
+            </label>
+            <div className="reception-report-row">
+              <label>
+                <span>Tooth Number (optional)</span>
+                <input
+                  type="text"
+                  value={singleReportForm.toothNumber}
+                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, toothNumber: event.target.value }))}
+                  placeholder="14"
+                />
+              </label>
+              <label>
+                <span>Surface (optional)</span>
+                <input
+                  type="text"
+                  value={singleReportForm.surface}
+                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, surface: event.target.value.toUpperCase() }))}
+                  placeholder="O"
+                />
+              </label>
+            </div>
+            <label>
+              <span>Export Format</span>
+              <select
+                value={singleReportFormat}
+                onChange={(event) => setSingleReportFormat(event.target.value)}
+              >
+                <option value="PDF">PDF</option>
+                <option value="CSV">CSV</option>
+                <option value="JSON">JSON</option>
+              </select>
+            </label>
+            <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isGeneratingSingleReport}>
+              {isGeneratingSingleReport ? 'Generating...' : 'Generate Single Patient Report'}
+            </button>
+          </form>
 
-      <section className="reception-panel">
-        <h2>Past Appointments</h2>
-        <div className="reception-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Patient</th>
-                <th>Dentist</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pastAppointments.map((appointment) => (
-                <tr key={appointment.appointment_id}>
-                  <td>{formatDate(appointment.appointment_date)}</td>
-                  <td>{formatTime(appointment.appointment_time)}</td>
-                  <td>{appointment.patient_name}</td>
-                  <td>{appointment.doctor_name}</td>
-                  <td>{appointment.appointment_status || appointment.status_name}</td>
-                </tr>
-              ))}
-              {!pastAppointments.length && (
-                <tr>
-                  <td colSpan="5">No past appointments.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <form className="reception-report-form" onSubmit={generateMultiPatientReport}>
+            <h3>Multi Patient Report</h3>
+            <p>Includes multiple patients in the date range with optional ADA, tooth, and surface filters.</p>
+            <div className="reception-report-row">
+              <label>
+                <span>From Date</span>
+                <input
+                  type="date"
+                  value={multiReportForm.fromDate}
+                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                <span>To Date</span>
+                <input
+                  type="date"
+                  value={multiReportForm.toDate}
+                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
+                  required
+                />
+              </label>
+            </div>
+            <label>
+              <span>ADA Code (optional)</span>
+              <input
+                type="text"
+                value={multiReportForm.procedureCode}
+                onChange={(event) => setMultiReportForm((prev) => ({ ...prev, procedureCode: event.target.value.toUpperCase() }))}
+                placeholder="D2740"
+              />
+            </label>
+            <div className="reception-report-row">
+              <label>
+                <span>Tooth Number (optional)</span>
+                <input
+                  type="text"
+                  value={multiReportForm.toothNumber}
+                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, toothNumber: event.target.value }))}
+                  placeholder="30"
+                />
+              </label>
+              <label>
+                <span>Surface (optional)</span>
+                <input
+                  type="text"
+                  value={multiReportForm.surface}
+                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, surface: event.target.value.toUpperCase() }))}
+                  placeholder="M"
+                />
+              </label>
+            </div>
+            <label>
+              <span>Export Format</span>
+              <select
+                value={multiReportFormat}
+                onChange={(event) => setMultiReportFormat(event.target.value)}
+              >
+                <option value="CSV">CSV</option>
+                <option value="PDF">PDF</option>
+                <option value="JSON">JSON</option>
+              </select>
+            </label>
+            <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isGeneratingMultiReport}>
+              {isGeneratingMultiReport ? 'Generating...' : 'Generate Multi Patient Report'}
+            </button>
+          </form>
+
+          <form className="reception-report-form" onSubmit={generateSinglePatientApptReport}>
+            <h3>Single Patient Appointment Report</h3>
+            <p>Appointment history for one patient filtered by status and reason.</p>
+            <label>
+              <span>Patient ID</span>
+              <input
+                type="number"
+                min="1"
+                value={singleApptReportForm.patientId}
+                onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, patientId: event.target.value }))}
+                required
+              />
+            </label>
+            <div className="reception-report-row">
+              <label>
+                <span>From Date</span>
+                <input
+                  type="date"
+                  value={singleApptReportForm.fromDate}
+                  onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                <span>To Date</span>
+                <input
+                  type="date"
+                  value={singleApptReportForm.toDate}
+                  onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
+                  required
+                />
+              </label>
+            </div>
+            <label>
+              <span>Status (optional)</span>
+              <select
+                value={singleApptReportForm.status}
+                onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, status: event.target.value }))}
+              >
+                <option value="">All Statuses</option>
+                <option value="SCHEDULED">Scheduled</option>
+                <option value="CONFIRMED">Confirmed</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="CANCELLED">Cancelled</option>
+                <option value="NO_SHOW">No Show</option>
+                <option value="RESCHEDULED">Rescheduled</option>
+                <option value="CHECKED_IN">Checked In</option>
+              </select>
+            </label>
+            <label>
+              <span>Reason / Notes (optional)</span>
+              <select
+                value={singleApptReportForm.reason}
+                onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, reason: event.target.value }))}
+              >
+                <option value="">All Reasons / Notes</option>
+                {departments.map((dept) => (
+                  <option key={dept.department_id} value={dept.department_name}>{dept.department_name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Export Format</span>
+              <select
+                value={singleApptReportFormat}
+                onChange={(event) => setSingleApptReportFormat(event.target.value)}
+              >
+                <option value="PDF">PDF</option>
+                <option value="CSV">CSV</option>
+                <option value="JSON">JSON</option>
+              </select>
+            </label>
+            <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isGeneratingSingleApptReport}>
+              {isGeneratingSingleApptReport ? 'Generating...' : 'Generate Single Patient Appt Report'}
+            </button>
+          </form>
+
+          <form className="reception-report-form" onSubmit={generateMultiPatientApptReport}>
+            <h3>Multi Patient Appointment Report</h3>
+            <p>All patient appointments filtered by status, reason, and preferred location.</p>
+            <div className="reception-report-row">
+              <label>
+                <span>From Date</span>
+                <input
+                  type="date"
+                  value={multiApptReportForm.fromDate}
+                  onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                <span>To Date</span>
+                <input
+                  type="date"
+                  value={multiApptReportForm.toDate}
+                  onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
+                  required
+                />
+              </label>
+            </div>
+            <label>
+              <span>Status (optional)</span>
+              <select
+                value={multiApptReportForm.status}
+                onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, status: event.target.value }))}
+              >
+                <option value="">All Statuses</option>
+                <option value="SCHEDULED">Scheduled</option>
+                <option value="CONFIRMED">Confirmed</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="CANCELLED">Cancelled</option>
+                <option value="NO_SHOW">No Show</option>
+                <option value="RESCHEDULED">Rescheduled</option>
+                <option value="CHECKED_IN">Checked In</option>
+              </select>
+            </label>
+            <label>
+              <span>Reason / Notes (optional)</span>
+              <select
+                value={multiApptReportForm.reason}
+                onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, reason: event.target.value }))}
+              >
+                <option value="">All Reasons / Notes</option>
+                {departments.map((dept) => (
+                  <option key={dept.department_id} value={dept.department_name}>{dept.department_name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Preferred Location (optional)</span>
+              <select
+                value={multiApptReportForm.preferredLocation}
+                onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, preferredLocation: event.target.value }))}
+              >
+                <option value="">All Locations</option>
+                {timeOffLocations.map((location) => (
+                  <option key={location.location_id} value={location.full_address}>{location.full_address}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Export Format</span>
+              <select
+                value={multiApptReportFormat}
+                onChange={(event) => setMultiApptReportFormat(event.target.value)}
+              >
+                <option value="CSV">CSV</option>
+                <option value="PDF">PDF</option>
+                <option value="JSON">JSON</option>
+              </select>
+            </label>
+            <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isGeneratingMultiApptReport}>
+              {isGeneratingMultiApptReport ? 'Generating...' : 'Generate Multi Patient Appt Report'}
+            </button>
+          </form>
         </div>
       </section>
     </main>

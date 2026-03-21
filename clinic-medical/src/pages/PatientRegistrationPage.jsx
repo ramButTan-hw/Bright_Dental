@@ -146,10 +146,13 @@ function PatientRegistrationPage() {
   const [details, setDetails] = useState({
     dob: '',
     gender: '',
-    location: '',
+    locationId: '',
     reason: '',
     ssn: '',
-    driversLicense: ''
+    driversLicense: '',
+    address: '',
+    emergencyContactName: '',
+    emergencyContactPhone: ''
   });
 
   const [medicalHistory, setMedicalHistory] = useState(MEDICAL_HISTORY_INITIAL_STATE);
@@ -207,6 +210,10 @@ function PatientRegistrationPage() {
     preferredTime: ''
   });
   const [availability, setAvailability] = useState([]);
+  const [insuranceCompanies, setInsuranceCompanies] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [insuranceInfo, setInsuranceInfo] = useState({ companyId: '', memberId: '', groupNumber: '' });
 
   const API_BASE_URL = resolveApiBaseUrl();
 
@@ -248,8 +255,47 @@ function PatientRegistrationPage() {
       }
     };
 
+    const fetchInsuranceCompanies = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/insurance-companies`);
+        if (response.ok) {
+          const data = await response.json();
+          setInsuranceCompanies(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch insurance companies:', error.message);
+      }
+    };
+
+    const fetchDepartments = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/departments`);
+        if (response.ok) {
+          const data = await response.json();
+          setDepartments(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch departments:', error.message);
+      }
+    };
+
+    const fetchLocations = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/locations`);
+            if (response.ok) {
+                const data = await response.json();
+                setLocations(Array.isArray(data) ? data : []);
+            }
+        } catch (error) {
+            console.error('Failed to fetch locations:', error.message);
+        }
+    };
+
     fetchPainSymptoms();
     fetchAvailability();
+    fetchInsuranceCompanies();
+    fetchDepartments();
+    fetchLocations();
   }, [API_BASE_URL]);
 
   const shouldShowOtherMedicalText = useMemo(
@@ -504,10 +550,13 @@ function PatientRegistrationPage() {
           password: credentials.password,
           dob: details.dob,
           gender: details.gender,
-          location: details.location,
+          locationId: details.locationId,
           reason: details.reason,
           ssn: details.ssn,
           driversLicense: details.driversLicense,
+          address: details.address,
+          emergencyContactName: details.emergencyContactName,
+          emergencyContactPhone: details.emergencyContactPhone,
           medicalHistory,
           medicalHistoryOtherText,
           adverseReactions: {
@@ -521,7 +570,12 @@ function PatientRegistrationPage() {
           tobacco,
           caffeine,
           painAssessment,
-          appointmentSelection
+          appointmentSelection,
+          insurance: {
+            companyId: Number(insuranceInfo.companyId),
+            memberId: insuranceInfo.memberId,
+            groupNumber: insuranceInfo.groupNumber
+          }
         })
       });
 
@@ -534,7 +588,7 @@ function PatientRegistrationPage() {
       setStep(1);
       setIdentity({ firstName: '', lastName: '', email: '', phone: '' });
       setCredentials({ username: '', password: '' });
-      setDetails({ dob: '', gender: '', location: '', reason: '', ssn: '', driversLicense: '' });
+      setDetails({ dob: '', gender: '', locationId: '', reason: '', ssn: '', driversLicense: '', address: '', emergencyContactName: '', emergencyContactPhone: '' });
       setMedicalHistory(MEDICAL_HISTORY_INITIAL_STATE);
       setHasAllergies(false);
       setAllergies(ALLERGIES_INITIAL_STATE);
@@ -587,10 +641,39 @@ function PatientRegistrationPage() {
             <div className="form-grid">
               <label>Date of Birth<input type="date" name="dob" value={details.dob} onChange={updateDetails} required /></label>
               <label>Gender<select name="gender" value={details.gender} onChange={updateDetails} required><option value="" disabled>Select gender</option><option value="1">Male</option><option value="2">Female</option><option value="3">Non-binary</option><option value="4">Prefer not to say</option></select></label>
-              <label>Preferred Location<select name="location" value={details.location} onChange={updateDetails} required><option value="" disabled>Select a location</option><option value="4302 University Dr, Houston, TX 77004">4302 University Dr, Houston, TX 77004</option><option value="14000 University Blvd, Sugar Land, TX 77479">14000 University Blvd, Sugar Land, TX 77479</option><option value="1 Main St, Houston, TX 77002">1 Main St, Houston, TX 77002</option></select></label>
+              <label>Preferred Location<select name="locationId" value={details.locationId} onChange={updateDetails} required><option value="" disabled>Select a location</option>{locations.map(loc => <option key={loc.location_id} value={loc.location_id}>{`${loc.loc_street_no} ${loc.loc_street_name}, ${loc.location_city}, ${loc.location_state} ${loc.loc_zip_code}`}</option>)}</select></label>
               <label>Social Security Number<input type="text" name="ssn" placeholder="XXX-XX-XXXX" value={details.ssn} onChange={updateDetails} pattern="\d{3}-\d{2}-\d{4}" maxLength="11" inputMode="numeric" title="Use SSN format: XXX-XX-XXXX" required /></label>
               <label>Driver's License<input type="text" name="driversLicense" placeholder="Your DL number" value={details.driversLicense} onChange={updateDetails} pattern="[A-Za-z0-9-]{5,20}" minLength="5" maxLength="20" title="Use 5-20 letters, numbers, or hyphens" required /></label>
-              <label className="full-width">Reason for Visit<textarea name="reason" rows="3" placeholder="Tell us how we can help you today" value={details.reason} onChange={updateDetails} required /></label>
+              <label>Home Address<input type="text" name="address" placeholder="123 Main St, Houston, TX 77002" value={details.address} onChange={updateDetails} required /></label>
+              <label>Emergency Contact Name<input type="text" name="emergencyContactName" placeholder="e.g., Sarah Doe" value={details.emergencyContactName} onChange={updateDetails} required /></label>
+              <label>Emergency Contact Number<input type="tel" name="emergencyContactPhone" placeholder="(555) 987-6543" value={details.emergencyContactPhone} onChange={updateDetails} required /></label>
+              <label>Department
+                <select name="reason" value={details.reason} onChange={updateDetails} required>
+                  <option value="" disabled>Select department</option>
+                  {departments.map((dept) => (
+                    <option key={dept.department_id} value={dept.department_name}>{dept.department_name}</option>
+                  ))}
+                </select>
+              </label>
+              <fieldset className="full-width" style={{ border: '1px solid #d2e4e1', borderRadius: '10px', padding: '0.75rem' }}>
+                <legend style={{ fontWeight: 600, fontSize: '0.95rem' }}>Insurance Information (Optional)</legend>
+                <div className="form-grid">
+                  <label>Insurance Company
+                    <select value={insuranceInfo.companyId} onChange={(e) => setInsuranceInfo((p) => ({ ...p, companyId: e.target.value }))}>
+                      <option value="">No insurance / Skip</option>
+                      {insuranceCompanies.map((c) => (
+                        <option key={c.company_id} value={c.company_id}>{c.company_name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {insuranceInfo.companyId && (
+                    <>
+                      <label>Member ID<input value={insuranceInfo.memberId} onChange={(e) => setInsuranceInfo((p) => ({ ...p, memberId: e.target.value }))} placeholder="Member ID" required /></label>
+                      <label>Group Number<input value={insuranceInfo.groupNumber} onChange={(e) => setInsuranceInfo((p) => ({ ...p, groupNumber: e.target.value }))} placeholder="Group # (optional)" /></label>
+                    </>
+                  )}
+                </div>
+              </fieldset>
             </div>
           )}
 

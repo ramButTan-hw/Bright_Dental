@@ -114,6 +114,26 @@ const queries = {
     ORDER BY a.appointment_date DESC, a.appointment_time DESC
   `,
 
+  // List patient-submitted appointment preference requests
+  getPatientAppointmentRequests: `
+    SELECT
+      apr.preference_request_id,
+      apr.preferred_date,
+      apr.preferred_time,
+      apr.preferred_location,
+      apr.available_days,
+      apr.available_times,
+      apr.appointment_reason,
+      apr.request_status,
+      apr.assigned_date,
+      apr.assigned_time,
+      apr.receptionist_notes,
+      apr.created_at
+    FROM appointment_preference_requests apr
+    WHERE apr.patient_id = ?
+    ORDER BY apr.created_at DESC
+  `,
+
   // List all invoices for a patient with appointment context
   getPatientInvoices: `
     SELECT
@@ -149,6 +169,7 @@ const queries = {
   getPatientInvoiceById: `
     SELECT
       i.invoice_id,
+      i.insurance_id,
       i.amount,
       i.insurance_covered_amount,
       i.patient_amount,
@@ -165,6 +186,7 @@ const queries = {
     WHERE a.patient_id = ? AND i.invoice_id = ?
     GROUP BY
       i.invoice_id,
+      i.insurance_id,
       i.amount,
       i.insurance_covered_amount,
       i.patient_amount,
@@ -244,13 +266,21 @@ const queries = {
     SELECT
       d.doctor_id,
       CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-      COUNT(*) AS visit_count,
+      st.phone_number AS doctor_phone,
+      st.s_city AS doctor_city,
+      st.s_state AS doctor_state,
+      d.npi,
+      NULL AS profile_image_base64,
+      COALESCE(GROUP_CONCAT(DISTINCT dept.department_name ORDER BY dept.department_name SEPARATOR ', '), 'General Dentistry') AS specialties,
+      COUNT(DISTINCT a.appointment_id) AS visit_count,
       MAX(a.appointment_date) AS last_visit_date
     FROM appointments a
     JOIN doctors d ON a.doctor_id = d.doctor_id
     LEFT JOIN staff st ON d.staff_id = st.staff_id
+    LEFT JOIN specialties_department sd ON sd.doctor_id = d.doctor_id
+    LEFT JOIN departments dept ON dept.department_id = sd.department_id
     WHERE a.patient_id = ?
-    GROUP BY d.doctor_id, st.first_name, st.last_name
+    GROUP BY d.doctor_id, st.first_name, st.last_name, st.phone_number, st.s_city, st.s_state, d.npi
     ORDER BY visit_count DESC, last_visit_date DESC
     LIMIT 1
   `,

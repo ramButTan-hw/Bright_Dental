@@ -43,6 +43,70 @@
   gap: 0.55rem;
 }
 
+.reception-form label {
+  display: grid;
+  gap: 0.2rem;
+  color: #2d5451;
+  font-weight: 600;
+}
+
+.reception-profile-grid {
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.reception-profile-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.3rem;
+}
+
+.reception-profile-status {
+  margin: 0.55rem 0 0;
+  color: #1d6b41;
+  font-weight: 600;
+}
+
+.reception-profile-subtle {
+  margin: 0.3rem 0 0.8rem;
+  color: #4b6966;
+}
+
+.reception-profile-panel {
+  padding: 1.2rem;
+}
+
+.reception-profile-panel h2 {
+  margin: 0;
+}
+
+.reception-profile-content {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.2rem;
+  align-items: start;
+}
+
+.reception-profile-form-container {
+  min-width: 0;
+}
+
+.reception-profile-summary {
+  border: 1px solid #d6e7e4;
+  border-radius: 10px;
+  background: #fbfefd;
+  padding: 0.75rem;
+}
+
+.reception-profile-summary p {
+  margin: 0 0 0.45rem;
+}
+
+.reception-profile-summary p:last-child {
+  margin-bottom: 0;
+}
+
 .reception-form input,
 .reception-form select,
 .reception-form textarea,
@@ -83,6 +147,18 @@
   overflow-x: auto;
 }
 
+.reception-table-scroll {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.reception-table-scroll thead {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+
 .reception-table-wrap table {
   width: 100%;
   border-collapse: collapse;
@@ -103,6 +179,15 @@
 
 .reception-list li {
   margin: 0.35rem 0;
+}
+
+.reception-search-history-item {
+  list-style: none;
+  margin-left: -1rem;
+  border: 1px solid #d6e7e4;
+  border-radius: 10px;
+  background: #fbfefd;
+  padding: 0.45rem 0.65rem;
 }
 
 .reception-list button {
@@ -169,8 +254,243 @@
   line-height: 1;
 }
 
+.reception-report-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.reception-report-form {
+  border: 1px solid #d6e7e4;
+  border-radius: 10px;
+  background: #fbfefd;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.reception-report-form h3 {
+  margin: 0;
+}
+
+.reception-report-form p {
+  margin: 0;
+  color: #4b6966;
+}
+
+.reception-report-form label {
+  display: grid;
+  gap: 0.2rem;
+  color: #2d5451;
+  font-weight: 600;
+}
+
+.reception-report-form input,
+.reception-report-form select {
+  border: 1px solid #bfd7d3;
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  background: #fff;
+}
+
+.reception-report-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.reception-date-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.reception-date-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.reception-nav-btn {
+  border: 1px solid #c2d9d5;
+  background: #f3fbfa;
+  color: #1f5551;
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.reception-nav-btn:hover {
+  background: #e0f2f0;
+}
+
+.reception-jump-date {
+  display: grid;
+  gap: 0.2rem;
+  font-weight: 600;
+  color: #2d5451;
+}
+
+.reception-jump-date input {
+  border: 1px solid #c2d9d5;
+  border-radius: 9px;
+  padding: 0.35rem 0.5rem;
+}
+
+.reception-status-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+}
+
+.reception-filter-chip {
+  border: 1px solid #c2d9d5;
+  background: #f3fbfa;
+  color: #4b6966;
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reception-filter-chip:hover {
+  border-color: #0b6d68;
+  color: #0b6d68;
+}
+
+.reception-filter-chip.is-active {
+  background: #0b6d68;
+  color: #fff;
+  border-color: #0b6d68;
+}
+
+.reception-action-cell {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.reception-noshow-btn {
+  background: #d4700a !important;
+  color: #fff !important;
+}
+
+.reception-noshow-btn:hover {
+  background: #b85d06 !important;
+}
+
+.reception-search-input {
+  width: 100%;
+  border: 1px solid #bfd7d3;
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.reception-clickable-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.reception-clickable-row:hover {
+  background-color: #eef7f6;
+}
+
+.reception-patient-link {
+  color: #0b6d68;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.reception-patient-link:hover {
+  text-decoration: underline;
+  color: #085753;
+}
+
+.reception-profile-grid-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.reception-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.reception-header-subtle {
+  color: #4b6966;
+  margin: 0.15rem 0;
+  font-size: 0.9rem;
+}
+
+.reception-expand-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #132524;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.reception-expand-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reception-expand-hint {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #d4700a;
+}
+
+.reception-confirm-request {
+  border: 1px solid #d6e7e4;
+  border-radius: 10px;
+  background: #fbfefd;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.reception-confirm-request:last-child {
+  margin-bottom: 0;
+}
+
+.reception-confirm-header p {
+  margin: 0.15rem 0;
+}
+
 @media (max-width: 980px) {
   .reception-grid-two {
+    grid-template-columns: 1fr;
+  }
+
+  .reception-profile-content {
+    grid-template-columns: 1fr;
+  }
+
+  .reception-report-grid,
+  .reception-profile-grid,
+  .reception-report-row {
     grid-template-columns: 1fr;
   }
 
@@ -181,5 +501,22 @@
   .reception-action-btn {
     width: 100%;
     justify-content: center;
+  }
+
+  .reception-profile-grid-two {
+    grid-template-columns: 1fr;
+  }
+
+  .reception-date-nav {
+    flex-direction: column;
+  }
+
+  .reception-date-controls {
+    width: 100%;
+  }
+
+  .reception-header {
+    flex-direction: column;
+    gap: 0.5rem;
   }
 }

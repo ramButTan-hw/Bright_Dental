@@ -11,6 +11,7 @@ const EMPTY_STAFF_FORM = {
   firstName: '',
   lastName: '',
   dob: '',
+  npi: '',
   ssn: '',
   gender: '',
   phone: '',
@@ -49,10 +50,10 @@ function AdminDashboardPage() {
 
   const [summary, setSummary] = useState(null);
   const [queue, setQueue] = useState({ scheduledAppointments: [], pendingRequests: [], notificationCount: 0 });
-  const [scheduledPatients, setScheduledPatients] = useState({ totalPatients: 0, patients: [] });
+
   const [patientReport, setPatientReport] = useState({ summary: null, rows: [] });
   const [doctors, setDoctors] = useState([]);
-  const [hygienists, setHygienists] = useState([]);
+
   const [receptionists, setReceptionists] = useState([]);
   const [locations, setLocations] = useState([]);
   const [staffTimeOffRequests, setStaffTimeOffRequests] = useState([]);
@@ -65,12 +66,11 @@ function AdminDashboardPage() {
 
   const [doctorForm, setDoctorForm] = useState({ ...EMPTY_STAFF_FORM });
 
-  const [hygienistForm, setHygienistForm] = useState({ ...EMPTY_STAFF_FORM });
   const [receptionistForm, setReceptionistForm] = useState({ ...EMPTY_STAFF_FORM });
   const [expandedCards, setExpandedCards] = useState({
     dentist: false,
     location: false,
-    hygienist: false,
+
     receptionist: false,
     offDayRequests: false
   });
@@ -96,13 +96,11 @@ function AdminDashboardPage() {
     setError('');
 
     try {
-      const [summaryData, queueData, scheduledData, reportData, doctorData, hygienistData, receptionistData, locationData, timeOffData] = await Promise.all([
+      const [summaryData, queueData, reportData, doctorData, receptionistData, locationData, timeOffData] = await Promise.all([
         fetch(`${API_BASE_URL}/api/admin/dashboard/summary?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/appointments/queue?date=${selectedDate}`).then(safeJson),
-        fetch(`${API_BASE_URL}/api/admin/patients/scheduled?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/doctors`).then(safeJson),
-        fetch(`${API_BASE_URL}/api/admin/staff/hygienists`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff/receptionists`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/locations`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff/time-off-requests`).then(safeJson)
@@ -110,10 +108,8 @@ function AdminDashboardPage() {
 
       setSummary(summaryData);
       setQueue(queueData);
-      setScheduledPatients(scheduledData);
       setPatientReport(reportData);
       setDoctors(Array.isArray(doctorData) ? doctorData : []);
-      setHygienists(Array.isArray(hygienistData) ? hygienistData : []);
       setReceptionists(Array.isArray(receptionistData) ? receptionistData : []);
       setLocations(Array.isArray(locationData) ? locationData : []);
       setStaffTimeOffRequests(Array.isArray(timeOffData) ? timeOffData : []);
@@ -236,20 +232,9 @@ function AdminDashboardPage() {
   };
 
   const reportRows = Array.isArray(patientReport.rows) ? patientReport.rows : [];
-  const balanceFollowUpRows = reportRows
-    .filter((row) => Number(row.expected_patient_amount || 0) > Number(row.paid_amount || 0))
-    .sort((a, b) => {
-      const dueA = Number(a.expected_patient_amount || 0) - Number(a.paid_amount || 0);
-      const dueB = Number(b.expected_patient_amount || 0) - Number(b.paid_amount || 0);
-      return dueB - dueA;
-    });
-  const totalOutstandingAmount = balanceFollowUpRows.reduce(
-    (sum, row) => sum + (Number(row.expected_patient_amount || 0) - Number(row.paid_amount || 0)),
-    0
-  );
-
-  const patientContactGapRows = (scheduledPatients.patients || []).filter(
-    (row) => !String(row.p_phone || '').trim() || !String(row.p_email || '').trim()
+  const financialFollowUpRows = Array.isArray(patientReport.financialFollowUp) ? patientReport.financialFollowUp : [];
+  const totalOutstandingAmount = financialFollowUpRows.reduce(
+    (sum, row) => sum + Number(row.total_outstanding || 0), 0
   );
 
   const pendingStaffOffDayNotifications = (staffTimeOffRequests || [])
@@ -294,7 +279,6 @@ function AdminDashboardPage() {
       <nav className="admin-section-nav" aria-label="Admin sections">
         <button type="button" className={activeSection === 'overview' ? 'is-active' : ''} onClick={() => setActiveSection('overview')}>Overview</button>
         <button type="button" className={activeSection === 'scheduling' ? 'is-active' : ''} onClick={() => setActiveSection('scheduling')}>Scheduling</button>
-        <button type="button" className={activeSection === 'patients' ? 'is-active' : ''} onClick={() => setActiveSection('patients')}>Patients</button>
         <button type="button" className={activeSection === 'reports' ? 'is-active' : ''} onClick={() => setActiveSection('reports')}>Reports</button>
         <button type="button" className={activeSection === 'staffing' ? 'is-active' : ''} onClick={() => setActiveSection('staffing')}>Staffing & Locations</button>
       </nav>
@@ -362,19 +346,41 @@ function AdminDashboardPage() {
                         <th>Patient</th>
                         <th>Dentist</th>
                         <th>Status</th>
+                        <th>Payment</th>
+                        <th>Confirmed By</th>
                         <th>Location</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {queue.scheduledAppointments?.length ? queue.scheduledAppointments.map((appt) => (
-                        <tr key={appt.appointment_id}>
-                          <td>{formatTime(appt.appointment_time)}</td>
-                          <td>{appt.patient_name}</td>
-                          <td>{appt.doctor_name || 'TBD'}</td>
-                          <td>{appt.status_name}</td>
-                          <td>{appt.location_address || 'TBD'}</td>
-                        </tr>
-                      )) : <tr><td colSpan="5">No scheduled appointments for this date.</td></tr>}
+                      {queue.scheduledAppointments?.length ? queue.scheduledAppointments.map((appt) => {
+                        const payStatus = appt.payment_status || '';
+                        const amtDue = Number(appt.amount_due || 0);
+                        return (
+                          <tr key={appt.appointment_id}>
+                            <td>{formatTime(appt.appointment_time)}</td>
+                            <td>{appt.patient_name}</td>
+                            <td>{appt.doctor_name || 'TBD'}</td>
+                            <td>{appt.status_name}</td>
+                            <td>
+                              {payStatus ? (
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '0.15rem 0.5rem',
+                                  borderRadius: '999px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  background: payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : '#f8d7da',
+                                  color: payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : '#721c24'
+                                }}>
+                                  {payStatus}{amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td>{appt.receptionist_name || 'Unassigned'}</td>
+                            <td>{appt.location_address || 'TBD'}</td>
+                          </tr>
+                        );
+                      }) : <tr><td colSpan="7">No scheduled appointments for this date.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -405,39 +411,6 @@ function AdminDashboardPage() {
                   </table>
                 </div>
               </article>
-            </section>
-          )}
-
-          {activeSection === 'patients' && (
-            <section className="admin-panel">
-              <h2>Patients Scheduled On {formatDate(selectedDate)}</h2>
-              <p className="muted">Total: {scheduledPatients.totalPatients || 0}</p>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Patient</th>
-                      <th>Phone</th>
-                      <th>Email</th>
-                      <th>Time</th>
-                      <th>Dentist</th>
-                      <th>Location</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scheduledPatients.patients?.length ? scheduledPatients.patients.map((patient) => (
-                      <tr key={patient.appointment_id}>
-                        <td>{patient.p_first_name} {patient.p_last_name}</td>
-                        <td>{patient.p_phone || 'N/A'}</td>
-                        <td>{patient.p_email || 'N/A'}</td>
-                        <td>{formatTime(patient.appointment_time)}</td>
-                        <td>{patient.doctor_name || 'TBD'}</td>
-                        <td>{patient.location_address || 'TBD'}</td>
-                      </tr>
-                    )) : <tr><td colSpan="6">No patients scheduled for this day.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
             </section>
           )}
 
@@ -492,44 +465,12 @@ function AdminDashboardPage() {
               {/* ── PATIENT REPORTS ── */}
               {reportType === 'patients' && (
                 <>
-                  <section className="admin-grid-two">
+                  <section>
                     <article className="admin-panel">
                       <h2>Report 1: Financial Follow-Up</h2>
                       <p className="muted">
-                        Patients with outstanding balances — pulls from appointments, invoices &amp; payments tables.
-                        Count: {balanceFollowUpRows.length} | Total Outstanding: {formatMoney(totalOutstandingAmount)}
-                      </p>
-                      <div className="table-wrap">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Patient</th>
-                              <th>Status</th>
-                              <th>Expected</th>
-                              <th>Paid</th>
-                              <th>Outstanding</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {balanceFollowUpRows.length ? balanceFollowUpRows.slice(0, 12).map((row) => (
-                              <tr key={row.appointment_id}>
-                                <td>{row.patient_name}</td>
-                                <td>{row.status_name}</td>
-                                <td>{formatMoney(row.expected_patient_amount)}</td>
-                                <td>{formatMoney(row.paid_amount)}</td>
-                                <td>{formatMoney(Number(row.expected_patient_amount || 0) - Number(row.paid_amount || 0))}</td>
-                              </tr>
-                            )) : <tr><td colSpan="5">No balance follow-up needed for this filter.</td></tr>}
-                          </tbody>
-                        </table>
-                      </div>
-                    </article>
-
-                    <article className="admin-panel">
-                      <h2>Report 2: Patient Contact Data Quality</h2>
-                      <p className="muted">
-                        Scheduled patients missing phone or email — pulls from appointments &amp; patients tables.
-                        Count: {patientContactGapRows.length}
+                        Per-patient billing summary across all invoices — pulls from patients, appointments, invoices &amp; payments tables.
+                        Patients: {financialFollowUpRows.length} | Total Outstanding: {formatMoney(totalOutstandingAmount)}
                       </p>
                       <div className="table-wrap">
                         <table>
@@ -537,32 +478,69 @@ function AdminDashboardPage() {
                             <tr>
                               <th>Patient</th>
                               <th>Phone</th>
-                              <th>Email</th>
-                              <th>Action Needed</th>
+                              <th>Invoices</th>
+                              <th>Unpaid</th>
+                              <th>Total Charged</th>
+                              <th>Insurance Covered</th>
+                              <th>Patient Owes</th>
+                              <th>Paid</th>
+                              <th>Outstanding</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {patientContactGapRows.length ? patientContactGapRows.slice(0, 12).map((row) => (
-                              <tr key={row.appointment_id}>
-                                <td>{row.p_first_name} {row.p_last_name}</td>
-                                <td>{row.p_phone || 'Missing'}</td>
-                                <td>{row.p_email || 'Missing'}</td>
-                                <td>
-                                  {[
-                                    !row.p_phone ? 'Confirm phone' : null,
-                                    !row.p_email ? 'Confirm email' : null
-                                  ].filter(Boolean).join(' + ')}
-                                </td>
-                              </tr>
-                            )) : <tr><td colSpan="4">No contact data gaps for scheduled patients.</td></tr>}
+                            {financialFollowUpRows.length ? financialFollowUpRows.map((row) => {
+                              const outstanding = Number(row.total_outstanding || 0);
+                              return (
+                                <tr key={row.patient_id}>
+                                  <td>{row.patient_name}</td>
+                                  <td>{row.p_phone || 'N/A'}</td>
+                                  <td>{row.total_invoices}</td>
+                                  <td>
+                                    {Number(row.unpaid_invoices || 0) > 0 ? (
+                                      <span style={{
+                                        display: 'inline-block',
+                                        padding: '0.1rem 0.45rem',
+                                        borderRadius: '999px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 700,
+                                        background: '#f8d7da',
+                                        color: '#721c24'
+                                      }}>
+                                        {row.unpaid_invoices}
+                                      </span>
+                                    ) : (
+                                      <span style={{
+                                        display: 'inline-block',
+                                        padding: '0.1rem 0.45rem',
+                                        borderRadius: '999px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 700,
+                                        background: '#d4edda',
+                                        color: '#155724'
+                                      }}>
+                                        0
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td>{formatMoney(row.total_charged)}</td>
+                                  <td>{formatMoney(row.total_insurance_covered)}</td>
+                                  <td>{formatMoney(row.total_patient_responsibility)}</td>
+                                  <td>{formatMoney(row.total_paid)}</td>
+                                  <td style={{ fontWeight: outstanding > 0 ? 700 : 400, color: outstanding > 0 ? '#9d2e2e' : '#155724' }}>
+                                    {formatMoney(outstanding)}
+                                  </td>
+                                </tr>
+                              );
+                            }) : <tr><td colSpan="9">No invoices found.</td></tr>}
                           </tbody>
                         </table>
                       </div>
                     </article>
+
                   </section>
 
                   <section className="admin-panel">
-                    <h2>Report 3: Scheduling Confirmation Needed</h2>
+                    <h2>Report 2: Scheduling Confirmation Needed</h2>
                     <p className="muted">
                       Pending requests where staff must confirm date/time/location — pulls from appointment_preference_requests &amp; patients tables.
                       Count: {schedulingActionRows.length}
@@ -655,36 +633,60 @@ function AdminDashboardPage() {
                             <th>Patient</th>
                             <th>Patient Phone</th>
                             <th>Status</th>
+                            <th>Payment</th>
+                            <th>Confirmed By</th>
                             <th>Location</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {staffReport.schedule.length ? staffReport.schedule.slice(0, 50).map((row, idx) => (
-                            <tr key={idx}>
-                              <td>Dr. {row.doctor_name}</td>
-                              <td>{formatDate(row.appointment_date)}</td>
-                              <td>{formatTime(row.appointment_time)}</td>
-                              <td>{row.patient_name}</td>
-                              <td>{row.patient_phone || 'N/A'}</td>
-                              <td>{row.status_name}</td>
-                              <td>{row.location_address || 'TBD'}</td>
-                            </tr>
-                          )) : <tr><td colSpan="7">No scheduled appointments for this range.</td></tr>}
+                          {staffReport.schedule.length ? staffReport.schedule.slice(0, 50).map((row, idx) => {
+                            const payStatus = row.payment_status || '';
+                            const amtDue = Number(row.amount_due || 0);
+                            return (
+                              <tr key={idx}>
+                                <td>Dr. {row.doctor_name}</td>
+                                <td>{formatDate(row.appointment_date)}</td>
+                                <td>{formatTime(row.appointment_time)}</td>
+                                <td>{row.patient_name}</td>
+                                <td>{row.patient_phone || 'N/A'}</td>
+                                <td>{row.status_name}</td>
+                                <td>
+                                  {payStatus ? (
+                                    <span style={{
+                                      display: 'inline-block',
+                                      padding: '0.15rem 0.5rem',
+                                      borderRadius: '999px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 700,
+                                      background: payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : '#f8d7da',
+                                      color: payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : '#721c24'
+                                    }}>
+                                      {payStatus}{amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
+                                    </span>
+                                  ) : '—'}
+                                </td>
+                                <td>{row.receptionist_name || 'Unassigned'}</td>
+                                <td>{row.location_address || 'TBD'}</td>
+                              </tr>
+                            );
+                          }) : <tr><td colSpan="9">No scheduled appointments for this range.</td></tr>}
                         </tbody>
                       </table>
                     </div>
                   </section>
 
                   <section className="admin-panel">
-                    <h2>Report 3: Doctor Time-Off Summary</h2>
+                    <h2>Report 3: All Staff Time-Off Summary</h2>
                     <p className="muted">
-                      All recorded doctor time-off entries — pulls from doctor_time_off, doctors, staff &amp; locations tables.
+                      All recorded doctor and staff time-off entries — pulls from doctor_time_off, staff_time_off_requests, staff, users &amp; locations tables.
                     </p>
                     <div className="table-wrap">
                       <table>
                         <thead>
                           <tr>
-                            <th>Doctor</th>
+                            <th>Staff Member</th>
+                            <th>Role</th>
+                            <th>Source</th>
                             <th>Start</th>
                             <th>End</th>
                             <th>Location</th>
@@ -694,15 +696,17 @@ function AdminDashboardPage() {
                         </thead>
                         <tbody>
                           {staffReport.timeOff.length ? staffReport.timeOff.map((row) => (
-                            <tr key={row.time_off_id}>
-                              <td>Dr. {row.doctor_name}</td>
+                            <tr key={row.request_key}>
+                              <td>{row.requester_name || 'Unknown staff'}</td>
+                              <td>{String(row.requester_role || 'STAFF').replaceAll('_', ' ')}</td>
+                              <td>{String(row.request_source || '').replaceAll('_', ' ') || 'TIME OFF'}</td>
                               <td>{new Date(row.start_datetime).toLocaleString()}</td>
                               <td>{new Date(row.end_datetime).toLocaleString()}</td>
                               <td>{row.location_address}</td>
                               <td>{row.reason || 'N/A'}</td>
                               <td>{row.is_approved ? 'Yes' : 'Pending'}</td>
                             </tr>
-                          )) : <tr><td colSpan="6">No time-off records found.</td></tr>}
+                          )) : <tr><td colSpan="8">No time-off records found.</td></tr>}
                         </tbody>
                       </table>
                     </div>
@@ -731,6 +735,16 @@ function AdminDashboardPage() {
                         <input placeholder="First name" value={doctorForm.firstName} onChange={(e) => setDoctorForm((prev) => ({ ...prev, firstName: e.target.value }))} required />
                         <input placeholder="Last name" value={doctorForm.lastName} onChange={(e) => setDoctorForm((prev) => ({ ...prev, lastName: e.target.value }))} required />
                         <input type="date" value={doctorForm.dob} onChange={(e) => setDoctorForm((prev) => ({ ...prev, dob: e.target.value }))} required />
+                        <input
+                          placeholder="NPI (10 digits)"
+                          value={doctorForm.npi}
+                          onChange={(e) => setDoctorForm((prev) => ({ ...prev, npi: String(e.target.value || '').replace(/\D/g, '').slice(0, 10) }))}
+                          inputMode="numeric"
+                          maxLength={10}
+                          pattern="\d{10}"
+                          title="NPI must be a 10-digit number"
+                          required
+                        />
                         <input
                           placeholder="SSN (XXX-XX-XXXX)"
                           value={doctorForm.ssn}
@@ -798,66 +812,6 @@ function AdminDashboardPage() {
                       <ul className="compact-list">
                         {locations.map((location) => (
                           <li key={location.location_id}>{location.full_address}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </article>
-
-                <article className="admin-panel admin-panel-wide collapsible-panel">
-                  <button
-                    type="button"
-                    className="collapse-toggle"
-                    onClick={() => setExpandedCards((prev) => ({ ...prev, hygienist: !prev.hygienist }))}
-                    aria-expanded={expandedCards.hygienist}
-                  >
-                    <span>Add New Hygienist</span>
-                    <span>{expandedCards.hygienist ? 'Hide' : 'Show'}</span>
-                  </button>
-                  {expandedCards.hygienist && (
-                    <div className="collapse-content">
-                      <form className="admin-form" onSubmit={(e) => handleRoleStaffSubmit(e, 'hygienists', 'Hygienist', hygienistForm, setHygienistForm)}>
-                        <input placeholder="First name" value={hygienistForm.firstName} onChange={(e) => setHygienistForm((prev) => ({ ...prev, firstName: e.target.value }))} required />
-                        <input placeholder="Last name" value={hygienistForm.lastName} onChange={(e) => setHygienistForm((prev) => ({ ...prev, lastName: e.target.value }))} required />
-                        <input type="date" value={hygienistForm.dob} onChange={(e) => setHygienistForm((prev) => ({ ...prev, dob: e.target.value }))} required />
-                        <input
-                          placeholder="SSN (XXX-XX-XXXX)"
-                          value={hygienistForm.ssn}
-                          onChange={(e) => setHygienistForm((prev) => ({ ...prev, ssn: formatSsnInput(e.target.value) }))}
-                          inputMode="numeric"
-                          maxLength={11}
-                          title="Use XXX-XX-XXXX"
-                        />
-                        <input
-                          placeholder="Phone (XXX-XXX-XXXX)"
-                          value={hygienistForm.phone}
-                          onChange={(e) => setHygienistForm((prev) => ({ ...prev, phone: formatPhoneInput(e.target.value) }))}
-                          inputMode="numeric"
-                          maxLength={12}
-                          required
-                        />
-                        <input placeholder="Username" value={hygienistForm.username} onChange={(e) => setHygienistForm((prev) => ({ ...prev, username: e.target.value }))} required />
-                        <input type="password" placeholder="Temporary password" value={hygienistForm.password} onChange={(e) => setHygienistForm((prev) => ({ ...prev, password: e.target.value }))} required />
-                        <input type="email" placeholder="Email (optional)" value={hygienistForm.email} onChange={(e) => setHygienistForm((prev) => ({ ...prev, email: e.target.value }))} />
-                        <select value={hygienistForm.gender} onChange={(e) => setHygienistForm((prev) => ({ ...prev, gender: e.target.value }))}>
-                          <option value="">Gender (optional)</option>
-                          <option value="1">Male</option>
-                          <option value="2">Female</option>
-                          <option value="3">Non-binary</option>
-                          <option value="4">Prefer not to say</option>
-                        </select>
-                        <select value={hygienistForm.locationId} onChange={(e) => setHygienistForm((prev) => ({ ...prev, locationId: e.target.value }))}>
-                          <option value="">Assign location (optional)</option>
-                          {locations.map((location) => (
-                            <option key={location.location_id} value={location.location_id}>{location.full_address}</option>
-                          ))}
-                        </select>
-                        <button type="submit">Create Hygienist</button>
-                      </form>
-                      <p className="muted">Current hygienists: {hygienists.length}</p>
-                      <ul className="compact-list">
-                        {hygienists.map((member) => (
-                          <li key={member.staff_id}>{member.first_name} {member.last_name} - {member.user_username || 'no-username'}</li>
                         ))}
                       </ul>
                     </div>

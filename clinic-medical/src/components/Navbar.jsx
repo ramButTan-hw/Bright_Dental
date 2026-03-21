@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { resolveApiBaseUrl } from '../utils/patientPortal';
 import {
   clearAdminPortalSession,
   clearDentistPortalSession,
@@ -34,28 +35,50 @@ function Navbar() {
   const [aboutDropdown, setAboutDropdown] = useState(false);
   const [loginDropdown, setLoginDropdown] = useState(false);
   const navigate = useNavigate();
-  const [dentistAvatarUrl] = useState(() => {
-    const session = getDentistPortalSession();
-    if (!session?.doctorId) return '';
-    const key = `dentistAvatar:${session.doctorId}`;
-    return localStorage.getItem(key) || '';
-  });
+  const [dentistAvatarUrl, setDentistAvatarUrl] = useState('');
+  const [receptionAvatarUrl, setReceptionAvatarUrl] = useState('');
   const isLoggedIn = Boolean(getPatientPortalSession()?.patientId);
   const isAdminLoggedIn = Boolean(getAdminPortalSession()?.isAdmin);
   const isDentistLoggedIn = Boolean(getDentistPortalSession()?.doctorId);
   const isReceptionLoggedIn = Boolean(getReceptionPortalSession()?.staffId);
 
+  useEffect(() => {
+    const apiBase = resolveApiBaseUrl();
+    const dentistSession = getDentistPortalSession();
+    if (dentistSession?.staffId) {
+      fetch(`${apiBase}/api/staff/profile-image?staffId=${dentistSession.staffId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.profile_image_base64) {
+            setDentistAvatarUrl(`data:image/jpeg;base64,${data.profile_image_base64}`);
+          }
+        })
+        .catch(() => {});
+    }
+    const receptionSession = getReceptionPortalSession();
+    if (receptionSession?.staffId) {
+      fetch(`${apiBase}/api/staff/profile-image?staffId=${receptionSession.staffId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.profile_image_base64) {
+            setReceptionAvatarUrl(`data:image/jpeg;base64,${data.profile_image_base64}`);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
   return (
     <nav className="navbar">
       <div className="navbar-container">
         <div className="navbar-brand">
-          <Link to="/" className="brand-name">UH Bright Dental</Link>
+          <Link to="/" className="brand-name">Bright Dental</Link>
         </div>
 
         {isLoggedIn ? (
           <div className="nav-menu">
             <Link to="/patient-portal" className="nav-link">Dashboard</Link>
-            <a href="/#contact" className="nav-link">Contact Us</a>
+            <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
               className="nav-link login-btn"
@@ -70,7 +93,7 @@ function Navbar() {
         ) : isAdminLoggedIn ? (
           <div className="nav-menu">
             <Link to="/admin" className="nav-link">Admin Dashboard</Link>
-            <a href="/#contact" className="nav-link">Contact Us</a>
+            <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
@@ -86,7 +109,7 @@ function Navbar() {
         ) : isDentistLoggedIn ? (
           <div className="nav-menu">
             <Link to="/dentist-login" className="nav-link">Dentist Page</Link>
-            <a href="/#contact" className="nav-link">Contact Us</a>
+            <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
               className="nav-profile-photo-btn"
@@ -115,7 +138,20 @@ function Navbar() {
         ) : isReceptionLoggedIn ? (
           <div className="nav-menu">
             <Link to="/receptionist" className="nav-link">Receptionist Page</Link>
-            <a href="/#contact" className="nav-link">Contact Us</a>
+            <Link to="/contact-us" className="nav-link">Contact Us</Link>
+            <button
+              type="button"
+              className="nav-profile-photo-btn"
+              onClick={() => navigate('/receptionist-profile')}
+              aria-label="Open receptionist profile"
+              title="Open receptionist profile"
+            >
+              {receptionAvatarUrl ? (
+                <img className="nav-profile-photo" src={receptionAvatarUrl} alt="Receptionist profile" />
+              ) : (
+                <div className="nav-profile-photo-placeholder">R</div>
+              )}
+            </button>
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
@@ -141,14 +177,13 @@ function Navbar() {
               </button>
               {aboutDropdown && (
                 <div className="dropdown-menu">
-                  <a href="#meet-doctors" className="dropdown-item">Meet Our Doctors</a>
+                  <Link to="/meet-our-staff" className="dropdown-item">Meet Our Staff</Link>
                   <a href="#our-motive" className="dropdown-item">Our Motive</a>
-                  <a href="#our-location" className="dropdown-item">Locations</a>
                 </div>
               )}
             </div>
 
-            <a href="#contact" className="nav-link">Contact Us</a>
+            <Link to="/contact-us" className="nav-link">Contact Us</Link>
 
             <div
               className="nav-item dropdown"

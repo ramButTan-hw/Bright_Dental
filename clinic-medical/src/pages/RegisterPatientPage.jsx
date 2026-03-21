@@ -120,7 +120,10 @@ function RegisterPatientPage() {
     location: '',
     reason: '',
     ssn: '',
-    driversLicense: ''
+    driversLicense: '',
+    address: '',
+    emergencyContactName: '',
+    emergencyContactPhone: ''
   });
 
   const [medicalHistory, setMedicalHistory] = useState(MEDICAL_HISTORY_INITIAL_STATE);
@@ -180,6 +183,7 @@ function RegisterPatientPage() {
   const [availability, setAvailability] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState('');
+  const [departments, setDepartments] = useState([]);
 
   useEffect(() => {
     if (!session?.staffId) {
@@ -229,9 +233,21 @@ function RegisterPatientPage() {
       }
     };
 
+    const fetchDepartments = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/departments`);
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const data = await response.json();
+        setDepartments(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('Failed to fetch departments:', error.message);
+      }
+    };
+
     fetchPainSymptoms();
     fetchAvailability();
     fetchDoctors();
+    fetchDepartments();
   }, [API_BASE_URL]);
 
   const shouldShowOtherMedicalText = useMemo(
@@ -423,6 +439,9 @@ function RegisterPatientPage() {
           reason: details.reason,
           ssn: details.ssn,
           driversLicense: details.driversLicense,
+          address: details.address,
+          emergencyContactName: details.emergencyContactName,
+          emergencyContactPhone: details.emergencyContactPhone,
           medicalHistory,
           medicalHistoryOtherText,
           adverseReactions: {
@@ -497,7 +516,17 @@ function RegisterPatientPage() {
               <label>Preferred Location<select name="location" value={details.location} onChange={updateDetails} required><option value="" disabled>Select a location</option><option value="4302 University Dr, Houston, TX 77004">4302 University Dr, Houston, TX 77004</option><option value="14000 University Blvd, Sugar Land, TX 77479">14000 University Blvd, Sugar Land, TX 77479</option><option value="1 Main St, Houston, TX 77002">1 Main St, Houston, TX 77002</option></select></label>
               <label>Social Security Number<input type="text" name="ssn" placeholder="XXX-XX-XXXX" value={details.ssn} onChange={updateDetails} pattern="\d{3}-\d{2}-\d{4}" maxLength="11" inputMode="numeric" title="Use SSN format: XXX-XX-XXXX" required /></label>
               <label>Driver's License<input type="text" name="driversLicense" placeholder="Your DL number" value={details.driversLicense} onChange={updateDetails} pattern="[A-Za-z0-9-]{5,20}" minLength="5" maxLength="20" title="Use 5-20 letters, numbers, or hyphens" required /></label>
-              <label className="full-width">Reason for Visit<textarea name="reason" rows="3" placeholder="Tell us how we can help the patient today" value={details.reason} onChange={updateDetails} required /></label>
+              <label>Home Address<input type="text" name="address" placeholder="123 Main St, Houston, TX 77002" value={details.address} onChange={updateDetails} required /></label>
+              <label>Emergency Contact Name<input type="text" name="emergencyContactName" placeholder="e.g., Sarah Doe" value={details.emergencyContactName} onChange={updateDetails} required /></label>
+              <label>Emergency Contact Number<input type="tel" name="emergencyContactPhone" placeholder="(555) 987-6543" value={details.emergencyContactPhone} onChange={updateDetails} required /></label>
+              <label>Department
+                <select name="reason" value={details.reason} onChange={updateDetails} required>
+                  <option value="" disabled>Select department</option>
+                  {departments.map((dept) => (
+                    <option key={dept.department_id} value={dept.department_name}>{dept.department_name}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           )}
 

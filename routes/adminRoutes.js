@@ -16,6 +16,7 @@ function createAdminRoutes(handlers) {
     approveAdminDoctorTimeOff,
     denyAdminDoctorTimeOff,
     createStaffTimeOffRequest,
+    getStaffTimeOffRequestsByStaffId,
     approveAdminStaffTimeOffRequest,
     denyAdminStaffTimeOffRequest,
     getAdminStaffMembersByRole,
@@ -118,6 +119,16 @@ function createAdminRoutes(handlers) {
       return true;
     }
 
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'staff' && parts[2] === 'time-off-requests') {
+      const staffId = Number(parsedUrl.query.staffId || 0);
+      if (!Number.isInteger(staffId) || staffId <= 0) {
+        sendJSON(res, 400, { error: 'A valid staffId query parameter is required' });
+        return true;
+      }
+      getStaffTimeOffRequestsByStaffId(req, res, staffId);
+      return true;
+    }
+
     if (method === 'POST' && parts[0] === 'api' && parts[1] === 'staff' && parts[2] === 'time-off-requests') {
       parseJSON(req, (err, data) => {
         if (err) {
@@ -158,23 +169,8 @@ function createAdminRoutes(handlers) {
       return true;
     }
 
-    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'staff' && parts[3] === 'hygienists') {
-      getAdminStaffMembersByRole(req, 'HYGIENIST', res);
-      return true;
-    }
-
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'staff' && parts[3] === 'receptionists') {
       getAdminStaffMembersByRole(req, 'RECEPTIONIST', res);
-      return true;
-    }
-
-    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'staff' && parts[3] === 'hygienists') {
-      parseJSON(req, (err, data) => {
-        if (err) {
-          return sendJSON(res, 400, { error: 'Invalid JSON' });
-        }
-        createAdminStaffMember(req, data, 'HYGIENIST', res);
-      });
       return true;
     }
 
