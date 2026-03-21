@@ -209,7 +209,7 @@ function PatientRegistrationPage() {
     preferredDate: '',
     preferredTime: ''
   });
-  const [availability, setAvailability] = useState([]);
+
   const [insuranceCompanies, setInsuranceCompanies] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -239,19 +239,6 @@ function PatientRegistrationPage() {
         );
       } catch (error) {
         console.error('Failed to fetch pain symptoms:', error.message);
-      }
-    };
-
-    const fetchAvailability = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/appointments/preferred-availability`);
-        if (!response.ok) {
-          throw new Error(`API returned ${response.status}`);
-        }
-        const data = await response.json();
-        setAvailability(data.availability);
-      } catch (error) {
-        console.error('Failed to fetch availability:', error.message);
       }
     };
 
@@ -292,7 +279,6 @@ function PatientRegistrationPage() {
     };
 
     fetchPainSymptoms();
-    fetchAvailability();
     fetchInsuranceCompanies();
     fetchDepartments();
     fetchLocations();
@@ -302,15 +288,6 @@ function PatientRegistrationPage() {
     () => Boolean(medicalHistory.other || medicalHistory.preMedOther || (hasAllergies && allergies.allergyOther)),
     [allergies.allergyOther, hasAllergies, medicalHistory.other, medicalHistory.preMedOther]
   );
-
-  const handleDateSelect = (date, time) => {
-    setAppointmentSelection({
-      preferredDate: date,
-      preferredTime: time,
-      preferredWeekdays: [],
-      preferredTimes: []
-    });
-  };
 
   const formatPhone = (value) => {
     const digits = value.replace(/\D/g, '').slice(0, 10);
@@ -915,61 +892,40 @@ function PatientRegistrationPage() {
 
           {step === 7 && (
             <fieldset className="form-section">
-              <legend>Appointment Selection</legend>
-              <p className="appt-picker-hint">Select a date, then choose a time slot.</p>
-              <div className="appt-picker">
-                <div className="appt-date-list">
-                  {availability.map((day) => {
-                    const dateObj = new Date(day.date + 'T00:00:00');
-                    const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-                    const monthDay = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    const allFull = day.timeOptions.every((s) => s.isFull);
-                    return (
-                      <button
-                        key={day.date}
-                        type="button"
-                        className={`appt-date-btn ${appointmentSelection.preferredDate === day.date ? 'active' : ''}`}
-                        onClick={() => setAppointmentSelection((prev) => ({ ...prev, preferredDate: day.date, preferredTime: '' }))}
-                        disabled={allFull}
-                      >
-                        <span className="appt-date-weekday">{weekday}</span>
-                        <span className="appt-date-label">{monthDay}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {appointmentSelection.preferredDate && (
-                  <div className="appt-time-section">
-                    <h4 className="appt-time-heading">
-                      {new Date(appointmentSelection.preferredDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                    </h4>
-                    <div className="appt-time-grid">
-                      {availability
-                        .find((d) => d.date === appointmentSelection.preferredDate)
-                        ?.timeOptions.map((slot) => {
-                          const hour = parseInt(slot.time, 10);
-                          const ampm = hour >= 12 ? 'PM' : 'AM';
-                          const display = `${hour === 0 ? 12 : hour > 12 ? hour - 12 : hour}:00 ${ampm}`;
-                          return (
-                            <button
-                              key={slot.time}
-                              type="button"
-                              className={`appt-time-btn ${appointmentSelection.preferredTime === slot.time ? 'active' : ''}`}
-                              onClick={() => handleDateSelect(appointmentSelection.preferredDate, slot.time)}
-                              disabled={slot.isFull}
-                            >
-                              {display}
-                            </button>
-                          );
-                        })}
-                    </div>
+              <legend>Preferred Appointment</legend>
+              <p className="appt-picker-hint">Choose your preferred date and time. We'll do our best to accommodate your request.</p>
+              <div className="form-grid">
+                <label>Preferred Date
+                  <input
+                    type="date"
+                    value={appointmentSelection.preferredDate}
+                    onChange={(e) => setAppointmentSelection((prev) => ({ ...prev, preferredDate: e.target.value }))}
+                    min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                    required
+                  />
+                </label>
+                <label>Preferred Time
+                  <div className="appt-time-grid">
+                    {['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM','7:00 PM'].map((label, i) => {
+                      const value = `${i + 9}:00`;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`appt-time-btn ${appointmentSelection.preferredTime === value ? 'active' : ''}`}
+                          onClick={() => setAppointmentSelection((prev) => ({ ...prev, preferredTime: value }))}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
-                )}
+                </label>
               </div>
               {appointmentSelection.preferredDate && appointmentSelection.preferredTime && (
                 <p className="appt-confirmed">
-                  Selected: {new Date(appointmentSelection.preferredDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at{' '}
-                  {(() => { const h = parseInt(appointmentSelection.preferredTime, 10); return `${h === 0 ? 12 : h > 12 ? h - 12 : h}:00 ${h >= 12 ? 'PM' : 'AM'}`; })()}
+                  Preferred: {new Date(appointmentSelection.preferredDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at{' '}
+                  {(() => { const h = parseInt(appointmentSelection.preferredTime, 10); return `${h > 12 ? h - 12 : h}:00 ${h >= 12 ? 'PM' : 'AM'}`; })()}
                 </p>
               )}
             </fieldset>
