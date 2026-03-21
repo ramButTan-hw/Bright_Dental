@@ -211,17 +211,6 @@ function RegisterPatientPage() {
       }
     };
 
-    const fetchAvailability = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/appointments/preferred-availability`);
-        if (!response.ok) throw new Error(`API returned ${response.status}`);
-        const data = await response.json();
-        setAvailability(data.availability || []);
-      } catch (error) {
-        console.error('Failed to fetch availability:', error.message);
-      }
-    };
-
     const fetchDoctors = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/reception/doctors`);
@@ -245,7 +234,6 @@ function RegisterPatientPage() {
     };
 
     fetchPainSymptoms();
-    fetchAvailability();
     fetchDoctors();
     fetchDepartments();
   }, [API_BASE_URL]);
@@ -255,11 +243,22 @@ function RegisterPatientPage() {
     [allergies.allergyOther, hasAllergies, medicalHistory.other, medicalHistory.preMedOther]
   );
 
-  const handleDateSelect = (date, time) => {
-    setAppointmentSelection({
-      preferredDate: date,
-      preferredTime: time
-    });
+  const handleDoctorChange = async (doctorId) => {
+    setSelectedDoctorId(doctorId);
+    setAppointmentSelection({ preferredDate: '', preferredTime: '' });
+    if (!doctorId) {
+      setAvailability([]);
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/appointments/preferred-availability?doctorId=${doctorId}`);
+      if (!response.ok) throw new Error(`API returned ${response.status}`);
+      const data = await response.json();
+      setAvailability(data.availability || []);
+    } catch (error) {
+      console.error('Failed to fetch availability:', error.message);
+      setAvailability([]);
+    }
   };
 
   const updateIdentity = (e) => {
@@ -715,14 +714,11 @@ function RegisterPatientPage() {
 
           {step === 7 && (
             <fieldset className="form-section">
-              <legend>Available Appointment Dates</legend>
-              <p style={{ color: '#5b6766', fontSize: '0.9rem', margin: '0 0 1rem' }}>
-                Select an available date and time to schedule the patient's appointment.
-                Grayed-out slots are fully booked.
-              </p>
-              <div className="form-grid" style={{ marginBottom: '1.25rem' }}>
-                <label>Assign Dentist
-                  <select value={selectedDoctorId} onChange={(e) => setSelectedDoctorId(e.target.value)} required>
+              <legend>Schedule Appointment</legend>
+              <div className="form-grid">
+                <label>
+                  Doctor
+                  <select value={selectedDoctorId} onChange={(e) => handleDoctorChange(e.target.value)} required>
                     <option value="" disabled>Select a dentist</option>
                     {doctors.map((doc) => (
                       <option key={doc.doctor_id} value={doc.doctor_id}>
@@ -731,47 +727,50 @@ function RegisterPatientPage() {
                     ))}
                   </select>
                 </label>
-              </div>
-
-              <div className="preferred-appointment-grid">
-                <div>
-                  <h4 className="preferred-appointment-heading">Select a Date</h4>
-                  <div className="preferred-date-list">
-                    {availability.slice(0, 30).map((day) => (
-                      <button
-                        key={day.date}
-                        type="button"
-                        className={`preferred-date-btn ${appointmentSelection.preferredDate === day.date ? 'active' : ''}`}
-                        onClick={() => setAppointmentSelection((prev) => ({ ...prev, preferredDate: day.date, preferredTime: '' }))}
-                        disabled={day.isFull}
-                      >
-                        {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                        <small>{day.isFull ? 'Fully Booked' : `${day.remainingCapacity} slots open`}</small>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="preferred-appointment-heading">Select a Time</h4>
-                  {appointmentSelection.preferredDate ? (
-                    <div className="preferred-time-list">
-                      {(availability.find((d) => d.date === appointmentSelection.preferredDate)?.timeOptions || []).map((slot) => (
-                        <button
-                          key={slot.time}
-                          type="button"
-                          className={`preferred-time-btn ${appointmentSelection.preferredTime === slot.time ? 'active' : ''}`}
-                          onClick={() => handleDateSelect(appointmentSelection.preferredDate, slot.time)}
-                          disabled={slot.isFull}
-                        >
-                          {slot.time}
-                          <small>{slot.isFull ? 'Full' : `${slot.remaining} open`}</small>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="preferred-calendar-note">Please select a date first.</p>
-                  )}
-                </div>
+                <label>
+                  Date
+                  <input
+                    type="date"
+                    value={appointmentSelection.preferredDate}
+                    min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                    disabled={!selectedDoctorId}
+                    onChange={(e) => setAppointmentSelection((prev) => ({ ...prev, preferredDate: e.target.value, preferredTime: '' }))}
+                    required
+                  />
+                </label>
+                <label>
+                  Time
+                  <select
+                    value={appointmentSelection.preferredTime}
+                    disabled={!selectedDoctorId || !appointmentSelection.preferredDate}
+                    onChange={(e) => setAppointmentSelection((prev) => ({ ...prev, preferredTime: e.target.value }))}
+                    required
+                  >
+                    <option value="">{!selectedDoctorId ? 'Select a doctor first' : !appointmentSelection.preferredDate ? 'Select a date first' : 'Select time'}</option>
+                    {(() => {
+                      const dayData = availability.find((d) => d.date === appointmentSelection.preferredDate);
+                      const times = [
+                        { value: '09:00', label: '9:00 AM' }, { value: '10:00', label: '10:00 AM' },
+                        { value: '11:00', label: '11:00 AM' }, { value: '12:00', label: '12:00 PM' },
+                        { value: '13:00', label: '1:00 PM' }, { value: '14:00', label: '2:00 PM' },
+                        { value: '15:00', label: '3:00 PM' }, { value: '16:00', label: '4:00 PM' },
+                        { value: '17:00', label: '5:00 PM' }, { value: '18:00', label: '6:00 PM' },
+                        { value: '19:00', label: '7:00 PM' }
+                      ];
+                      return times.map((t) => {
+                        const slotInfo = dayData?.timeOptions?.find((s) => s.time === t.value);
+                        const isFull = slotInfo ? slotInfo.isFull : false;
+                        const isTimeOff = slotInfo ? slotInfo.timeOff : false;
+                        const suffix = isTimeOff ? ' (Doctor Off)' : isFull ? ' (Full)' : slotInfo ? ` (${slotInfo.remaining} open)` : '';
+                        return (
+                          <option key={t.value} value={t.value} disabled={isFull}>
+                            {t.label}{suffix}
+                          </option>
+                        );
+                      });
+                    })()}
+                  </select>
+                </label>
               </div>
             </fieldset>
           )}

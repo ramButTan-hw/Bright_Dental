@@ -70,10 +70,12 @@ function ReceptionistPatientProfilePage() {
     notes: ''
   });
   const [isCreating, setIsCreating] = useState(false);
+  const [createAvailability, setCreateAvailability] = useState([]);
 
   // Confirm appointment request state
   const [confirmForms, setConfirmForms] = useState({});
   const [confirmingId, setConfirmingId] = useState(null);
+  const [slotAvailability, setSlotAvailability] = useState({});
 
   // Prescription state
   const [rxFormOpen, setRxFormOpen] = useState(false);
@@ -281,11 +283,36 @@ function ReceptionistPatientProfilePage() {
     }
   };
 
+  const fetchSlotAvailability = async (requestId, doctorId) => {
+    if (!doctorId) {
+      setSlotAvailability((prev) => ({ ...prev, [requestId]: [] }));
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/appointments/preferred-availability?doctorId=${doctorId}`);
+      const data = await safeJson(res);
+      setSlotAvailability((prev) => ({
+        ...prev,
+        [requestId]: Array.isArray(data?.availability) ? data.availability : []
+      }));
+    } catch {
+      setSlotAvailability((prev) => ({ ...prev, [requestId]: [] }));
+    }
+  };
+
   const updateConfirmForm = (requestId, field, value) => {
     setConfirmForms((prev) => ({
       ...prev,
-      [requestId]: { ...prev[requestId], [field]: value }
+      [requestId]: {
+        ...prev[requestId],
+        [field]: value,
+        ...(field === 'doctorId' ? { assignedDate: '', assignedTime: '' } : {}),
+        ...(field === 'assignedDate' ? { assignedTime: '' } : {})
+      }
     }));
+    if (field === 'doctorId') {
+      fetchSlotAvailability(requestId, value);
+    }
   };
 
   const invoiceByAppointmentId = useMemo(() => {
@@ -641,11 +668,24 @@ function ReceptionistPatientProfilePage() {
                   </label>
                   <label>
                     Time
-                    <select value={form.assignedTime || ''} onChange={(e) => updateConfirmForm(req.preference_request_id, 'assignedTime', e.target.value)}>
-                      <option value="">Select time</option>
-                      {CLINIC_TIME_OPTIONS.map((t) => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
-                      ))}
+                    <select
+                      value={form.assignedTime || ''}
+                      onChange={(e) => updateConfirmForm(req.preference_request_id, 'assignedTime', e.target.value)}
+                      disabled={!form.assignedDate || !form.doctorId}
+                    >
+                      <option value="">{!form.doctorId ? 'Select a doctor first' : !form.assignedDate ? 'Select a date first' : 'Select time'}</option>
+                      {CLINIC_TIME_OPTIONS.map((t) => {
+                        const avail = (slotAvailability[req.preference_request_id] || []).find((d) => d.date === form.assignedDate);
+                        const slotInfo = avail?.timeOptions?.find((s) => s.time === t.value.slice(0, 5));
+                        const isFull = slotInfo ? slotInfo.isFull : false;
+                        const isTimeOff = slotInfo ? slotInfo.timeOff : false;
+                        const suffix = isTimeOff ? ' (Doctor Off)' : isFull ? ' (Full)' : slotInfo ? ` (${slotInfo.remaining} open)` : '';
+                        return (
+                          <option key={t.value} value={t.value} disabled={isFull}>
+                            {t.label}{suffix}
+                          </option>
+                        );
+                      })}
                     </select>
                   </label>
                   <label>
@@ -699,7 +739,18 @@ function ReceptionistPatientProfilePage() {
             </label>
             <label>
               Doctor
-              <select value={appointmentForm.doctorId} onChange={(e) => setAppointmentForm((prev) => ({ ...prev, doctorId: e.target.value }))} required>
+              <select value={appointmentForm.doctorId} onChange={(e) => {
+                const docId = e.target.value;
+                setAppointmentForm((prev) => ({ ...prev, doctorId: docId, appointmentDate: '', appointmentTime: '' }));
+                if (docId) {
+                  fetch(`${API_BASE_URL}/api/appointments/preferred-availability?doctorId=${docId}`)
+                    .then((r) => safeJson(r))
+                    .then((d) => setCreateAvailability(Array.isArray(d?.availability) ? d.availability : []))
+                    .catch(() => setCreateAvailability([]));
+                } else {
+                  setCreateAvailability([]);
+                }
+              }} required>
                 <option value="">Select a doctor</option>
                 {doctors.map((doc) => (
                   <option key={doc.doctor_id} value={doc.doctor_id}>
@@ -714,17 +765,31 @@ function ReceptionistPatientProfilePage() {
                 type="date"
                 value={appointmentForm.appointmentDate}
                 min={new Date().toISOString().slice(0, 10)}
-                onChange={(e) => setAppointmentForm((prev) => ({ ...prev, appointmentDate: e.target.value }))}
+                onChange={(e) => setAppointmentForm((prev) => ({ ...prev, appointmentDate: e.target.value, appointmentTime: '' }))}
                 required
               />
             </label>
             <label>
               Time
-              <select value={appointmentForm.appointmentTime} onChange={(e) => setAppointmentForm((prev) => ({ ...prev, appointmentTime: e.target.value }))} required>
-                <option value="">Select time</option>
-                {CLINIC_TIME_OPTIONS.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
+              <select
+                value={appointmentForm.appointmentTime}
+                onChange={(e) => setAppointmentForm((prev) => ({ ...prev, appointmentTime: e.target.value }))}
+                required
+                disabled={!appointmentForm.doctorId || !appointmentForm.appointmentDate}
+              >
+                <option value="">{!appointmentForm.doctorId ? 'Select a doctor first' : !appointmentForm.appointmentDate ? 'Select a date first' : 'Select time'}</option>
+                {CLINIC_TIME_OPTIONS.map((t) => {
+                  const avail = createAvailability.find((d) => d.date === appointmentForm.appointmentDate);
+                  const slotInfo = avail?.timeOptions?.find((s) => s.time === t.value.slice(0, 5));
+                  const isFull = slotInfo ? slotInfo.isFull : false;
+                  const isTimeOff = slotInfo ? slotInfo.timeOff : false;
+                  const suffix = isTimeOff ? ' (Doctor Off)' : isFull ? ' (Full)' : slotInfo ? ` (${slotInfo.remaining} open)` : '';
+                  return (
+                    <option key={t.value} value={t.value} disabled={isFull}>
+                      {t.label}{suffix}
+                    </option>
+                  );
+                })}
               </select>
             </label>
             <label>
