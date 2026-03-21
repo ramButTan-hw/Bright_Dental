@@ -5,29 +5,6 @@ import autoTable from 'jspdf-autotable';
 import { formatDate, formatTime, getReceptionPortalSession, resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/ReceptionistPage.css';
 
-const CLINIC_OPEN_TIME = '08:00';
-const CLINIC_CLOSE_TIME = '19:00';
-
-const buildClinicTimeOptions = (openTime, closeTime) => {
-  const [openHour, openMinute] = openTime.split(':').map(Number);
-  const [closeHour, closeMinute] = closeTime.split(':').map(Number);
-  const cursor = new Date(2000, 0, 1, openHour, openMinute, 0, 0);
-  const close = new Date(2000, 0, 1, closeHour, closeMinute, 0, 0);
-  const options = [];
-  while (cursor.getTime() <= close.getTime()) {
-    const hours = String(cursor.getHours()).padStart(2, '0');
-    const minutes = String(cursor.getMinutes()).padStart(2, '0');
-    const value = `${hours}:${minutes}`;
-    options.push({
-      value,
-      label: new Date(`2000-01-01T${value}:00`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
-    });
-    cursor.setMinutes(cursor.getMinutes() + 30);
-  }
-  return options;
-};
-
-const CLINIC_TIME_OPTIONS = buildClinicTimeOptions(CLINIC_OPEN_TIME, CLINIC_CLOSE_TIME);
 
 function labelFromKey(key) {
   return String(key || '')
@@ -708,16 +685,11 @@ function ReceptionistPatientProfilePage() {
                           disabled={!form.assignedDate || !form.doctorId}
                         >
                           <option value="">{!form.doctorId ? 'Select a doctor first' : !form.assignedDate ? 'Select a date first' : 'Select time'}</option>
-                          {openSlots.length > 0
-                            ? openSlots.map((slot) => (
-                                <option key={slot.time} value={slot.time}>
-                                  {formatTime(slot.time)} ({slot.remaining} open)
-                                </option>
-                              ))
-                            : CLINIC_TIME_OPTIONS.filter((t) => t.value.endsWith(':00')).map((t) => (
-                                <option key={t.value} value={t.value}>{t.label}</option>
-                              ))
-                          }
+                          {openSlots.map((slot) => (
+                            <option key={slot.time} value={slot.time}>
+                              {formatTime(slot.time)}
+                            </option>
+                          ))}
                         </select>
                       );
                     })()}
@@ -830,16 +802,11 @@ function ReceptionistPatientProfilePage() {
                     disabled={!appointmentForm.doctorId || !appointmentForm.appointmentDate}
                   >
                     <option value="">{!appointmentForm.doctorId ? 'Select a doctor first' : !appointmentForm.appointmentDate ? 'Select a date first' : 'Select time'}</option>
-                    {openSlots.length > 0
-                      ? openSlots.map((slot) => (
-                          <option key={slot.time} value={slot.time}>
-                            {formatTime(slot.time)} ({slot.remaining} open)
-                          </option>
-                        ))
-                      : CLINIC_TIME_OPTIONS.filter((t) => t.value.endsWith(':00')).map((t) => (
-                          <option key={t.value} value={t.value}>{t.label}</option>
-                        ))
-                    }
+                    {openSlots.map((slot) => (
+                      <option key={slot.time} value={slot.time}>
+                        {formatTime(slot.time)}
+                      </option>
+                    ))}
                   </select>
                 );
               })()}

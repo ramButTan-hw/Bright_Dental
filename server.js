@@ -25,7 +25,7 @@ const PREFERRED_TIME_OPTIONS = [
 ];
 const WEEKDAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const ALLOWED_PATIENT_GENDER_IDS = new Set([1, 2, 3, 4]);
-const MAX_PATIENTS_PER_TIME = 5;
+const MAX_PATIENTS_PER_TIME = 1;
 const MAX_PATIENTS_PER_DAY = PREFERRED_TIME_OPTIONS.length * MAX_PATIENTS_PER_TIME;
 const DEFAULT_CLINIC_LOCATIONS = [
   { city: 'Houston', state: 'TX', streetNo: '4302', streetName: 'University Dr', zipCode: '77004' },
