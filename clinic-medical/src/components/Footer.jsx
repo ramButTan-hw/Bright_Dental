@@ -17,6 +17,7 @@ function Footer() {
           <div className="footer-column">
             <h4 className="footer-column-title">Contact Information</h4>
             <div className="footer-info">
+              <p> Location: 4302 University Dr</p>
               <p> Phone: (832) 461-3355</p>
               <p> Email: hello@brightdental.com</p>
             </div>

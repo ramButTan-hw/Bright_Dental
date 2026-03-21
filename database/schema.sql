@@ -138,13 +138,9 @@ CREATE TABLE IF NOT EXISTS staff (
     UNIQUE KEY uq_staff_user (user_id),
     INDEX idx_staff_supervisor (s_staff_id),
     CONSTRAINT fk_staff_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT fk_staff_supervisor FOREIGN KEY (s_staff_id) REFERENCES staff(staff_id) ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT chk_staff_not_self_supervisor CHECK (s_staff_id IS NULL OR s_staff_id <> staff_id)
+    CONSTRAINT fk_staff_supervisor FOREIGN KEY (s_staff_id) REFERENCES staff(staff_id) ON DELETE SET NULL ON UPDATE CASCADE
 );
 
-ALTER TABLE staff
-    ADD COLUMN IF NOT EXISTS emergency_contact_name VARCHAR(100) AFTER s_country,
-    ADD COLUMN IF NOT EXISTS emergency_contact_phone VARCHAR(20) AFTER emergency_contact_name;
 
 CREATE TABLE IF NOT EXISTS staff_locations (
     staff_locations_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -414,12 +410,15 @@ CREATE TABLE IF NOT EXISTS appointment_preference_requests (
     patient_id INT NOT NULL,
     preferred_date DATE NOT NULL,
     preferred_time TIME NOT NULL,
+    preferred_location VARCHAR(255),
     location_id INT,
     appointment_reason VARCHAR(255),
     request_status ENUM('PREFERRED_PENDING', 'ASSIGNED', 'CANCELLED') NOT NULL DEFAULT 'PREFERRED_PENDING',
     assigned_doctor_id INT,
     assigned_date DATE,
     assigned_time TIME,
+    available_days VARCHAR(100),
+    available_times VARCHAR(255),
     receptionist_notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
@@ -435,77 +434,6 @@ CREATE TABLE IF NOT EXISTS appointment_preference_requests (
 );
 
 
-SET @has_pref_assigned_date := (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'appointment_preference_requests'
-      AND COLUMN_NAME = 'assigned_date'
-);
-
-SET @add_pref_assigned_date_sql := IF(
-    @has_pref_assigned_date = 0,
-    'ALTER TABLE appointment_preference_requests ADD COLUMN assigned_date DATE AFTER assigned_doctor_id',
-    'SELECT 1'
-);
-
-PREPARE add_pref_assigned_date_stmt FROM @add_pref_assigned_date_sql;
-EXECUTE add_pref_assigned_date_stmt;
-DEALLOCATE PREPARE add_pref_assigned_date_stmt;
-
-SET @has_pref_assigned_time := (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'appointment_preference_requests'
-      AND COLUMN_NAME = 'assigned_time'
-);
-
-SET @add_pref_assigned_time_sql := IF(
-    @has_pref_assigned_time = 0,
-    'ALTER TABLE appointment_preference_requests ADD COLUMN assigned_time TIME AFTER assigned_date',
-    'SELECT 1'
-);
-
-PREPARE add_pref_assigned_time_stmt FROM @add_pref_assigned_time_sql;
-EXECUTE add_pref_assigned_time_stmt;
-DEALLOCATE PREPARE add_pref_assigned_time_stmt;
-
-SET @has_pref_available_days := (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'appointment_preference_requests'
-      AND COLUMN_NAME = 'available_days'
-);
-
-SET @add_pref_available_days_sql := IF(
-    @has_pref_available_days = 0,
-    'ALTER TABLE appointment_preference_requests ADD COLUMN available_days VARCHAR(100) AFTER preferred_location',
-    'SELECT 1'
-);
-
-PREPARE add_pref_available_days_stmt FROM @add_pref_available_days_sql;
-EXECUTE add_pref_available_days_stmt;
-DEALLOCATE PREPARE add_pref_available_days_stmt;
-
-SET @has_pref_available_times := (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'appointment_preference_requests'
-      AND COLUMN_NAME = 'available_times'
-);
-
-SET @add_pref_available_times_sql := IF(
-    @has_pref_available_times = 0,
-    'ALTER TABLE appointment_preference_requests ADD COLUMN available_times VARCHAR(255) AFTER available_days',
-    'SELECT 1'
-);
-
-PREPARE add_pref_available_times_stmt FROM @add_pref_available_times_sql;
-EXECUTE add_pref_available_times_stmt;
-DEALLOCATE PREPARE add_pref_available_times_stmt;
 
 
 
@@ -1448,8 +1376,8 @@ CREATE OR REPLACE VIEW vw_report_patient_billing AS
 SELECT
     p.patient_id,
     CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
-    p.p_email,
-    p.p_phone,
+    u.user_email AS p_email,
+    u.user_phone AS p_phone,
     COUNT(DISTINCT i.invoice_id) AS total_invoices,
     COALESCE(SUM(i.amount), 0) AS total_charged,
     COALESCE(SUM(i.insurance_covered_amount), 0) AS insurance_covered,
@@ -1458,9 +1386,10 @@ SELECT
     COALESCE(SUM(CASE WHEN i.payment_status IN ('Unpaid', 'Partial') THEN i.patient_amount ELSE 0 END), 0) AS patient_due,
     p.created_at AS patient_since
 FROM patients p
+LEFT JOIN users u ON u.user_id = p.user_id
 LEFT JOIN appointments a ON p.patient_id = a.patient_id
 LEFT JOIN invoices i ON a.appointment_id = i.appointment_id
-GROUP BY p.patient_id, p.p_first_name, p.p_last_name, p.p_email, p.p_phone, p.created_at
+GROUP BY p.patient_id, p.p_first_name, p.p_last_name, u.user_email, u.user_phone, p.created_at
 ORDER BY patient_due DESC;
 
 
