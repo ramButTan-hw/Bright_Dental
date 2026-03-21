@@ -30,10 +30,9 @@ function AssignAppointmentPage() {
 
     const loadData = async () => {
       try {
-        const [reqRes, docRes, availRes] = await Promise.all([
+        const [reqRes, docRes] = await Promise.all([
           fetch(`${API_BASE_URL}/api/appointments/preference-requests/${requestId}`),
-          fetch(`${API_BASE_URL}/api/reception/doctors`),
-          fetch(`${API_BASE_URL}/api/appointments/preferred-availability`)
+          fetch(`${API_BASE_URL}/api/reception/doctors`)
         ]);
 
         if (cancelled) return;
@@ -45,13 +44,11 @@ function AssignAppointmentPage() {
 
         const requestData = await reqRes.json();
         const doctorsData = await docRes.json().catch(() => []);
-        const availData = await availRes.json().catch(() => ({}));
 
         if (cancelled) return;
 
         setRequest(Array.isArray(requestData) ? requestData[0] : requestData);
         setDoctors(Array.isArray(doctorsData) ? doctorsData : []);
-        setAvailability(Array.isArray(availData?.availability) ? availData.availability : []);
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load assign-appointment data:', error);
@@ -67,13 +64,33 @@ function AssignAppointmentPage() {
     };
   }, [API_BASE_URL, navigate, session?.staffId, requestId]);
 
+  const fetchAvailabilityForDoctor = async (doctorId) => {
+    if (!doctorId) {
+      setAvailability([]);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/appointments/preferred-availability?doctorId=${doctorId}`);
+      const data = await res.json().catch(() => ({}));
+      setAvailability(Array.isArray(data?.availability) ? data.availability : []);
+    } catch {
+      setAvailability([]);
+    }
+  };
+
   const setAssignField = (field, value) => {
     setAssignmentDraft((prev) => {
+      if (field === 'assignedDoctorId') {
+        return { ...prev, assignedDoctorId: value, assignedDate: '', assignedTime: '' };
+      }
       if (field === 'assignedDate') {
         return { ...prev, assignedDate: value, assignedTime: '' };
       }
       return { ...prev, [field]: value };
     });
+    if (field === 'assignedDoctorId') {
+      fetchAvailabilityForDoctor(value);
+    }
   };
 
   const DEFAULT_TIME_SLOTS = [
@@ -182,7 +199,7 @@ function AssignAppointmentPage() {
             <option value="">{assignmentDraft.assignedDate ? 'Select a time' : 'Select a date first'}</option>
             {selectedDaySlots.map((slot) => (
               <option key={slot.time} value={slot.time} disabled={slot.isFull}>
-                {formatTime(slot.time)}{slot.isFull ? ' (Full)' : ` (${slot.remaining} open)`}
+                {formatTime(slot.time)}{slot.timeOff ? ' (Doctor Off)' : slot.isFull ? ' (Full)' : ` (${slot.remaining} open)`}
               </option>
             ))}
           </select>

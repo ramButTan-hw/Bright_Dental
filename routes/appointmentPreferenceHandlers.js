@@ -13,6 +13,8 @@ function createAppointmentPreferenceHandlers(deps) {
     const days = Math.min(Math.max(Number(parsedUrl.query.days) || 365, 30), 730);
     const preferredLocation = String(parsedUrl.query.location || '').trim().toLowerCase();
     const hasLocationFilter = Boolean(preferredLocation);
+    const doctorIdParam = Number(parsedUrl.query.doctorId) || 0;
+    const hasDoctorFilter = doctorIdParam > 0;
 
     const locationFilterSql = hasLocationFilter
       ? ' AND LOWER(TRIM(preferred_location)) = ?'
@@ -41,23 +43,29 @@ function createAppointmentPreferenceHandlers(deps) {
           return sendJSON(res, 500, { error: 'Database error' });
         }
 
-        // Also query actual appointment slots that are fully booked
-        pool.query(
-          `SELECT
-            s.slot_date,
-            s.slot_start_time,
-            s.current_bookings,
-            s.max_patients,
-            s.is_available
+        // Query actual appointment slots
+        const slotSql = `SELECT
+            s.slot_date, s.slot_start_time, s.current_bookings, s.max_patients, s.is_available
           FROM appointment_slots s
-          WHERE s.slot_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)`,
-          [days],
-          (slotErr, slotResults) => {
-            if (slotErr) {
-              console.error('Error fetching slot availability:', slotErr);
-              return sendJSON(res, 500, { error: 'Database error' });
-            }
+          WHERE s.slot_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)${hasDoctorFilter ? ' AND s.doctor_id = ?' : ''}`;
+        const slotParams = hasDoctorFilter ? [days, doctorIdParam] : [days];
 
+        // Query approved doctor time-off windows
+        const timeOffSql = hasDoctorFilter
+          ? `SELECT start_datetime, end_datetime FROM doctor_time_off
+             WHERE doctor_id = ? AND is_approved = TRUE
+               AND end_datetime >= CURDATE()
+               AND start_datetime <= DATE_ADD(CURDATE(), INTERVAL ? DAY)`
+          : null;
+        const timeOffParams = hasDoctorFilter ? [doctorIdParam, days] : [];
+
+        pool.query(slotSql, slotParams, (slotErr, slotResults) => {
+          if (slotErr) {
+            console.error('Error fetching slot availability:', slotErr);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+
+          const processResults = (timeOffResults) => {
             // Build map of preference request counts
             const usageByDate = new Map();
             (prefResults || []).forEach((row) => {
@@ -84,6 +92,20 @@ function createAppointmentPreferenceHandlers(deps) {
               });
             });
 
+            // Build list of time-off intervals
+            const timeOffIntervals = (timeOffResults || []).map((row) => ({
+              start: new Date(row.start_datetime),
+              end: new Date(row.end_datetime)
+            }));
+
+            const isOnTimeOff = (dateKey, hourStr) => {
+              if (timeOffIntervals.length === 0) return false;
+              const hour = parseInt(hourStr, 10);
+              const slotStart = new Date(`${dateKey}T${String(hour).padStart(2, '0')}:00:00`);
+              const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
+              return timeOffIntervals.some((interval) => slotStart < interval.end && slotEnd > interval.start);
+            };
+
             const availability = [];
             const now = new Date();
             const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -99,12 +121,14 @@ function createAppointmentPreferenceHandlers(deps) {
                 const prefBooked = Number(timeCounts.get(timeValue) || 0);
                 const slot = slotData.get(shortTime);
                 const slotFull = slot ? (slot.currentBookings >= slot.maxPatients || !slot.isAvailable) : false;
+                const doctorOff = isOnTimeOff(dateKey, shortTime);
                 const booked = Math.max(prefBooked, slot ? slot.currentBookings : 0);
                 return {
                   time: shortTime,
                   booked,
-                  remaining: slotFull ? 0 : Math.max(maxPatientsPerTime - prefBooked, 0),
-                  isFull: slotFull || prefBooked >= maxPatientsPerTime
+                  remaining: (slotFull || doctorOff) ? 0 : Math.max(maxPatientsPerTime - prefBooked, 0),
+                  isFull: slotFull || doctorOff || prefBooked >= maxPatientsPerTime,
+                  timeOff: doctorOff
                 };
               });
 
@@ -131,8 +155,20 @@ function createAppointmentPreferenceHandlers(deps) {
               },
               availability
             });
+          };
+
+          if (timeOffSql) {
+            pool.query(timeOffSql, timeOffParams, (toErr, toResults) => {
+              if (toErr) {
+                console.error('Error fetching doctor time-off:', toErr);
+                return sendJSON(res, 500, { error: 'Database error' });
+              }
+              processResults(toResults);
+            });
+          } else {
+            processResults([]);
           }
-        );
+        });
       }
     );
   }
@@ -307,6 +343,18 @@ function createAppointmentPreferenceHandlers(deps) {
           const normalizedTime = normalizeTimeValue(assignedTime);
           const appointmentEndTime = addMinutesToTime(normalizedTime, 30);
           const statusId = await getAppointmentStatusId(conn, 'SCHEDULED');
+
+          // Check if doctor has approved time off during this slot
+          const [timeOffRows] = await conn.promise().query(
+            `SELECT time_off_id FROM doctor_time_off
+             WHERE doctor_id = ? AND is_approved = TRUE
+               AND start_datetime <= ? AND end_datetime > ?
+             LIMIT 1`,
+            [assignedDoctorId, `${assignedDate} ${normalizedTime}`, `${assignedDate} ${normalizedTime}`]
+          );
+          if (timeOffRows?.length) {
+            throw new Error('This doctor has approved time off during the selected date and time. Please choose a different time or doctor.');
+          }
 
           const [slotRows] = await conn.promise().query(
             `SELECT slot_id, current_bookings, max_patients, is_available
