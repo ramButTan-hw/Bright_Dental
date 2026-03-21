@@ -188,6 +188,13 @@ function createPatientIntakeHandlers(deps) {
             return conn.rollback(() => {
               conn.release();
               if (userErr.code === 'ER_DUP_ENTRY') {
+                const msg = userErr.message || '';
+                if (msg.includes('user_phone')) {
+                  return sendJSON(res, 409, { error: 'An account with this phone number already exists' });
+                }
+                if (msg.includes('user_email')) {
+                  return sendJSON(res, 409, { error: 'An account with this email already exists' });
+                }
                 return sendJSON(res, 409, { error: 'Username already exists' });
               }
               console.error('Error creating user:', userErr);

@@ -684,7 +684,7 @@ function PatientRegistrationPage() {
                   </label>
                   {insuranceInfo.companyId && (
                     <>
-                      <label>Member ID<input value={insuranceInfo.memberId} onChange={(e) => setInsuranceInfo((p) => ({ ...p, memberId: e.target.value }))} placeholder="Member ID" required /></label>
+                      <label>Member ID<input value={insuranceInfo.memberId} onChange={(e) => setInsuranceInfo((p) => ({ ...p, memberId: e.target.value.slice(0, 20) }))} placeholder="Member ID" maxLength="20" required /></label>
                       <label>Group Number<input value={insuranceInfo.groupNumber} onChange={(e) => setInsuranceInfo((p) => ({ ...p, groupNumber: e.target.value }))} placeholder="Group # (optional)" /></label>
                     </>
                   )}
@@ -916,26 +916,62 @@ function PatientRegistrationPage() {
           {step === 7 && (
             <fieldset className="form-section">
               <legend>Appointment Selection</legend>
-              <div className="availability-grid">
-                {availability.map((day) => (
-                  <div key={day.date} className="availability-day">
-                    <h3>{day.date}</h3>
-                    <div className="availability-slots">
-                      {day.timeOptions.map((slot) => (
-                        <button
-                          key={slot.time}
-                          type="button"
-                          className={`availability-slot ${appointmentSelection.preferredDate === day.date && appointmentSelection.preferredTime === slot.time ? 'selected' : ''}`}
-                          onClick={() => handleDateSelect(day.date, slot.time)}
-                          disabled={slot.isFull}
-                        >
-                          {slot.time}
-                        </button>
-                      ))}
+              <p className="appt-picker-hint">Select a date, then choose a time slot.</p>
+              <div className="appt-picker">
+                <div className="appt-date-list">
+                  {availability.map((day) => {
+                    const dateObj = new Date(day.date + 'T00:00:00');
+                    const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                    const monthDay = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    const allFull = day.timeOptions.every((s) => s.isFull);
+                    return (
+                      <button
+                        key={day.date}
+                        type="button"
+                        className={`appt-date-btn ${appointmentSelection.preferredDate === day.date ? 'active' : ''}`}
+                        onClick={() => setAppointmentSelection((prev) => ({ ...prev, preferredDate: day.date, preferredTime: '' }))}
+                        disabled={allFull}
+                      >
+                        <span className="appt-date-weekday">{weekday}</span>
+                        <span className="appt-date-label">{monthDay}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {appointmentSelection.preferredDate && (
+                  <div className="appt-time-section">
+                    <h4 className="appt-time-heading">
+                      {new Date(appointmentSelection.preferredDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                    </h4>
+                    <div className="appt-time-grid">
+                      {availability
+                        .find((d) => d.date === appointmentSelection.preferredDate)
+                        ?.timeOptions.map((slot) => {
+                          const hour = parseInt(slot.time, 10);
+                          const ampm = hour >= 12 ? 'PM' : 'AM';
+                          const display = `${hour === 0 ? 12 : hour > 12 ? hour - 12 : hour}:00 ${ampm}`;
+                          return (
+                            <button
+                              key={slot.time}
+                              type="button"
+                              className={`appt-time-btn ${appointmentSelection.preferredTime === slot.time ? 'active' : ''}`}
+                              onClick={() => handleDateSelect(appointmentSelection.preferredDate, slot.time)}
+                              disabled={slot.isFull}
+                            >
+                              {display}
+                            </button>
+                          );
+                        })}
                     </div>
                   </div>
-                ))}
+                )}
               </div>
+              {appointmentSelection.preferredDate && appointmentSelection.preferredTime && (
+                <p className="appt-confirmed">
+                  Selected: {new Date(appointmentSelection.preferredDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at{' '}
+                  {(() => { const h = parseInt(appointmentSelection.preferredTime, 10); return `${h === 0 ? 12 : h > 12 ? h - 12 : h}:00 ${h >= 12 ? 'PM' : 'AM'}`; })()}
+                </p>
+              )}
             </fieldset>
           )}
 

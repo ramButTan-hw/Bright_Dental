@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS patients (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50),
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE,
-    UNIQUE KEY uq_patients_user (user_id)
+    UNIQUE KEY uq_patients_user (user_id),
+    UNIQUE KEY uq_patients_phone (p_phone)
 );
 
 
