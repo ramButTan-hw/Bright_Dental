@@ -23,6 +23,7 @@ function createAppointmentPreferenceHandlers(deps) {
       queryParams.push(preferredLocation);
     }
 
+    // Fetch both preference requests AND actual booked appointment slots
     pool.query(
       `SELECT
         preferred_date,
@@ -34,63 +35,104 @@ function createAppointmentPreferenceHandlers(deps) {
         ${locationFilterSql}
       GROUP BY preferred_date, preferred_time`,
       queryParams,
-      (err, results) => {
+      (err, prefResults) => {
         if (err) {
           console.error('Error fetching preferred availability:', err);
           return sendJSON(res, 500, { error: 'Database error' });
         }
 
-        const usageByDate = new Map();
-        (results || []).forEach((row) => {
-          const dateKey = String(row.preferred_date).slice(0, 10);
-          const timeKey = String(row.preferred_time).slice(0, 8);
-          if (!usageByDate.has(dateKey)) {
-            usageByDate.set(dateKey, new Map());
+        // Also query actual appointment slots that are fully booked
+        pool.query(
+          `SELECT
+            s.slot_date,
+            s.slot_start_time,
+            s.current_bookings,
+            s.max_patients,
+            s.is_available
+          FROM appointment_slots s
+          WHERE s.slot_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)`,
+          [days],
+          (slotErr, slotResults) => {
+            if (slotErr) {
+              console.error('Error fetching slot availability:', slotErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+
+            // Build map of preference request counts
+            const usageByDate = new Map();
+            (prefResults || []).forEach((row) => {
+              const dateKey = String(row.preferred_date).slice(0, 10);
+              const timeKey = String(row.preferred_time).slice(0, 8);
+              if (!usageByDate.has(dateKey)) {
+                usageByDate.set(dateKey, new Map());
+              }
+              usageByDate.get(dateKey).set(timeKey, Number(row.requests_count) || 0);
+            });
+
+            // Build map of actual slot bookings
+            const slotsByDate = new Map();
+            (slotResults || []).forEach((row) => {
+              const dateKey = String(row.slot_date).slice(0, 10);
+              const timeKey = String(row.slot_start_time).slice(0, 5);
+              if (!slotsByDate.has(dateKey)) {
+                slotsByDate.set(dateKey, new Map());
+              }
+              slotsByDate.get(dateKey).set(timeKey, {
+                currentBookings: Number(row.current_bookings) || 0,
+                maxPatients: Number(row.max_patients) || 1,
+                isAvailable: Boolean(row.is_available)
+              });
+            });
+
+            const availability = [];
+            const now = new Date();
+            const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+            for (let offset = 0; offset <= days; offset += 1) {
+              const date = new Date(todayUtc.getTime() + (offset * 24 * 60 * 60 * 1000));
+              const dateKey = date.toISOString().slice(0, 10);
+              const timeCounts = usageByDate.get(dateKey) || new Map();
+              const slotData = slotsByDate.get(dateKey) || new Map();
+
+              const timeOptions = preferredTimeOptions.map((timeValue) => {
+                const shortTime = timeValue.slice(0, 5);
+                const prefBooked = Number(timeCounts.get(timeValue) || 0);
+                const slot = slotData.get(shortTime);
+                const slotFull = slot ? (slot.currentBookings >= slot.maxPatients || !slot.isAvailable) : false;
+                const booked = Math.max(prefBooked, slot ? slot.currentBookings : 0);
+                return {
+                  time: shortTime,
+                  booked,
+                  remaining: slotFull ? 0 : Math.max(maxPatientsPerTime - prefBooked, 0),
+                  isFull: slotFull || prefBooked >= maxPatientsPerTime
+                };
+              });
+
+              const totalBooked = timeOptions.reduce((sum, option) => sum + option.booked, 0);
+              availability.push({
+                date: dateKey,
+                totalBooked,
+                totalCapacity: maxPatientsPerDay,
+                remainingCapacity: Math.max(maxPatientsPerDay - totalBooked, 0),
+                isFull: totalBooked >= maxPatientsPerDay || timeOptions.every((option) => option.isFull),
+                timeOptions
+              });
+            }
+
+            sendJSON(res, 200, {
+              requestedLocation: hasLocationFilter ? preferredLocation : null,
+              slotWindow: {
+                officeHours: '08:00-19:00',
+                patientSelectionHours: '09:00-19:00',
+                slotDurationMinutes: 60,
+                dentistsAvailable: maxPatientsPerTime,
+                capacityPerTime: maxPatientsPerTime,
+                capacityPerDay: maxPatientsPerDay
+              },
+              availability
+            });
           }
-          usageByDate.get(dateKey).set(timeKey, Number(row.requests_count) || 0);
-        });
-
-        const availability = [];
-        const now = new Date();
-        const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-
-        for (let offset = 0; offset <= days; offset += 1) {
-          const date = new Date(todayUtc.getTime() + (offset * 24 * 60 * 60 * 1000));
-          const dateKey = date.toISOString().slice(0, 10);
-          const timeCounts = usageByDate.get(dateKey) || new Map();
-          const timeOptions = preferredTimeOptions.map((timeValue) => {
-            const booked = Number(timeCounts.get(timeValue) || 0);
-            return {
-              time: timeValue.slice(0, 5),
-              booked,
-              remaining: Math.max(maxPatientsPerTime - booked, 0),
-              isFull: booked >= maxPatientsPerTime
-            };
-          });
-
-          const totalBooked = timeOptions.reduce((sum, option) => sum + option.booked, 0);
-          availability.push({
-            date: dateKey,
-            totalBooked,
-            totalCapacity: maxPatientsPerDay,
-            remainingCapacity: Math.max(maxPatientsPerDay - totalBooked, 0),
-            isFull: totalBooked >= maxPatientsPerDay || timeOptions.every((option) => option.isFull),
-            timeOptions
-          });
-        }
-
-        sendJSON(res, 200, {
-          requestedLocation: hasLocationFilter ? preferredLocation : null,
-          slotWindow: {
-            officeHours: '08:00-19:00',
-            patientSelectionHours: '09:00-19:00',
-            slotDurationMinutes: 60,
-            dentistsAvailable: maxPatientsPerTime,
-            capacityPerTime: maxPatientsPerTime,
-            capacityPerDay: maxPatientsPerDay
-          },
-          availability
-        });
+        );
       }
     );
   }
@@ -276,7 +318,11 @@ function createAppointmentPreferenceHandlers(deps) {
 
           let slotId;
           if (slotRows?.length) {
-            slotId = Number(slotRows[0].slot_id);
+            const existingSlot = slotRows[0];
+            if (existingSlot.current_bookings >= existingSlot.max_patients || !existingSlot.is_available) {
+              throw new Error('This time slot is already full. Please choose a different time.');
+            }
+            slotId = Number(existingSlot.slot_id);
           } else {
             const [slotInsert] = await conn.promise().query(
               `INSERT INTO appointment_slots (
