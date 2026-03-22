@@ -173,8 +173,8 @@ ensureDoctorNpiPrimaryKey();
 })();
 
 pool.query(
-  `INSERT INTO appointment_statuses (status_name, display_name, color_code, created_by)
-   VALUES ('CHECKED_IN', 'Checked In', '#9013FE', 'SYSTEM')
+  `INSERT INTO appointment_statuses (status_name, display_name, created_by)
+   VALUES ('CHECKED_IN', 'Checked In', 'SYSTEM')
    ON DUPLICATE KEY UPDATE display_name = VALUES(display_name)`,
   (err) => {
     if (err) {
@@ -182,6 +182,11 @@ pool.query(
     }
   }
 );
+
+// Migration: drop unused color_code column from appointment_statuses
+pool.query(`ALTER TABLE appointment_statuses DROP COLUMN color_code`, (err) => {
+  if (err && !err.message.includes("check that column/key exists")) { /* column already dropped */ }
+});
 
 // Ensure staff time-off request storage exists for non-doctor staff workflows.
 pool.query(
@@ -286,9 +291,10 @@ pool.query(`CREATE TABLE IF NOT EXISTS refunds (
   if (err && !err.message.includes('already exists')) console.error('Create refunds table:', err.message);
 });
 
-// ============================================================================
-// MIDDLEWARE: Parse JSON body
-// ============================================================================
+
+
+// Parse JSON body
+
 function parseJSON(req, callback) {
   let body = '';
   req.on('data', chunk => {
@@ -304,9 +310,8 @@ function parseJSON(req, callback) {
   });
 }
 
-// ============================================================================
-// MIDDLEWARE: CORS headers
-// ============================================================================
+
+// CORS headers
 function setCORS(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -322,9 +327,8 @@ function sendJSON(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
-// ============================================================================
-// HELPER: Extract path and method
-// ============================================================================
+
+// HELPER: Path Extraction and Method
 function parsePath(pathname) {
   const parts = pathname.split('/').filter(p => p);
   return { parts, path: parts.join('/') };
@@ -385,13 +389,13 @@ const patientPortalRoutes = createPatientPortalRoutes({
   revertAppointmentPreferenceRequest: appointmentPreferenceHandlers.revertAppointmentPreferenceRequest
 });
 
-// ============================================================================
-// ROUTES
-// ============================================================================
 
-// ============================================================================
+// ROUTES
+
+
+
 // MAIN REQUEST HANDLER
-// ============================================================================
+
 const server = http.createServer((req, res) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -412,9 +416,9 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  // ============================================================================
+
   // ROUTE MATCHING
-  // ============================================================================
+
 
   // Patient billing and invoices routes
   if (patientBillingRoutes.handlePatientBillingRoutes(req, res, method, parts, parseJSON)) {

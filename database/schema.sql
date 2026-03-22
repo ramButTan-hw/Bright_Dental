@@ -47,8 +47,6 @@ CREATE TABLE IF NOT EXISTS patients (
     UNIQUE KEY uq_patients_phone (p_phone)
 );
 
-
-
 CREATE TABLE IF NOT EXISTS locations (
     location_id INT AUTO_INCREMENT PRIMARY KEY,
     location_city VARCHAR(20) NOT NULL,
@@ -64,43 +62,6 @@ CREATE TABLE IF NOT EXISTS locations (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     updated_by VARCHAR(50)
 );
-
-INSERT INTO locations (location_city, location_state, loc_street_no, loc_street_name, loc_zip_code, created_by, updated_by)
-SELECT 'Houston', 'TX', '4302', 'University Dr', '77004', 'SYSTEM', 'SYSTEM'
-WHERE NOT EXISTS (
-        SELECT 1
-        FROM locations
-        WHERE location_city = 'Houston'
-            AND location_state = 'TX'
-            AND loc_street_no = '4302'
-            AND loc_street_name = 'University Dr'
-            AND loc_zip_code = '77004'
-);
-
-INSERT INTO locations (location_city, location_state, loc_street_no, loc_street_name, loc_zip_code, created_by, updated_by)
-SELECT 'Sugar Land', 'TX', '14000', 'University Blvd', '77479', 'SYSTEM', 'SYSTEM'
-WHERE NOT EXISTS (
-        SELECT 1
-        FROM locations
-        WHERE location_city = 'Sugar Land'
-            AND location_state = 'TX'
-            AND loc_street_no = '14000'
-            AND loc_street_name = 'University Blvd'
-            AND loc_zip_code = '77479'
-);
-
-INSERT INTO locations (location_city, location_state, loc_street_no, loc_street_name, loc_zip_code, created_by, updated_by)
-SELECT 'Houston', 'TX', '1', 'Main St', '77002', 'SYSTEM', 'SYSTEM'
-WHERE NOT EXISTS (
-        SELECT 1
-        FROM locations
-        WHERE location_city = 'Houston'
-            AND location_state = 'TX'
-            AND loc_street_no = '1'
-            AND loc_street_name = 'Main St'
-            AND loc_zip_code = '77002'
-);
-
 
 CREATE TABLE IF NOT EXISTS ada_procedure_codes (
     procedure_code VARCHAR(20) PRIMARY KEY,
@@ -178,15 +139,6 @@ CREATE TABLE IF NOT EXISTS departments (
     updated_by VARCHAR(50)
 );
 
--- Insert default dental departments
-INSERT INTO departments (department_name, description, created_by) VALUES
-('General Dentistry', 'Exams, cleanings, fillings, and routine dental care', 'SYSTEM'),
-('Cosmetic Dentistry', 'Porcelain veneers, whitening, and smile aesthetics', 'SYSTEM'),
-('Surgical Dental Services', 'Extractions, periodontal services, and oral surgery', 'SYSTEM'),
-('Emergency Dental Services', 'Urgent and emergency dental treatment', 'SYSTEM'),
-('Orthodontics', 'Braces, aligners, and teeth straightening', 'SYSTEM'),
-('Pediatric Dentistry', 'Specialized dental care for children and adolescents', 'SYSTEM')
-ON DUPLICATE KEY UPDATE department_name = VALUES(department_name);
 
 CREATE TABLE IF NOT EXISTS specialties_department (
     doctor_id INT NOT NULL,
@@ -204,20 +156,9 @@ CREATE TABLE IF NOT EXISTS appointment_statuses (
     status_id INT AUTO_INCREMENT PRIMARY KEY,
     status_name VARCHAR(50) NOT NULL UNIQUE,
     display_name VARCHAR(100),
-    color_code VARCHAR(7),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50)
 );
-
-INSERT INTO appointment_statuses (status_name, display_name, color_code, created_by) VALUES
-('SCHEDULED', 'Scheduled', '#4A90E2', 'SYSTEM'),
-('CONFIRMED', 'Confirmed', '#7ED321', 'SYSTEM'),
-('COMPLETED', 'Completed', '#50E3C2', 'SYSTEM'),
-('CANCELLED', 'Cancelled', '#D0021B', 'SYSTEM'),
-('NO_SHOW', 'No Show', '#F5A623', 'SYSTEM'),
-('RESCHEDULED', 'Rescheduled', '#B8E986', 'SYSTEM'),
-('CHECKED_IN', 'Checked In', '#9013FE', 'SYSTEM')
-ON DUPLICATE KEY UPDATE display_name = VALUES(display_name);
 
 CREATE TABLE IF NOT EXISTS treatment_statuses (
     status_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -227,13 +168,6 @@ CREATE TABLE IF NOT EXISTS treatment_statuses (
     created_by VARCHAR(50)
 );
 
-INSERT INTO treatment_statuses (status_name, display_name, created_by) VALUES
-('PLANNED', 'Planned', 'SYSTEM'),
-('IN_PROGRESS', 'In Progress', 'SYSTEM'),
-('COMPLETED', 'Completed', 'SYSTEM'),
-('ON_HOLD', 'On Hold', 'SYSTEM'),
-('CANCELLED', 'Cancelled', 'SYSTEM')
-ON DUPLICATE KEY UPDATE display_name = VALUES(display_name);
 
 CREATE TABLE IF NOT EXISTS cancel_reasons (
     reason_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -243,15 +177,6 @@ CREATE TABLE IF NOT EXISTS cancel_reasons (
     created_by VARCHAR(50)
 );
 
-INSERT INTO cancel_reasons (reason_text, category, created_by) VALUES
-('Patient requested', 'PATIENT', 'SYSTEM'),
-('Doctor unavailable', 'DOCTOR', 'SYSTEM'),
-('Facility issue', 'FACILITY', 'SYSTEM'),
-('Emergency', 'PATIENT', 'SYSTEM'),
-('Patient no-show', 'PATIENT', 'SYSTEM'),
-('Insurance denial', 'INSURANCE', 'SYSTEM'),
-('Other', 'OTHER', 'SYSTEM')
-ON DUPLICATE KEY UPDATE category = VALUES(category);
 
 CREATE TABLE IF NOT EXISTS payment_methods (
     method_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -262,14 +187,6 @@ CREATE TABLE IF NOT EXISTS payment_methods (
     created_by VARCHAR(50)
 );
 
-INSERT INTO payment_methods (method_name, display_name, created_by) VALUES
-('CASH', 'Cash', 'SYSTEM'),
-('CHECK', 'Check', 'SYSTEM'),
-('CREDIT_CARD', 'Credit Card', 'SYSTEM'),
-('DEBIT_CARD', 'Debit Card', 'SYSTEM'),
-('ACH', 'ACH Transfer', 'SYSTEM'),
-('INSURANCE', 'Insurance Payment', 'SYSTEM')
-ON DUPLICATE KEY UPDATE is_active = VALUES(is_active);
 
 CREATE TABLE IF NOT EXISTS insurance_companies (
     company_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -288,23 +205,6 @@ CREATE TABLE IF NOT EXISTS insurance_companies (
     updated_by VARCHAR(50)
 );
 
-INSERT INTO insurance_companies (company_name, address, city, state, zipcode, phone_number, fax_number, website, contact_name, created_by) VALUES
-('Aetna', 'PO Box 14079', 'Lexington', 'KY', '40512', '1-800-872-3862', '1-859-455-8650', 'www.aetna.com', 'Dental Member Services', 'SYSTEM'),
-('Blue Cross Blue Shield', 'PO Box 2291', 'Chicago', 'IL', '60690', '1-800-262-2583', '1-312-938-6100', 'www.bcbs.com', 'Dental Claims Dept', 'SYSTEM'),
-('Cigna', 'PO Box 188037', 'Chattanooga', 'TN', '37422', '1-800-244-6224', '1-860-226-2350', 'www.cigna.com', 'Dental Provider Services', 'SYSTEM'),
-('Delta Dental', 'PO Box 9089', 'Farmington Hills', 'MI', '48333', '1-800-524-0149', '1-248-559-5195', 'www.deltadental.com', 'Claims Department', 'SYSTEM'),
-('Humana', 'PO Box 14601', 'Lexington', 'KY', '40512', '1-800-233-4013', '1-502-580-3674', 'www.humana.com', 'Dental Services', 'SYSTEM'),
-('MetLife', 'PO Box 981282', 'El Paso', 'TX', '79998', '1-800-275-4638', '1-212-578-6211', 'www.metlife.com', 'Dental Claims', 'SYSTEM'),
-('UnitedHealthcare', 'PO Box 30567', 'Salt Lake City', 'UT', '84130', '1-800-328-5979', '1-801-938-4001', 'www.uhc.com', 'Dental Member Services', 'SYSTEM')
-ON DUPLICATE KEY UPDATE
-  address = VALUES(address),
-  city = VALUES(city),
-  state = VALUES(state),
-  zipcode = VALUES(zipcode),
-  phone_number = VALUES(phone_number),
-  fax_number = VALUES(fax_number),
-  website = VALUES(website),
-  contact_name = VALUES(contact_name);
 
 CREATE TABLE IF NOT EXISTS insurance_coverage (
     coverage_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -664,10 +564,6 @@ CREATE TABLE IF NOT EXISTS clinical_checklist_items (
     UNIQUE KEY uq_checklist_category_label (item_category, item_label)
 );
 
--- Checklist items are managed dynamically by the API from frontend selections.
--- Backend should upsert into clinical_checklist_items by (item_category, item_label)
--- before writing patient_checklist_responses.
-
 CREATE TABLE IF NOT EXISTS patient_checklist_responses (
     response_id INT AUTO_INCREMENT PRIMARY KEY,
     patient_id INT NOT NULL,
@@ -742,17 +638,6 @@ CREATE TABLE IF NOT EXISTS intake_yes_no_questions (
     created_by VARCHAR(50)
 );
 
-INSERT INTO intake_yes_no_questions (question_code, section_label, question_text, has_when_field, has_details_field, display_order, created_by) VALUES
-('PERIO_HISTORY', 'Additional Dental History', 'Do you have any history of periodontal disease or deep cleaning?', TRUE, FALSE, 10, 'SYSTEM'),
-('ORTHO_HISTORY', 'Additional Dental History', 'Have you ever had braces or orthodontic work?', TRUE, FALSE, 20, 'SYSTEM'),
-('WEAR_CPAP', 'Sleep and Social History', 'Do you wear C-Pap?', FALSE, FALSE, 30, 'SYSTEM'),
-('SNORE', 'Sleep and Social History', 'Do you snore?', FALSE, FALSE, 40, 'SYSTEM')
-ON DUPLICATE KEY UPDATE
-    question_text = VALUES(question_text),
-    has_when_field = VALUES(has_when_field),
-    has_details_field = VALUES(has_details_field),
-    display_order = VALUES(display_order),
-    is_active = TRUE;
 
 CREATE TABLE IF NOT EXISTS intake_yes_no_answers (
     answer_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -807,15 +692,6 @@ CREATE TABLE IF NOT EXISTS intake_tobacco_types (
     created_by VARCHAR(50)
 );
 
-INSERT INTO intake_tobacco_types (tobacco_label, display_order, created_by) VALUES
-('Never', 10, 'SYSTEM'),
-('Cigarettes', 20, 'SYSTEM'),
-('Cigars', 30, 'SYSTEM'),
-('Smokeless Tobacco', 40, 'SYSTEM'),
-('Quit', 50, 'SYSTEM')
-ON DUPLICATE KEY UPDATE
-    display_order = VALUES(display_order),
-    is_active = TRUE;
 
 CREATE TABLE IF NOT EXISTS intake_tobacco_use (
     tobacco_use_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -837,41 +713,6 @@ CREATE TABLE IF NOT EXISTS intake_tobacco_use (
     INDEX idx_intake_tobacco_submission (submission_id)
 );
 
-SET @has_usage_context := (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'intake_tobacco_use'
-      AND COLUMN_NAME = 'usage_context'
-);
-
-SET @add_usage_context_sql := IF(
-    @has_usage_context = 0,
-    "ALTER TABLE intake_tobacco_use ADD COLUMN usage_context ENUM('CURRENT', 'FORMER', 'NEVER', 'QUIT') DEFAULT NULL AFTER notes",
-    'SELECT 1'
-);
-
-PREPARE add_usage_context_stmt FROM @add_usage_context_sql;
-EXECUTE add_usage_context_stmt;
-DEALLOCATE PREPARE add_usage_context_stmt;
-
-SET @has_quit_date := (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'intake_tobacco_use'
-      AND COLUMN_NAME = 'quit_date'
-);
-
-SET @add_quit_date_sql := IF(
-    @has_quit_date = 0,
-    'ALTER TABLE intake_tobacco_use ADD COLUMN quit_date DATE AFTER frequency_text',
-    'SELECT 1'
-);
-
-PREPARE add_quit_date_stmt FROM @add_quit_date_sql;
-EXECUTE add_quit_date_stmt;
-DEALLOCATE PREPARE add_quit_date_stmt;
 
 CREATE TABLE IF NOT EXISTS intake_caffeine_types (
     caffeine_type_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -882,14 +723,6 @@ CREATE TABLE IF NOT EXISTS intake_caffeine_types (
     created_by VARCHAR(50)
 );
 
-INSERT INTO intake_caffeine_types (caffeine_label, display_order, created_by) VALUES
-('None', 10, 'SYSTEM'),
-('Coffee', 20, 'SYSTEM'),
-('Tea', 30, 'SYSTEM'),
-('Soda', 40, 'SYSTEM')
-ON DUPLICATE KEY UPDATE
-    display_order = VALUES(display_order),
-    is_active = TRUE;
 
 CREATE TABLE IF NOT EXISTS intake_caffeine_use (
     caffeine_use_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -917,24 +750,6 @@ CREATE TABLE IF NOT EXISTS intake_pain_symptoms (
     created_by VARCHAR(50)
 );
 
-INSERT INTO intake_pain_symptoms (symptom_label, display_order, created_by) VALUES
-('TMJ clicking/grating', 10, 'SYSTEM'),
-('TMJ locking/stiffness', 20, 'SYSTEM'),
-('Inability to open mouth', 30, 'SYSTEM'),
-('Mouth does not open straight', 40, 'SYSTEM'),
-('Pain when eating/chewing', 50, 'SYSTEM'),
-('Pain in jaw or jaw joint', 60, 'SYSTEM'),
-('Unstable bite', 70, 'SYSTEM'),
-('Headache', 80, 'SYSTEM'),
-('Face Pain', 90, 'SYSTEM'),
-('Ear pain/stiffness', 100, 'SYSTEM'),
-('Ringing in ears', 110, 'SYSTEM'),
-('Difficulty swallowing', 120, 'SYSTEM'),
-('Neck pain', 130, 'SYSTEM'),
-('Face muscle fatigue', 140, 'SYSTEM')
-ON DUPLICATE KEY UPDATE
-    display_order = VALUES(display_order),
-    is_active = TRUE;
 
 CREATE TABLE IF NOT EXISTS intake_pain_assessments (
     pain_assessment_id INT AUTO_INCREMENT PRIMARY KEY,

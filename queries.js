@@ -1,9 +1,4 @@
-// ============================================================================
-// DATABASE QUERIES MODULE
-// ============================================================================
-// All queries used by the API server
-// Reference: See database/queries/api-queries.sql for documentation
-// ============================================================================
+
 
 const queries = {
   // Get patient by ID with full profile
