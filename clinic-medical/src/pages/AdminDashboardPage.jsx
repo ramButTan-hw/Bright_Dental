@@ -479,6 +479,20 @@ function AdminDashboardPage() {
 
   const reportRows = Array.isArray(patientReport.rows) ? patientReport.rows : [];
   const financialFollowUpRows = Array.isArray(patientReport.financialFollowUp) ? patientReport.financialFollowUp : [];
+  const [financialSearch, setFinancialSearch] = useState('');
+  const filteredFinancialRows = useMemo(() => {
+    const query = financialSearch.trim().toLowerCase();
+    const hasSearch = query.length > 0;
+    return financialFollowUpRows.filter((row) => {
+      const matchesSearch = !hasSearch ||
+        (row.patient_name || '').toLowerCase().includes(query) ||
+        (row.p_phone || '').replace(/\D/g, '').includes(query.replace(/\D/g, '')) ||
+        (row.p_phone || '').toLowerCase().includes(query);
+      // Show all when searching, only unpaid when not searching
+      if (hasSearch) return matchesSearch;
+      return Number(row.total_outstanding || 0) > 0;
+    });
+  }, [financialFollowUpRows, financialSearch]);
   const totalOutstandingAmount = financialFollowUpRows.reduce(
     (sum, row) => sum + Number(row.total_outstanding || 0), 0
   );
@@ -768,10 +782,28 @@ function AdminDashboardPage() {
                       <p className="muted">
                         Per-patient billing summary across all invoices — pulls from patients, appointments, invoices &amp; payments tables.
                         Patients: {financialFollowUpRows.length} | Total Outstanding: {formatMoney(totalOutstandingAmount)}
+                        {!financialSearch.trim() && <> | Showing {filteredFinancialRows.length} unpaid</>}
                       </p>
-                      <div className="table-wrap">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.75rem 0' }}>
+                        <input
+                          type="text"
+                          placeholder="Search by patient name or phone..."
+                          value={financialSearch}
+                          onChange={(e) => setFinancialSearch(e.target.value)}
+                          style={{ flex: 1, maxWidth: '360px', padding: '0.45rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem' }}
+                        />
+                        {financialSearch.trim() && (
+                          <button type="button" onClick={() => setFinancialSearch('')} style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', background: '#f5f5f5', cursor: 'pointer', fontSize: '0.85rem' }}>
+                            Clear
+                          </button>
+                        )}
+                        <span className="muted" style={{ fontSize: '0.8rem' }}>
+                          {financialSearch.trim() ? `${filteredFinancialRows.length} result${filteredFinancialRows.length !== 1 ? 's' : ''} (all statuses)` : 'Only unpaid shown — search to see all'}
+                        </span>
+                      </div>
+                      <div className="table-wrap" style={{ maxHeight: '480px', overflowY: 'auto' }}>
                         <table>
-                          <thead>
+                          <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                             <tr>
                               <SortTh sort={sortFinancial} column="patient_name">Patient</SortTh>
                               <SortTh sort={sortFinancial} column="p_phone">Phone</SortTh>
@@ -785,7 +817,7 @@ function AdminDashboardPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {financialFollowUpRows.length ? sortFinancial.sorted(financialFollowUpRows).map((row) => {
+                            {filteredFinancialRows.length ? sortFinancial.sorted(filteredFinancialRows).map((row) => {
                               const outstanding = Number(row.total_outstanding || 0);
                               return (
                                 <tr key={row.patient_id}>
@@ -828,7 +860,7 @@ function AdminDashboardPage() {
                                   </td>
                                 </tr>
                               );
-                            }) : <tr><td colSpan="9">No invoices found.</td></tr>}
+                            }) : <tr><td colSpan="9">{financialSearch.trim() ? 'No matching patients found.' : 'No unpaid invoices.'}</td></tr>}
                           </tbody>
                         </table>
                       </div>
