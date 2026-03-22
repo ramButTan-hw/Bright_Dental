@@ -822,8 +822,8 @@ function ReceptionistPage() {
         <div className="reception-date-nav">
           <h2>Appointments — {selectedDateLabel}</h2>
           <div className="reception-date-controls">
-            <button type="button" className="reception-nav-btn" onClick={() => shiftDate(-1)}>&#8592; Prev</button>
-            <button type="button" className="reception-nav-btn" onClick={() => shiftDate(1)}>Next &#8594;</button>
+            <button type="button" className="reception-nav-btn" onClick={() => shiftDate(-1)}> Prev</button>
+            <button type="button" className="reception-nav-btn" onClick={() => shiftDate(1)}>Next </button>
             <label className="reception-jump-date">
               <span>Jump to date</span>
               <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
