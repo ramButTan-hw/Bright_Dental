@@ -157,13 +157,13 @@ function createPatientIntakeHandlers(deps) {
       ? appointmentSelection.preferredTimes
       : [];
     
-    const preferredWeekdays = [...new Set(
+    let preferredWeekdays = [...new Set(
       preferredWeekdaysRaw
         .map((day) => String(day || '').trim())
         .filter((day) => weekdayOptions.includes(day))
     )];
 
-    const preferredTimes = [...new Set(
+    let preferredTimes = [...new Set(
       preferredTimesRaw
         .map((timeValue) => String(timeValue || '').trim())
         .filter((timeValue) => /^\d{2}:\d{2}(:\d{2})?$/.test(timeValue))
@@ -178,6 +178,20 @@ function createPatientIntakeHandlers(deps) {
 
     if (!preferredTimeOptions.includes(preferredTime)) {
       return sendJSON(res, 400, { error: 'Please select a preferred appointment time' });
+    }
+
+    // Auto-derive weekday availability from selected date if not explicitly provided
+    if (preferredWeekdays.length === 0) {
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const selectedDay = dayNames[new Date(preferredDate + 'T00:00:00').getDay()];
+      if (weekdayOptions.includes(selectedDay)) {
+        preferredWeekdays = [selectedDay];
+      }
+    }
+
+    // Auto-derive time availability from selected time if not explicitly provided
+    if (preferredTimes.length === 0 && preferredTime) {
+      preferredTimes = [preferredTime.slice(0, 5)];
     }
 
     if (preferredWeekdays.length === 0) {
