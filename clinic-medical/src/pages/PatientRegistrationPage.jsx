@@ -210,7 +210,8 @@ function PatientRegistrationPage() {
   const [painAssessment, setPainAssessment] = useState([]);
   const [appointmentSelection, setAppointmentSelection] = useState({
     preferredDate: '',
-    preferredTime: ''
+    preferredTime: '',
+    preferredLocationId: ''
   });
 
   const [insuranceCompanies, setInsuranceCompanies] = useState([]);
@@ -604,7 +605,7 @@ function PatientRegistrationPage() {
       setAllergies(ALLERGIES_INITIAL_STATE);
       setMedicalHistoryOtherText('');
       setTobacco({ never: false, quit: false, currentUses: [], quitHistory: [{ type: '', quitDate: '' }] });
-      setAppointmentSelection({ preferredDate: '', preferredTime: '', preferredWeekdays: [], preferredTimes: [] });
+      setAppointmentSelection({ preferredDate: '', preferredTime: '', preferredLocationId: '', preferredWeekdays: [], preferredTimes: [] });
       navigate('/patient-login', {
         state: {
           registrationSuccess: true,
@@ -620,7 +621,8 @@ function PatientRegistrationPage() {
 
   const appointmentStepInvalid = step === 7 && (
     !appointmentSelection.preferredDate ||
-    !appointmentSelection.preferredTime
+    !appointmentSelection.preferredTime ||
+    !appointmentSelection.preferredLocationId
   );
 
   return (
@@ -913,7 +915,7 @@ function PatientRegistrationPage() {
           {step === 7 && (
             <fieldset className="form-section">
               <legend>Preferred Appointment</legend>
-              <p className="appt-picker-hint">Choose your preferred date and time. We'll do our best to accommodate your request.</p>
+              <p className="appt-picker-hint">Choose your preferred date, time, and location. We'll do our best to accommodate your request.</p>
               <div className="form-grid">
                 <label>Preferred Date
                   <input
@@ -923,6 +925,20 @@ function PatientRegistrationPage() {
                     min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
                     required
                   />
+                </label>
+                <label>Preferred Location
+                  <select
+                    value={appointmentSelection.preferredLocationId}
+                    onChange={(e) => setAppointmentSelection((prev) => ({ ...prev, preferredLocationId: e.target.value }))}
+                    required
+                  >
+                    <option value="" disabled>Select a location</option>
+                    {locations.map(loc => (
+                      <option key={loc.location_id} value={loc.location_id}>
+                        {`${loc.loc_street_no} ${loc.loc_street_name}, ${loc.location_city}, ${loc.location_state} ${loc.loc_zip_code}`}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>Preferred Time
                   <div className="appt-time-grid">

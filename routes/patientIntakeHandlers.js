@@ -147,16 +147,21 @@ function createPatientIntakeHandlers(deps) {
 
     const preferredDate = String(appointmentSelection?.preferredDate || '').trim();
     const preferredTimeInput = String(appointmentSelection?.preferredTime || '').trim();
-    const preferredTime = preferredTimeInput.length === 5
-      ? `${preferredTimeInput}:00`
-      : preferredTimeInput;
+    // Normalize time to HH:MM:SS — handle "9:00", "09:00", "09:00:00" etc.
+    const normalizedTime = preferredTimeInput.replace(/^(\d):/, '0$1:');
+    const preferredTime = normalizedTime.length === 5
+      ? `${normalizedTime}:00`
+      : normalizedTime;
+    const preferredLocationId = appointmentSelection?.preferredLocationId
+      ? Number(appointmentSelection.preferredLocationId)
+      : (locationId ? Number(locationId) : null);
     const preferredWeekdaysRaw = Array.isArray(appointmentSelection?.preferredWeekdays)
       ? appointmentSelection.preferredWeekdays
       : [];
     const preferredTimesRaw = Array.isArray(appointmentSelection?.preferredTimes)
       ? appointmentSelection.preferredTimes
       : [];
-    
+
     let preferredWeekdays = [...new Set(
       preferredWeekdaysRaw
         .map((day) => String(day || '').trim())
@@ -294,28 +299,33 @@ function createPatientIntakeHandlers(deps) {
                     });
                   }
 
-                  conn.query(
-                    `INSERT INTO appointment_preference_requests (
-                      patient_id,
-                      preferred_date,
-                      preferred_time,
-                      location_id,
-                      available_days,
-                      available_times,
-                      appointment_reason,
-                      request_status,
-                      created_by,
-                      updated_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
-                    [
-                      patientId,
-                      preferredDate,
-                      preferredTime,
-                      locationId,
-                      preferredWeekdays.join(', '),
-                      preferredTimes.join(', '),
-                      reason || null
-                    ],
+                  // Look up location address for preferred_location text field, then insert preference
+                  const locLookupQuery = 'SELECT CONCAT(loc_street_no, " ", loc_street_name, ", ", location_city, ", ", location_state, " ", loc_zip_code) AS address FROM locations WHERE location_id = ?';
+                  const doInsertPref = (preferredLocationText) => {
+                    conn.query(
+                      `INSERT INTO appointment_preference_requests (
+                        patient_id,
+                        preferred_date,
+                        preferred_time,
+                        location_id,
+                        preferred_location,
+                        available_days,
+                        available_times,
+                        appointment_reason,
+                        request_status,
+                        created_by,
+                        updated_by
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
+                      [
+                        patientId,
+                        preferredDate,
+                        preferredTime,
+                        preferredLocationId,
+                        preferredLocationText,
+                        preferredWeekdays.join(', '),
+                        preferredTimes.join(', '),
+                        reason || null
+                      ],
                     (preferenceErr, preferenceResult) => {
                       if (preferenceErr) {
                         return conn.rollback(() => {
@@ -372,7 +382,17 @@ function createPatientIntakeHandlers(deps) {
                         finishCommit();
                       }
                     }
-                  );
+                    );
+                  };
+
+                  if (preferredLocationId) {
+                    conn.query(locLookupQuery, [preferredLocationId], (locErr, locRows) => {
+                      const locText = (!locErr && locRows && locRows[0]) ? locRows[0].address : null;
+                      doInsertPref(locText);
+                    });
+                  } else {
+                    doInsertPref(null);
+                  }
                 }
               );
             }
@@ -404,9 +424,11 @@ function createPatientIntakeHandlers(deps) {
     const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
     const preferredDate = String(appointmentSelection?.preferredDate || '').trim();
     const preferredTimeInput = String(appointmentSelection?.preferredTime || '').trim();
-    const preferredTime = preferredTimeInput.length === 5
-      ? `${preferredTimeInput}:00`
-      : preferredTimeInput;
+    // Normalize time to HH:MM:SS — handle "9:00", "09:00", "09:00:00" etc.
+    const normalizedTime = preferredTimeInput.replace(/^(\d):/, '0$1:');
+    const preferredTime = normalizedTime.length === 5
+      ? `${normalizedTime}:00`
+      : normalizedTime;
     const preferredWeekdaysRaw = Array.isArray(appointmentSelection?.preferredWeekdays)
       ? appointmentSelection.preferredWeekdays
       : [];

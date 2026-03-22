@@ -251,7 +251,7 @@ function createAdminHandlers(deps) {
             p.p_phone,
             p.p_email,
             COUNT(i.invoice_id) AS total_invoices,
-            SUM(CASE WHEN i.payment_status = 'Unpaid' THEN 1 ELSE 0 END) AS unpaid_invoices,
+            SUM(CASE WHEN i.payment_status IN ('Unpaid', 'Partial') THEN 1 ELSE 0 END) AS unpaid_invoices,
             SUM(CASE WHEN i.payment_status = 'Partial' THEN 1 ELSE 0 END) AS partial_invoices,
             SUM(CASE WHEN i.payment_status = 'Paid' THEN 1 ELSE 0 END) AS paid_invoices,
             COALESCE(SUM(i.amount), 0) AS total_charged,
