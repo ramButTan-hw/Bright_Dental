@@ -35,6 +35,52 @@ const formatPhoneInput = (value) => {
   return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
 };
 
+function useSortState() {
+  const [col, setCol] = useState(null);
+  const [dir, setDir] = useState('asc');
+  const toggle = (column) => {
+    if (col === column) {
+      setDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setCol(column);
+      setDir('asc');
+    }
+  };
+  const sorted = (rows, accessor) => {
+    if (!col || !rows?.length) return rows;
+    const get = accessor || ((row) => {
+      const v = row[col];
+      return v == null ? '' : v;
+    });
+    return [...rows].sort((a, b) => {
+      let va = get(a, col);
+      let vb = get(b, col);
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      const na = Number(va), nb = Number(vb);
+      if (!isNaN(na) && !isNaN(nb) && va !== '' && vb !== '') {
+        return dir === 'asc' ? na - nb : nb - na;
+      }
+      if (va < vb) return dir === 'asc' ? -1 : 1;
+      if (va > vb) return dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
+  return { col, dir, toggle, sorted };
+}
+
+function SortTh({ sort, column, children, style }) {
+  const arrow = sort.col === column ? (sort.dir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
+  return (
+    <th
+      style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', ...style }}
+      onClick={() => sort.toggle(column)}
+    >
+      {children}{arrow}
+    </th>
+  );
+}
+
 function AdminDashboardPage() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -62,6 +108,25 @@ function AdminDashboardPage() {
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
 
+  const [scheduleRequests, setScheduleRequests] = useState([]);
+  const [allStaffSchedules, setAllStaffSchedules] = useState([]);
+  const [scheduleGaps, setScheduleGaps] = useState([]);
+  const [expandedStaff, setExpandedStaff] = useState({});
+  const [editingSchedules, setEditingSchedules] = useState({});
+
+  const ADMIN_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+  const ADMIN_TIME_OPTIONS = useMemo(() => {
+    const opts = [];
+    for (let h = 8; h <= 19; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        if (h === 19 && m > 0) break;
+        const val = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+        opts.push({ value: val, label: new Date(`2000-01-01T${val}:00`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) });
+      }
+    }
+    return opts;
+  }, []);
+
   const reportStatusOptions = ['ALL', 'SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'COMPLETED', 'CANCELED', 'NO_SHOW'];
 
   const [doctorForm, setDoctorForm] = useState({ ...EMPTY_STAFF_FORM });
@@ -70,10 +135,35 @@ function AdminDashboardPage() {
   const [expandedCards, setExpandedCards] = useState({
     dentist: false,
     location: false,
-
     receptionist: false,
-    offDayRequests: false
+    offDayRequests: false,
+    manageStaff: false
   });
+
+  const [allStaff, setAllStaff] = useState([]);
+  const [resetPasswordStaffId, setResetPasswordStaffId] = useState(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [cancelledRequests, setCancelledRequests] = useState([]);
+
+  const sortFinancial = useSortState();
+  const sortScheduling = useSortState();
+  const sortWorkload = useSortState();
+  const sortDoctorSchedule = useSortState();
+  const sortTimeOff = useSortState();
+  const sortGenReport = useSortState();
+
+  // Generate Report state
+  const [genReportDateFrom, setGenReportDateFrom] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  });
+  const [genReportDateTo, setGenReportDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [genReportFilters, setGenReportFilters] = useState({
+    zipCode: '', locationId: '', patientCity: '', patientState: '', treatmentCode: '', departmentId: '', doctorId: ''
+  });
+  const [genReportData, setGenReportData] = useState(null);
+  const [genReportLoading, setGenReportLoading] = useState(false);
+  const [filterOptions, setFilterOptions] = useState({ locations: [], departments: [], doctors: [], treatments: [] });
 
   const [locationForm, setLocationForm] = useState({
     city: '',
@@ -96,14 +186,18 @@ function AdminDashboardPage() {
     setError('');
 
     try {
-      const [summaryData, queueData, reportData, doctorData, receptionistData, locationData, timeOffData] = await Promise.all([
+      const [summaryData, queueData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData] = await Promise.all([
         fetch(`${API_BASE_URL}/api/admin/dashboard/summary?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/appointments/queue?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/doctors`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff/receptionists`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/locations`).then(safeJson),
-        fetch(`${API_BASE_URL}/api/admin/staff/time-off-requests`).then(safeJson)
+        fetch(`${API_BASE_URL}/api/admin/staff/time-off-requests`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/appointment-requests/cancelled`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/schedule-requests`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/staff-schedules`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/staff-schedules/gaps`).then(safeJson)
       ]);
 
       setSummary(summaryData);
@@ -113,6 +207,10 @@ function AdminDashboardPage() {
       setReceptionists(Array.isArray(receptionistData) ? receptionistData : []);
       setLocations(Array.isArray(locationData) ? locationData : []);
       setStaffTimeOffRequests(Array.isArray(timeOffData) ? timeOffData : []);
+      setCancelledRequests(Array.isArray(cancelledData) ? cancelledData : []);
+      setScheduleRequests(Array.isArray(schedReqData) ? schedReqData : []);
+      setAllStaffSchedules(Array.isArray(staffSchedData) ? staffSchedData : []);
+      setScheduleGaps(Array.isArray(gapsData) ? gapsData : []);
     } catch (err) {
       setError(err.message || 'Unable to load admin data.');
     } finally {
@@ -231,6 +329,154 @@ function AdminDashboardPage() {
     }
   };
 
+  const loadAllStaff = async () => {
+    try {
+      const data = await fetch(`${API_BASE_URL}/api/admin/staff/all`).then(safeJson);
+      setAllStaff(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setActionMessage(err.message || 'Failed to load staff list.');
+      setAllStaff([]);
+    }
+  };
+
+  useEffect(() => {
+    if (expandedCards.manageStaff) {
+      loadAllStaff();
+    }
+  }, [expandedCards.manageStaff]);
+
+  const handleResetPassword = async (staffId) => {
+    if (!resetPasswordValue || resetPasswordValue.length < 8 || !/[A-Z]/.test(resetPasswordValue) || !/[a-z]/.test(resetPasswordValue) || !/[0-9]/.test(resetPasswordValue)) {
+      setActionMessage('Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number.');
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/staff/${staffId}/reset-password`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword: resetPasswordValue })
+      });
+      await safeJson(response);
+      setActionMessage('Password reset successfully.');
+      setResetPasswordStaffId(null);
+      setResetPasswordValue('');
+    } catch (err) {
+      setActionMessage(err.message || 'Failed to reset password.');
+    }
+  };
+
+  const handleToggleVisibility = async (staffId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/staff/${staffId}/toggle-visibility`, {
+        method: 'PUT'
+      });
+      const result = await safeJson(response);
+      setActionMessage(result.message || 'Visibility toggled.');
+      loadAllStaff();
+      loadAdminData();
+    } catch (err) {
+      setActionMessage(err.message || 'Failed to toggle visibility.');
+    }
+  };
+
+  const loadFilterOptions = async () => {
+    try {
+      const data = await fetch(`${API_BASE_URL}/api/admin/reports/filter-options`).then(safeJson);
+      setFilterOptions(data);
+    } catch (err) {
+      console.error('Failed to load filter options:', err);
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    setGenReportLoading(true);
+    setGenReportData(null);
+    setError('');
+    try {
+      const params = new URLSearchParams({ dateFrom: genReportDateFrom, dateTo: genReportDateTo });
+      if (genReportFilters.zipCode) params.set('zipCode', genReportFilters.zipCode);
+      if (genReportFilters.locationId) params.set('locationId', genReportFilters.locationId);
+      if (genReportFilters.patientCity) params.set('patientCity', genReportFilters.patientCity);
+      if (genReportFilters.patientState) params.set('patientState', genReportFilters.patientState);
+      if (genReportFilters.treatmentCode) params.set('treatmentCode', genReportFilters.treatmentCode);
+      if (genReportFilters.departmentId) params.set('departmentId', genReportFilters.departmentId);
+      if (genReportFilters.doctorId) params.set('doctorId', genReportFilters.doctorId);
+      const data = await fetch(`${API_BASE_URL}/api/admin/reports/generate?${params.toString()}`).then(safeJson);
+      setGenReportData(data);
+    } catch (err) {
+      setError(err.message || 'Failed to generate report.');
+    } finally {
+      setGenReportLoading(false);
+    }
+  };
+
+  const exportReportCSV = () => {
+    if (!genReportData?.rows?.length) return;
+    const headers = ['Date', 'Time', 'Patient', 'Patient City', 'Patient State', 'Patient Zip', 'Doctor', 'Clinic Location', 'Clinic City', 'Clinic State', 'Clinic Zip', 'Treatment', 'Department', 'Payment Status', 'Invoice Total', 'Patient Amount'];
+    const csvRows = [headers.join(',')];
+    genReportData.rows.forEach((r) => {
+      csvRows.push([
+        r.appointment_date, r.appointment_time,
+        `"${(r.patient_name || '').replace(/"/g, '""')}"`,
+        `"${r.patient_city || ''}"`, r.patient_state || '', r.patient_zip || '',
+        `"${(r.doctor_name || '').replace(/"/g, '""')}"`,
+        `"${(r.clinic_location || '').replace(/"/g, '""')}"`,
+        r.clinic_city || '', r.clinic_state || '', r.clinic_zip || '',
+        `"${(r.treatment_name || 'N/A').replace(/"/g, '""')}"`,
+        `"${(r.department_name || 'N/A').replace(/"/g, '""')}"`,
+        r.payment_status, r.invoice_total, r.patient_amount
+      ].join(','));
+    });
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `clinic_report_${genReportDateFrom}_to_${genReportDateTo}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const exportReportJSON = () => {
+    if (!genReportData) return;
+    const blob = new Blob([JSON.stringify(genReportData, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `clinic_report_${genReportDateFrom}_to_${genReportDateTo}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const exportReportPDF = () => {
+    if (!genReportData?.rows?.length) return;
+    const printWin = window.open('', '_blank');
+    const rows = genReportData.rows;
+    const tableRows = rows.map((r) => `<tr>
+      <td>${r.appointment_date || ''}</td>
+      <td>${r.appointment_time || ''}</td>
+      <td>${r.patient_name || ''}</td>
+      <td>${r.patient_city || ''}${r.patient_state ? ', ' + r.patient_state : ''} ${r.patient_zip || ''}</td>
+      <td>${r.doctor_name || ''}</td>
+      <td>${r.clinic_location || ''}</td>
+      <td>${r.treatment_name || 'N/A'}</td>
+      <td>${r.department_name || 'N/A'}</td>
+      <td>${r.payment_status || ''}</td>
+    </tr>`).join('');
+    printWin.document.write(`<!DOCTYPE html><html><head><title>Clinic Report</title>
+      <style>body{font-family:Arial,sans-serif;margin:20px}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}th{background:#f0f0f0}h1{font-size:18px}p{font-size:12px;color:#555}</style>
+    </head><body>
+      <h1>Patient General Report</h1>
+      <p>Date Range: ${genReportDateFrom} to ${genReportDateTo} | Total Records: ${rows.length} | Generated: ${genReportData.generatedAt}</p>
+      <table><thead><tr><th>Date</th><th>Time</th><th>Patient</th><th>Patient Location</th><th>Doctor</th><th>Clinic Location</th><th>Treatment</th><th>Department</th><th>Payment</th></tr></thead><tbody>${tableRows}</tbody></table>
+      <script>window.onload=function(){window.print()}<\/script>
+    </body></html>`);
+    printWin.document.close();
+  };
+
+  useEffect(() => {
+    if (reportType === 'generate') {
+      loadFilterOptions();
+    }
+  }, [reportType]);
+
   const reportRows = Array.isArray(patientReport.rows) ? patientReport.rows : [];
   const financialFollowUpRows = Array.isArray(patientReport.financialFollowUp) ? patientReport.financialFollowUp : [];
   const totalOutstandingAmount = financialFollowUpRows.reduce(
@@ -247,10 +493,7 @@ function AdminDashboardPage() {
       };
     });
 
-  const combinedNotifications = [
-    ...(Array.isArray(summary?.notifications) ? summary.notifications : []),
-    ...pendingStaffOffDayNotifications
-  ];
+  const combinedNotifications = pendingStaffOffDayNotifications;
 
   const schedulingActionRows = (queue.pendingRequests || []).map((row) => ({
     ...row,
@@ -267,7 +510,7 @@ function AdminDashboardPage() {
           <h1>Operations Dashboard</h1>
         </div>
         <div className="admin-header-actions">
-          {activeSection !== 'staffing' && (
+          {activeSection !== 'staffing' && activeSection !== 'staff-scheduling' && (
             <label className="admin-date-filter">
               Dashboard Date
               <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
@@ -280,6 +523,7 @@ function AdminDashboardPage() {
         <button type="button" className={activeSection === 'overview' ? 'is-active' : ''} onClick={() => setActiveSection('overview')}>Overview</button>
         <button type="button" className={activeSection === 'scheduling' ? 'is-active' : ''} onClick={() => setActiveSection('scheduling')}>Scheduling</button>
         <button type="button" className={activeSection === 'reports' ? 'is-active' : ''} onClick={() => setActiveSection('reports')}>Reports</button>
+        <button type="button" className={activeSection === 'staff-scheduling' ? 'is-active' : ''} onClick={() => setActiveSection('staff-scheduling')}>Staff Scheduling</button>
         <button type="button" className={activeSection === 'staffing' ? 'is-active' : ''} onClick={() => setActiveSection('staffing')}>Staffing & Locations</button>
       </nav>
 
@@ -411,6 +655,52 @@ function AdminDashboardPage() {
                   </table>
                 </div>
               </article>
+
+              <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
+                <h2>Cancelled Appointment Requests</h2>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Patient</th>
+                        <th>Preferred Date</th>
+                        <th>Preferred Time</th>
+                        <th>Location</th>
+                        <th>Reason</th>
+                        <th style={{ width: '80px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cancelledRequests.length ? cancelledRequests.map((req) => (
+                        <tr key={req.preference_request_id}>
+                          <td>{req.patient_name}</td>
+                          <td>{formatDate(req.preferred_date)}</td>
+                          <td>{formatTime(req.preferred_time)}</td>
+                          <td>{req.preferred_location || 'N/A'}</td>
+                          <td>{req.appointment_reason || 'N/A'}</td>
+                          <td>
+                            <button
+                              type="button"
+                              style={{ background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.3rem 0.6rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                              onClick={async () => {
+                                try {
+                                  await safeJson(await fetch(`${API_BASE_URL}/api/admin/appointment-requests/${req.preference_request_id}/restore`, { method: 'PUT' }));
+                                  setActionMessage('Request restored successfully.');
+                                  loadAdminData();
+                                } catch (err) {
+                                  setActionMessage(err.message || 'Failed to restore request.');
+                                }
+                              }}
+                            >
+                              Restore
+                            </button>
+                          </td>
+                        </tr>
+                      )) : <tr><td colSpan="6">No cancelled requests.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
             </section>
           )}
 
@@ -433,6 +723,13 @@ function AdminDashboardPage() {
                       onClick={() => setReportType('staff')}
                     >
                       Staff Reports
+                    </button>
+                    <button
+                      type="button"
+                      className={reportType === 'generate' ? 'report-type-btn is-active' : 'report-type-btn'}
+                      onClick={() => setReportType('generate')}
+                    >
+                      Patient General Report
                     </button>
                   </div>
 
@@ -476,19 +773,19 @@ function AdminDashboardPage() {
                         <table>
                           <thead>
                             <tr>
-                              <th>Patient</th>
-                              <th>Phone</th>
-                              <th>Invoices</th>
-                              <th>Unpaid</th>
-                              <th>Total Charged</th>
-                              <th>Insurance Covered</th>
-                              <th>Patient Owes</th>
-                              <th>Paid</th>
-                              <th>Outstanding</th>
+                              <SortTh sort={sortFinancial} column="patient_name">Patient</SortTh>
+                              <SortTh sort={sortFinancial} column="p_phone">Phone</SortTh>
+                              <SortTh sort={sortFinancial} column="total_invoices">Invoices</SortTh>
+                              <SortTh sort={sortFinancial} column="unpaid_invoices">Unpaid</SortTh>
+                              <SortTh sort={sortFinancial} column="total_charged">Total Charged</SortTh>
+                              <SortTh sort={sortFinancial} column="total_insurance_covered">Insurance Covered</SortTh>
+                              <SortTh sort={sortFinancial} column="total_patient_responsibility">Patient Owes</SortTh>
+                              <SortTh sort={sortFinancial} column="total_paid">Paid</SortTh>
+                              <SortTh sort={sortFinancial} column="total_outstanding">Outstanding</SortTh>
                             </tr>
                           </thead>
                           <tbody>
-                            {financialFollowUpRows.length ? financialFollowUpRows.map((row) => {
+                            {financialFollowUpRows.length ? sortFinancial.sorted(financialFollowUpRows).map((row) => {
                               const outstanding = Number(row.total_outstanding || 0);
                               return (
                                 <tr key={row.patient_id}>
@@ -549,15 +846,15 @@ function AdminDashboardPage() {
                       <table>
                         <thead>
                           <tr>
-                            <th>Patient</th>
-                            <th>Preferred Date</th>
-                            <th>Preferred Time</th>
-                            <th>Preferred Location</th>
+                            <SortTh sort={sortScheduling} column="patient_name">Patient</SortTh>
+                            <SortTh sort={sortScheduling} column="preferred_date">Preferred Date</SortTh>
+                            <SortTh sort={sortScheduling} column="preferred_time">Preferred Time</SortTh>
+                            <SortTh sort={sortScheduling} column="preferred_location">Preferred Location</SortTh>
                             <th>Action Needed</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {schedulingActionRows.length ? schedulingActionRows.slice(0, 14).map((row) => (
+                          {schedulingActionRows.length ? sortScheduling.sorted(schedulingActionRows).slice(0, 14).map((row) => (
                             <tr key={row.preference_request_id}>
                               <td>{row.patient_name}</td>
                               <td>{row.preferred_date ? formatDate(row.preferred_date) : 'Missing'}</td>
@@ -579,6 +876,146 @@ function AdminDashboardPage() {
                 </>
               )}
 
+              {/* ── GENERATE REPORT ── */}
+              {reportType === 'generate' && (
+                <>
+                  <section className="admin-panel">
+                    <h2>Patient General Report</h2>
+                    <p className="muted">View completed appointments. Select a date range and optional filters, then export as PDF, CSV, or JSON.</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end', marginBottom: '1rem' }}>
+                      <label className="admin-inline-filter">
+                        From
+                        <input type="date" value={genReportDateFrom} onChange={(e) => setGenReportDateFrom(e.target.value)} required />
+                      </label>
+                      <label className="admin-inline-filter">
+                        To
+                        <input type="date" value={genReportDateTo} onChange={(e) => setGenReportDateTo(e.target.value)} required />
+                      </label>
+                      <label className="admin-inline-filter">
+                        Zip Code
+                        <input type="text" placeholder="e.g. 77004" maxLength={5} value={genReportFilters.zipCode} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, zipCode: e.target.value.replace(/\D/g, '').slice(0, 5) }))} />
+                      </label>
+                      <label className="admin-inline-filter">
+                        Clinic Location
+                        <select value={genReportFilters.locationId} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, locationId: e.target.value }))}>
+                          <option value="">All Locations</option>
+                          {filterOptions.locations.map((loc) => (
+                            <option key={loc.location_id} value={loc.location_id}>{loc.full_address}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="admin-inline-filter">
+                        Patient City
+                        <input type="text" placeholder="e.g. Houston" value={genReportFilters.patientCity} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, patientCity: e.target.value }))} />
+                      </label>
+                      <label className="admin-inline-filter">
+                        Patient State
+                        <input type="text" placeholder="e.g. TX" maxLength={2} value={genReportFilters.patientState} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, patientState: e.target.value.toUpperCase().slice(0, 2) }))} />
+                      </label>
+                      <label className="admin-inline-filter">
+                        Treatment
+                        <select value={genReportFilters.treatmentCode} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, treatmentCode: e.target.value }))}>
+                          <option value="">All Treatments</option>
+                          {filterOptions.treatments.map((t) => (
+                            <option key={t.procedure_code} value={t.procedure_code}>{t.procedure_code} - {t.description}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="admin-inline-filter">
+                        Department
+                        <select value={genReportFilters.departmentId} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, departmentId: e.target.value }))}>
+                          <option value="">All Departments</option>
+                          {filterOptions.departments.map((dep) => (
+                            <option key={dep.department_id} value={dep.department_id}>{dep.department_name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="admin-inline-filter">
+                        Doctor
+                        <select value={genReportFilters.doctorId} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, doctorId: e.target.value }))}>
+                          <option value="">All Doctors</option>
+                          {filterOptions.doctors.map((doc) => (
+                            <option key={doc.doctor_id} value={doc.doctor_id}>Dr. {doc.doctor_name}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button type="button" className="report-type-btn is-active" onClick={handleGenerateReport} disabled={genReportLoading}>
+                        {genReportLoading ? 'Generating...' : 'Generate Report'}
+                      </button>
+                      {genReportData?.rows?.length > 0 && (
+                        <>
+                          <button type="button" className="report-type-btn" onClick={exportReportPDF}>Export PDF</button>
+                          <button type="button" className="report-type-btn" onClick={exportReportCSV}>Export CSV</button>
+                          <button type="button" className="report-type-btn" onClick={exportReportJSON}>Export JSON</button>
+                        </>
+                      )}
+                    </div>
+                  </section>
+
+                  {genReportData && (
+                    <section className="admin-panel">
+                      <h2>Report Results</h2>
+                      <p className="muted">
+                        Date Range: {genReportData.dateFrom} to {genReportData.dateTo} | Total Records: {genReportData.totalRows} | Generated: {new Date(genReportData.generatedAt).toLocaleString()}
+                      </p>
+                      {genReportData.rows.length > 0 ? (
+                        <div className="table-wrap">
+                          <table>
+                            <thead>
+                              <tr>
+                                <SortTh sort={sortGenReport} column="appointment_date">Date</SortTh>
+                                <SortTh sort={sortGenReport} column="appointment_time">Time</SortTh>
+                                <SortTh sort={sortGenReport} column="patient_name">Patient</SortTh>
+                                <SortTh sort={sortGenReport} column="patient_city">Patient Location</SortTh>
+                                <SortTh sort={sortGenReport} column="doctor_name">Doctor</SortTh>
+                                <SortTh sort={sortGenReport} column="clinic_location">Clinic Location</SortTh>
+                                <SortTh sort={sortGenReport} column="treatment_name">Treatment</SortTh>
+                                <SortTh sort={sortGenReport} column="department_name">Department</SortTh>
+                                <SortTh sort={sortGenReport} column="payment_status">Payment</SortTh>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sortGenReport.sorted(genReportData.rows).slice(0, 100).map((row, idx) => (
+                                <tr key={idx}>
+                                  <td>{formatDate(row.appointment_date)}</td>
+                                  <td>{formatTime(row.appointment_time)}</td>
+                                  <td>{row.patient_name}</td>
+                                  <td>{row.patient_city || ''}{row.patient_state ? ', ' + row.patient_state : ''} {row.patient_zip || ''}</td>
+                                  <td>Dr. {row.doctor_name}</td>
+                                  <td>{row.clinic_location || 'N/A'}</td>
+                                  <td>{row.treatment_name || 'N/A'}</td>
+                                  <td>{row.department_name || 'N/A'}</td>
+                                  <td>
+                                    <span style={{
+                                      display: 'inline-block',
+                                      padding: '0.15rem 0.5rem',
+                                      borderRadius: '999px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 700,
+                                      background: row.payment_status === 'Paid' ? '#d4edda' : row.payment_status === 'Partial' ? '#fff3cd' : '#f8d7da',
+                                      color: row.payment_status === 'Paid' ? '#155724' : row.payment_status === 'Partial' ? '#856404' : '#721c24'
+                                    }}>
+                                      {row.payment_status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {genReportData.rows.length > 100 && (
+                            <p className="muted" style={{ marginTop: '0.5rem' }}>Showing first 100 of {genReportData.rows.length} rows. Export for full data.</p>
+                          )}
+                        </div>
+                      ) : (
+                        <p>No records found matching your criteria.</p>
+                      )}
+                    </section>
+                  )}
+                </>
+              )}
+
               {/* ── STAFF REPORTS ── */}
               {reportType === 'staff' && (
                 <>
@@ -591,17 +1028,17 @@ function AdminDashboardPage() {
                       <table>
                         <thead>
                           <tr>
-                            <th>Doctor</th>
-                            <th>Phone</th>
-                            <th>Total Appts</th>
-                            <th>Completed</th>
-                            <th>Upcoming</th>
-                            <th>Canceled</th>
-                            <th>No-Show</th>
+                            <SortTh sort={sortWorkload} column="doctor_name">Doctor</SortTh>
+                            <SortTh sort={sortWorkload} column="phone_number">Phone</SortTh>
+                            <SortTh sort={sortWorkload} column="total_appointments">Total Appts</SortTh>
+                            <SortTh sort={sortWorkload} column="completed">Completed</SortTh>
+                            <SortTh sort={sortWorkload} column="upcoming">Upcoming</SortTh>
+                            <SortTh sort={sortWorkload} column="canceled">Canceled</SortTh>
+                            <SortTh sort={sortWorkload} column="no_show">No-Show</SortTh>
                           </tr>
                         </thead>
                         <tbody>
-                          {staffReport.workload.length ? staffReport.workload.map((row) => (
+                          {staffReport.workload.length ? sortWorkload.sorted(staffReport.workload).map((row) => (
                             <tr key={row.doctor_id}>
                               <td>Dr. {row.doctor_name}</td>
                               <td>{row.phone_number || 'N/A'}</td>
@@ -627,19 +1064,19 @@ function AdminDashboardPage() {
                       <table>
                         <thead>
                           <tr>
-                            <th>Doctor</th>
-                            <th>Date</th>
-                            <th>Time</th>
-                            <th>Patient</th>
-                            <th>Patient Phone</th>
-                            <th>Status</th>
-                            <th>Payment</th>
-                            <th>Confirmed By</th>
-                            <th>Location</th>
+                            <SortTh sort={sortDoctorSchedule} column="doctor_name">Doctor</SortTh>
+                            <SortTh sort={sortDoctorSchedule} column="appointment_date">Date</SortTh>
+                            <SortTh sort={sortDoctorSchedule} column="appointment_time">Time</SortTh>
+                            <SortTh sort={sortDoctorSchedule} column="patient_name">Patient</SortTh>
+                            <SortTh sort={sortDoctorSchedule} column="patient_phone">Patient Phone</SortTh>
+                            <SortTh sort={sortDoctorSchedule} column="status_name">Status</SortTh>
+                            <SortTh sort={sortDoctorSchedule} column="payment_status">Payment</SortTh>
+                            <SortTh sort={sortDoctorSchedule} column="receptionist_name">Confirmed By</SortTh>
+                            <SortTh sort={sortDoctorSchedule} column="location_address">Location</SortTh>
                           </tr>
                         </thead>
                         <tbody>
-                          {staffReport.schedule.length ? staffReport.schedule.slice(0, 50).map((row, idx) => {
+                          {staffReport.schedule.length ? sortDoctorSchedule.sorted(staffReport.schedule).slice(0, 50).map((row, idx) => {
                             const payStatus = row.payment_status || '';
                             const amtDue = Number(row.amount_due || 0);
                             return (
@@ -684,18 +1121,18 @@ function AdminDashboardPage() {
                       <table>
                         <thead>
                           <tr>
-                            <th>Staff Member</th>
-                            <th>Role</th>
-                            <th>Source</th>
-                            <th>Start</th>
-                            <th>End</th>
-                            <th>Location</th>
-                            <th>Reason</th>
-                            <th>Approved</th>
+                            <SortTh sort={sortTimeOff} column="requester_name">Staff Member</SortTh>
+                            <SortTh sort={sortTimeOff} column="requester_role">Role</SortTh>
+                            <SortTh sort={sortTimeOff} column="request_source">Source</SortTh>
+                            <SortTh sort={sortTimeOff} column="start_datetime">Start</SortTh>
+                            <SortTh sort={sortTimeOff} column="end_datetime">End</SortTh>
+                            <SortTh sort={sortTimeOff} column="location_address">Location</SortTh>
+                            <SortTh sort={sortTimeOff} column="reason">Reason</SortTh>
+                            <SortTh sort={sortTimeOff} column="is_approved">Approved</SortTh>
                           </tr>
                         </thead>
                         <tbody>
-                          {staffReport.timeOff.length ? staffReport.timeOff.map((row) => (
+                          {staffReport.timeOff.length ? sortTimeOff.sorted(staffReport.timeOff).map((row) => (
                             <tr key={row.request_key}>
                               <td>{row.requester_name || 'Unknown staff'}</td>
                               <td>{String(row.requester_role || 'STAFF').replaceAll('_', ' ')}</td>
@@ -713,6 +1150,241 @@ function AdminDashboardPage() {
                   </section>
                 </>
               )}
+            </>
+          )}
+
+          {activeSection === 'staff-scheduling' && (
+            <>
+              {/* Pending Schedule Requests — collapsible per staff */}
+              <section className="admin-panel">
+                <h2>Pending Schedule Requests</h2>
+                <p className="muted">Staff members requesting preferred work hours. Approve or deny all days at once.</p>
+                {(() => {
+                  if (!scheduleRequests.length) return <p>No pending schedule requests.</p>;
+                  // Group by staff_id
+                  const grouped = {};
+                  scheduleRequests.forEach((r) => {
+                    if (!grouped[r.staff_id]) grouped[r.staff_id] = { staff_name: r.staff_name, role: r.role, staff_id: r.staff_id, submitted_at: r.submitted_at, entries: [] };
+                    grouped[r.staff_id].entries.push(r);
+                  });
+                  const staffList = Object.values(grouped);
+
+                  return staffList.map((staff) => {
+                    const isOpen = !!expandedStaff[`req_${staff.staff_id}`];
+
+                    const approveAll = async () => {
+                      try {
+                        for (const entry of staff.entries) {
+                          await safeJson(await fetch(`${API_BASE_URL}/api/admin/schedule-requests/${entry.request_id}/approve`, { method: 'PUT' }));
+                        }
+                        setActionMessage(`All schedule requests approved for ${staff.staff_name}.`);
+                        loadAdminData();
+                      } catch (err) {
+                        setActionMessage(err.message || 'Failed to approve.');
+                      }
+                    };
+
+                    const denyAll = async () => {
+                      try {
+                        for (const entry of staff.entries) {
+                          await safeJson(await fetch(`${API_BASE_URL}/api/admin/schedule-requests/${entry.request_id}/deny`, { method: 'PUT' }));
+                        }
+                        setActionMessage(`All schedule requests denied for ${staff.staff_name}.`);
+                        loadAdminData();
+                      } catch (err) {
+                        setActionMessage(err.message || 'Failed to deny.');
+                      }
+                    };
+
+                    return (
+                      <div key={staff.staff_id} style={{ border: '1px solid #ddd', borderRadius: '6px', marginBottom: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedStaff((prev) => ({ ...prev, [`req_${staff.staff_id}`]: !prev[`req_${staff.staff_id}`] }))}
+                          style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.7rem 1rem', background: '#fff8e1', border: 'none', cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600, borderRadius: isOpen ? '6px 6px 0 0' : '6px' }}
+                        >
+                          <span>{staff.staff_name} <span style={{ fontWeight: 400, color: '#666', fontSize: '0.85rem' }}>({String(staff.role || '').replace('_', ' ')}) — {staff.entries.length} day(s) — {new Date(staff.submitted_at).toLocaleDateString()}</span></span>
+                          <span>{isOpen ? '▲' : '▼'}</span>
+                        </button>
+                        {isOpen && (
+                          <div style={{ padding: '0.7rem 1rem' }}>
+                            <table style={{ width: '100%', fontSize: '0.9rem' }}>
+                              <thead><tr><th style={{ textAlign: 'left' }}>Day</th><th style={{ textAlign: 'left' }}>Start</th><th style={{ textAlign: 'left' }}>End</th></tr></thead>
+                              <tbody>
+                                {staff.entries.map((r) => (
+                                  <tr key={r.request_id}>
+                                    <td>{r.day_of_week.charAt(0) + r.day_of_week.slice(1).toLowerCase()}</td>
+                                    <td>{r.is_off ? <em style={{ color: '#999' }}>OFF</em> : String(r.start_time || '').slice(0, 5)}</td>
+                                    <td>{r.is_off ? '' : String(r.end_time || '').slice(0, 5)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                              <button type="button" onClick={approveAll} style={{ background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Approve All</button>
+                              <button type="button" onClick={denyAll} style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Deny All</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </section>
+
+              {/* Current Staff Schedules — collapsible per staff */}
+              <section className="admin-panel">
+                <h2>Current Staff Schedules</h2>
+                <p className="muted">Approved work schedules for all active staff. Click a name to expand and edit.</p>
+                {(() => {
+                  // Group schedules by staff_id
+                  const grouped = {};
+                  allStaffSchedules.forEach((s) => {
+                    if (!grouped[s.staff_id]) grouped[s.staff_id] = { staff_name: s.staff_name, role: s.role, staff_id: s.staff_id, days: [] };
+                    grouped[s.staff_id].days.push(s);
+                  });
+                  const staffList = Object.values(grouped);
+                  if (!staffList.length) return <p>No staff schedules configured yet.</p>;
+
+                  return staffList.map((staff) => {
+                    const isOpen = !!expandedStaff[staff.staff_id];
+                    const editing = editingSchedules[staff.staff_id];
+
+                    const startEditing = () => {
+                      const entries = ADMIN_DAYS.map((day) => {
+                        const existing = staff.days.find((d) => d.day_of_week === day);
+                        if (existing && existing.is_off) return { day, startTime: '09:00', endTime: '17:00', isOff: true };
+                        if (existing) return { day, startTime: String(existing.start_time || '').slice(0, 5), endTime: String(existing.end_time || '').slice(0, 5), isOff: false };
+                        return { day, startTime: '09:00', endTime: '17:00', isOff: true };
+                      });
+                      setEditingSchedules((prev) => ({ ...prev, [staff.staff_id]: entries }));
+                    };
+
+                    const updateEntry = (dayIdx, field, value) => {
+                      setEditingSchedules((prev) => ({
+                        ...prev,
+                        [staff.staff_id]: prev[staff.staff_id].map((e, i) => i === dayIdx ? { ...e, [field]: value } : e)
+                      }));
+                    };
+
+                    const saveSchedule = async () => {
+                      try {
+                        const resp = await fetch(`${API_BASE_URL}/api/admin/staff-schedules/update`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ staffId: staff.staff_id, entries: editing })
+                        });
+                        const result = await safeJson(resp);
+                        setActionMessage(result.message || 'Schedule updated.');
+                        setEditingSchedules((prev) => { const copy = { ...prev }; delete copy[staff.staff_id]; return copy; });
+                        loadAdminData();
+                      } catch (err) {
+                        setActionMessage(err.message || 'Failed to update schedule.');
+                      }
+                    };
+
+                    return (
+                      <div key={staff.staff_id} style={{ border: '1px solid #ddd', borderRadius: '6px', marginBottom: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedStaff((prev) => ({ ...prev, [staff.staff_id]: !prev[staff.staff_id] }))}
+                          style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.7rem 1rem', background: '#f8f9fa', border: 'none', cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600, borderRadius: isOpen ? '6px 6px 0 0' : '6px' }}
+                        >
+                          <span>{staff.staff_name} <span style={{ fontWeight: 400, color: '#666', fontSize: '0.85rem' }}>({String(staff.role || '').replace('_', ' ')})</span></span>
+                          <span>{isOpen ? '▲' : '▼'}</span>
+                        </button>
+                        {isOpen && (
+                          <div style={{ padding: '0.7rem 1rem' }}>
+                            {!editing ? (
+                              <>
+                                <table style={{ width: '100%', fontSize: '0.9rem' }}>
+                                  <thead><tr><th style={{ textAlign: 'left' }}>Day</th><th style={{ textAlign: 'left' }}>Start</th><th style={{ textAlign: 'left' }}>End</th></tr></thead>
+                                  <tbody>
+                                    {staff.days.map((d, i) => (
+                                      <tr key={i}>
+                                        <td>{d.day_of_week.charAt(0) + d.day_of_week.slice(1).toLowerCase()}</td>
+                                        <td>{d.is_off ? <em style={{ color: '#999' }}>OFF</em> : String(d.start_time || '').slice(0, 5)}</td>
+                                        <td>{d.is_off ? '' : String(d.end_time || '').slice(0, 5)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                <button type="button" onClick={startEditing} style={{ marginTop: '0.5rem', background: '#2980b9', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Edit Schedule</button>
+                              </>
+                            ) : (
+                              <>
+                                <table style={{ width: '100%', fontSize: '0.9rem' }}>
+                                  <thead><tr><th style={{ textAlign: 'left' }}>Day</th><th style={{ textAlign: 'left' }}>OFF</th><th style={{ textAlign: 'left' }}>Start</th><th style={{ textAlign: 'left' }}>End</th></tr></thead>
+                                  <tbody>
+                                    {editing.map((entry, dayIdx) => (
+                                      <tr key={entry.day}>
+                                        <td>{entry.day.charAt(0) + entry.day.slice(1).toLowerCase()}</td>
+                                        <td>
+                                          <input type="checkbox" checked={!!entry.isOff} onChange={(e) => updateEntry(dayIdx, 'isOff', e.target.checked)} />
+                                        </td>
+                                        <td>
+                                          {entry.isOff ? <span style={{ color: '#999' }}>—</span> : (
+                                            <select value={entry.startTime} onChange={(e) => updateEntry(dayIdx, 'startTime', e.target.value)} style={{ fontSize: '0.85rem' }}>
+                                              {ADMIN_TIME_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                            </select>
+                                          )}
+                                        </td>
+                                        <td>
+                                          {entry.isOff ? <span style={{ color: '#999' }}>—</span> : (
+                                            <select value={entry.endTime} onChange={(e) => updateEntry(dayIdx, 'endTime', e.target.value)} style={{ fontSize: '0.85rem' }}>
+                                              {ADMIN_TIME_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                            </select>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                  <button type="button" onClick={saveSchedule} style={{ background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Save</button>
+                                  <button type="button" onClick={() => setEditingSchedules((prev) => { const copy = { ...prev }; delete copy[staff.staff_id]; return copy; })} style={{ background: '#95a5a6', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Cancel</button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </section>
+
+              {/* Coverage Gaps */}
+              <section className="admin-panel">
+                <h2>Coverage Gaps</h2>
+                <p className="muted">Hours during clinic operating times (Mon–Sat, 9 AM – 7 PM) with missing staff coverage.</p>
+                {scheduleGaps.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Day</th>
+                          <th>Gap Start</th>
+                          <th>Gap End</th>
+                          <th>Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scheduleGaps.map((g, idx) => (
+                          <tr key={idx} style={{ background: g.type === 'NO_COVERAGE' ? '#f8d7da' : g.type === 'NO_DOCTOR' ? '#fff3cd' : '#e8f0fe' }}>
+                            <td>{g.day_of_week.charAt(0) + g.day_of_week.slice(1).toLowerCase()}</td>
+                            <td>{String(g.gap_start || '').slice(0, 5)}</td>
+                            <td>{String(g.gap_end || '').slice(0, 5)}</td>
+                            <td>{g.type === 'NO_COVERAGE' ? 'No staff at all' : g.type === 'NO_DOCTOR' ? 'No doctor' : 'No receptionist'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p>Full coverage across all clinic hours.</p>
+                )}
+              </section>
             </>
           )}
 
@@ -762,7 +1434,7 @@ function AdminDashboardPage() {
                           required
                         />
                         <input placeholder="Username" value={doctorForm.username} onChange={(e) => setDoctorForm((prev) => ({ ...prev, username: e.target.value }))} required />
-                        <input type="password" placeholder="Temporary password" value={doctorForm.password} onChange={(e) => setDoctorForm((prev) => ({ ...prev, password: e.target.value }))} required />
+                        <input type="password" placeholder="Min 8 chars, 1 upper, 1 lower, 1 number" value={doctorForm.password} onChange={(e) => setDoctorForm((prev) => ({ ...prev, password: e.target.value }))} minLength={8} pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}" title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number" required />
                         <input type="email" placeholder="Email (optional)" value={doctorForm.email} onChange={(e) => setDoctorForm((prev) => ({ ...prev, email: e.target.value }))} />
                         <select value={doctorForm.gender} onChange={(e) => setDoctorForm((prev) => ({ ...prev, gender: e.target.value }))}>
                           <option value="">Gender (optional)</option>
@@ -851,7 +1523,7 @@ function AdminDashboardPage() {
                           required
                         />
                         <input placeholder="Username" value={receptionistForm.username} onChange={(e) => setReceptionistForm((prev) => ({ ...prev, username: e.target.value }))} required />
-                        <input type="password" placeholder="Temporary password" value={receptionistForm.password} onChange={(e) => setReceptionistForm((prev) => ({ ...prev, password: e.target.value }))} required />
+                        <input type="password" placeholder="Min 8 chars, 1 upper, 1 lower, 1 number" value={receptionistForm.password} onChange={(e) => setReceptionistForm((prev) => ({ ...prev, password: e.target.value }))} minLength={8} pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}" title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number" required />
                         <input type="email" placeholder="Email (optional)" value={receptionistForm.email} onChange={(e) => setReceptionistForm((prev) => ({ ...prev, email: e.target.value }))} />
                         <select value={receptionistForm.gender} onChange={(e) => setReceptionistForm((prev) => ({ ...prev, gender: e.target.value }))}>
                           <option value="">Gender (optional)</option>
@@ -925,6 +1597,96 @@ function AdminDashboardPage() {
                                 </td>
                               </tr>
                             )) : <tr><td colSpan="8">No staff off-day requests recorded.</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </article>
+
+                <article className="admin-panel admin-panel-wide collapsible-panel">
+                  <button
+                    type="button"
+                    className="collapse-toggle"
+                    onClick={() => setExpandedCards((prev) => ({ ...prev, manageStaff: !prev.manageStaff }))}
+                    aria-expanded={expandedCards.manageStaff}
+                  >
+                    <span>Manage Staff (Passwords &amp; Visibility)</span>
+                    <span>{expandedCards.manageStaff ? 'Hide' : 'Show'}</span>
+                  </button>
+                  {expandedCards.manageStaff && (
+                    <div className="collapse-content">
+                      <p className="muted">Reset staff passwords or hide/restore staff members. Hidden staff cannot log in and are excluded from public views.</p>
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Name</th>
+                              <th>Username</th>
+                              <th>Role</th>
+                              <th>Email</th>
+                              <th>Location</th>
+                              <th>Status</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {allStaff.length ? allStaff.map((member) => (
+                              <tr key={member.staff_id} style={member.is_deleted ? { opacity: 0.5 } : {}}>
+                                <td>{member.first_name} {member.last_name}</td>
+                                <td>{member.user_username}</td>
+                                <td>{member.user_role}</td>
+                                <td>{member.user_email}</td>
+                                <td>{member.location_address || 'Unassigned'}</td>
+                                <td>
+                                  <span style={{
+                                    display: 'inline-block',
+                                    padding: '0.15rem 0.5rem',
+                                    borderRadius: '999px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    background: member.is_deleted ? '#f8d7da' : '#d4edda',
+                                    color: member.is_deleted ? '#721c24' : '#155724'
+                                  }}>
+                                    {member.is_deleted ? 'Hidden' : 'Active'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div className="admin-row-actions" style={{ flexDirection: 'column', gap: '0.3rem' }}>
+                                    <button
+                                      type="button"
+                                      className="admin-action-btn approve"
+                                      onClick={() => handleToggleVisibility(member.staff_id)}
+                                    >
+                                      {member.is_deleted ? 'Restore' : 'Hide'}
+                                    </button>
+                                    {resetPasswordStaffId === member.staff_id ? (
+                                      <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                                        <input
+                                          type="password"
+                                          placeholder="New password"
+                                          value={resetPasswordValue}
+                                          onChange={(e) => setResetPasswordValue(e.target.value)}
+                                          style={{ width: '160px', padding: '0.2rem 0.4rem', fontSize: '0.8rem' }}
+                                          minLength={8}
+                                          title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number"
+                                        />
+                                        <button type="button" className="admin-action-btn approve" onClick={() => handleResetPassword(member.staff_id)}>Set</button>
+                                        <button type="button" className="admin-action-btn deny" onClick={() => { setResetPasswordStaffId(null); setResetPasswordValue(''); }}>X</button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="admin-action-btn deny"
+                                        onClick={() => { setResetPasswordStaffId(member.staff_id); setResetPasswordValue(''); }}
+                                      >
+                                        Reset Password
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )) : <tr><td colSpan="7">No staff members found.</td></tr>}
                           </tbody>
                         </table>
                       </div>

@@ -376,6 +376,44 @@ function createPatientCoreHandlers(deps) {
     );
   }
 
+  function changeUserPassword(req, userId, data, res) {
+    const currentPassword = String(data?.currentPassword || '');
+    const newPassword = String(data?.newPassword || '');
+
+    if (!currentPassword || !newPassword) {
+      return sendJSON(res, 400, { error: 'Current password and new password are required' });
+    }
+    if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      return sendJSON(res, 400, { error: 'Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number' });
+    }
+
+    pool.query(
+      'SELECT user_id FROM users WHERE user_id = ? AND password_hash = SHA2(?, 256) LIMIT 1',
+      [userId, currentPassword],
+      (err, rows) => {
+        if (err) {
+          console.error('Error verifying current password:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        if (!rows?.length) {
+          return sendJSON(res, 401, { error: 'Current password is incorrect' });
+        }
+
+        pool.query(
+          'UPDATE users SET password_hash = SHA2(?, 256) WHERE user_id = ?',
+          [newPassword, userId],
+          (updateErr) => {
+            if (updateErr) {
+              console.error('Error updating password:', updateErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            sendJSON(res, 200, { message: 'Password updated successfully' });
+          }
+        );
+      }
+    );
+  }
+
   return {
     getPatientById,
     getDoctorAppointments,
@@ -392,7 +430,8 @@ function createPatientCoreHandlers(deps) {
     getDepartments,
     getInsuranceCompanies,
     updatePatientProfile,
-    addPatientInsurance
+    addPatientInsurance,
+    changeUserPassword
   };
 }
 

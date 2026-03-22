@@ -113,6 +113,9 @@
   padding: 0.65rem;
   margin-bottom: 0.55rem;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .dentist-appointment-item.is-active {
@@ -120,9 +123,32 @@
   background: #eefbfa;
 }
 
+.dentist-appointment-item.is-locked {
+  background: #e9ecef;
+  border-color: #ced4da;
+  color: #868e96;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.dentist-appointment-item.is-locked .dentist-time {
+  color: #868e96;
+}
+
+.dentist-lock-label {
+  display: block;
+  font-size: 0.7rem;
+  color: #c0392b;
+  font-style: italic;
+  margin-top: 0.15rem;
+}
+
 .dentist-time {
   font-weight: 700;
   color: #105550;
+  font-size: 1rem;
+  white-space: nowrap;
+  margin-left: 1rem;
 }
 
 .dentist-main-grid {

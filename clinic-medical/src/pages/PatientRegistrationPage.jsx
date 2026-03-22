@@ -151,6 +151,9 @@ function PatientRegistrationPage() {
     ssn: '',
     driversLicense: '',
     address: '',
+    city: '',
+    state: '',
+    zipcode: '',
     emergencyContactName: '',
     emergencyContactPhone: ''
   });
@@ -296,10 +299,16 @@ function PatientRegistrationPage() {
     return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   };
 
+  const formatName = (value) => value.replace(/[^a-zA-Z\s'-]/g, '');
+
   const updateIdentity = (e) => {
     const { name, value } = e.target;
     if (name === 'phone') {
       setIdentity((prev) => ({ ...prev, phone: formatPhone(value) }));
+      return;
+    }
+    if (name === 'firstName' || name === 'lastName') {
+      setIdentity((prev) => ({ ...prev, [name]: formatName(value) }));
       return;
     }
     setIdentity((prev) => ({ ...prev, [name]: value }));
@@ -327,6 +336,11 @@ function PatientRegistrationPage() {
 
     if (name === 'emergencyContactPhone') {
       setDetails((prev) => ({ ...prev, emergencyContactPhone: formatPhone(value) }));
+      return;
+    }
+
+    if (name === 'emergencyContactName') {
+      setDetails((prev) => ({ ...prev, emergencyContactName: formatName(value) }));
       return;
     }
 
@@ -548,6 +562,9 @@ function PatientRegistrationPage() {
           ssn: details.ssn,
           driversLicense: details.driversLicense,
           address: details.address,
+          city: details.city,
+          state: details.state,
+          zipcode: details.zipcode,
           emergencyContactName: details.emergencyContactName,
           emergencyContactPhone: details.emergencyContactPhone,
           medicalHistory,
@@ -623,8 +640,8 @@ function PatientRegistrationPage() {
 
           {step === 1 && (
             <div className="form-grid">
-              <label>First Name<input type="text" name="firstName" placeholder="Jane" value={identity.firstName} onChange={updateIdentity} required /></label>
-              <label>Last Name<input type="text" name="lastName" placeholder="Doe" value={identity.lastName} onChange={updateIdentity} required /></label>
+              <label>First Name<input type="text" name="firstName" placeholder="Jane" value={identity.firstName} onChange={updateIdentity} pattern="[A-Za-z\s'\-]+" title="Letters, spaces, hyphens, and apostrophes only" required /></label>
+              <label>Last Name<input type="text" name="lastName" placeholder="Doe" value={identity.lastName} onChange={updateIdentity} pattern="[A-Za-z\s'\-]+" title="Letters, spaces, hyphens, and apostrophes only" required /></label>
               <label>Email Address<input type="email" name="email" placeholder="jane@email.com" value={identity.email} onChange={updateIdentity} required /></label>
               <label>Phone Number<input type="tel" name="phone" placeholder="(555) 123-4567" value={identity.phone} onChange={updateIdentity} pattern="\(\d{3}\) \d{3}-\d{4}" maxLength="14" inputMode="numeric" title="Use phone format: (555) 123-4567" required /></label>
             </div>
@@ -632,13 +649,16 @@ function PatientRegistrationPage() {
 
           {step === 2 && (
             <div className="form-grid">
-              <label>Date of Birth<input type="date" name="dob" value={details.dob} onChange={updateDetails} required /></label>
+              <label>Date of Birth<input type="date" name="dob" value={details.dob} onChange={updateDetails} max={new Date().toISOString().slice(0, 10)} required /></label>
               <label>Gender<select name="gender" value={details.gender} onChange={updateDetails} required><option value="" disabled>Select gender</option><option value="1">Male</option><option value="2">Female</option><option value="3">Non-binary</option><option value="4">Prefer not to say</option></select></label>
               <label>Preferred Location<select name="locationId" value={details.locationId} onChange={updateDetails} required><option value="" disabled>Select a location</option>{locations.map(loc => <option key={loc.location_id} value={loc.location_id}>{`${loc.loc_street_no} ${loc.loc_street_name}, ${loc.location_city}, ${loc.location_state} ${loc.loc_zip_code}`}</option>)}</select></label>
               <label>Social Security Number<input type="text" name="ssn" placeholder="XXX-XX-XXXX" value={details.ssn} onChange={updateDetails} pattern="\d{3}-\d{2}-\d{4}" maxLength="11" inputMode="numeric" title="Use SSN format: XXX-XX-XXXX" required /></label>
               <label>Driver's License<input type="text" name="driversLicense" placeholder="Your DL number" value={details.driversLicense} onChange={updateDetails} pattern="[A-Za-z0-9-]{5,20}" minLength="5" maxLength="20" title="Use 5-20 letters, numbers, or hyphens" required /></label>
-              <label>Home Address<input type="text" name="address" placeholder="123 Main St, Houston, TX 77002" value={details.address} onChange={updateDetails} required /></label>
-              <label>Emergency Contact Name<input type="text" name="emergencyContactName" placeholder="e.g., Sarah Doe" value={details.emergencyContactName} onChange={updateDetails} required /></label>
+              <label>Street Address<input type="text" name="address" placeholder="123 Main St" value={details.address} onChange={updateDetails} required /></label>
+              <label>City<input type="text" name="city" placeholder="Houston" value={details.city} onChange={updateDetails} required /></label>
+              <label>State<input type="text" name="state" placeholder="TX" value={details.state} onChange={updateDetails} maxLength="2" pattern="[A-Za-z]{2}" title="2-letter state abbreviation" required /></label>
+              <label>Zip Code<input type="text" name="zipcode" placeholder="77002" value={details.zipcode} onChange={updateDetails} maxLength="10" pattern="\d{5}(-\d{4})?" inputMode="numeric" title="5-digit zip code" required /></label>
+              <label>Emergency Contact Name<input type="text" name="emergencyContactName" placeholder="e.g., Sarah Doe" value={details.emergencyContactName} onChange={updateDetails} pattern="[A-Za-z\s'\-]+" title="Letters, spaces, hyphens, and apostrophes only" required /></label>
               <label>Emergency Contact Number<input type="tel" name="emergencyContactPhone" placeholder="(555) 987-6543" value={details.emergencyContactPhone} onChange={updateDetails} pattern="\(\d{3}\) \d{3}-\d{4}" maxLength="14" inputMode="numeric" title="Use phone format: (555) 987-6543" required /></label>
               <label>Department
                 <select name="reason" value={details.reason} onChange={updateDetails} required>
@@ -884,7 +904,7 @@ function PatientRegistrationPage() {
                 <legend>Account Credentials</legend>
                 <div className="form-grid">
                   <label>Username<input type="text" name="username" placeholder="Choose your username" value={credentials.username} onChange={updateCredentials} required /></label>
-                  <label>Password<input type="password" name="password" placeholder="Create a secure password" value={credentials.password} onChange={updateCredentials} required /></label>
+                  <label>Password<input type="password" name="password" placeholder="Min 8 chars, 1 upper, 1 lower, 1 number" value={credentials.password} onChange={updateCredentials} minLength={8} pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}" title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number" required /></label>
                 </div>
               </fieldset>
             </div>

@@ -197,6 +197,7 @@ function ReceptionistPage() {
   const [timeOffLocations, setTimeOffLocations] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [isSubmittingTimeOff, setIsSubmittingTimeOff] = useState(false);
+  const [mySchedule, setMySchedule] = useState([]);
 
   const buildReportQueryString = (formValues) => {
     const params = new URLSearchParams();
@@ -585,19 +586,23 @@ function ReceptionistPage() {
   };
 
   const loadCore = async () => {
-    const [requestsData, timeOffData, locationData, departmentsData] = await Promise.all([
+    const [requestsData, timeOffData, locationData, departmentsData, scheduleData] = await Promise.all([
       fetchWithTimeout(`${API_BASE_URL}/api/appointments/preference-requests`).then(safeJson),
       session?.staffId
         ? fetchWithTimeout(`${API_BASE_URL}/api/staff/time-off-requests?staffId=${encodeURIComponent(session.staffId)}`).then(safeJson)
         : Promise.resolve([]),
       fetchWithTimeout(`${API_BASE_URL}/api/admin/locations`).then(safeJson),
-      fetchWithTimeout(`${API_BASE_URL}/api/departments`).then(safeJson)
+      fetchWithTimeout(`${API_BASE_URL}/api/departments`).then(safeJson),
+      session?.staffId
+        ? fetchWithTimeout(`${API_BASE_URL}/api/staff/schedules?staffId=${encodeURIComponent(session.staffId)}`).then(safeJson)
+        : Promise.resolve([])
     ]);
 
     setRequests(Array.isArray(requestsData) ? requestsData : []);
     setTimeOffHistory(Array.isArray(timeOffData) ? timeOffData : []);
     setTimeOffLocations(Array.isArray(locationData) ? locationData : []);
     setDepartments(Array.isArray(departmentsData) ? departmentsData : []);
+    setMySchedule(Array.isArray(scheduleData) ? scheduleData : []);
     await loadAppointmentsForDate(selectedDate);
   };
 
@@ -738,6 +743,20 @@ function ReceptionistPage() {
 
       {message && <p className="reception-message">{message}</p>}
 
+      {mySchedule.length > 0 && (
+        <section className="reception-panel" style={{ marginBottom: '1rem' }}>
+          <h2>My Schedule</h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+            {mySchedule.map((s) => (
+              <div key={s.schedule_id} style={{ background: s.is_off ? '#f5f5f5' : '#eefbfa', border: `1px solid ${s.is_off ? '#ddd' : '#d6e7e4'}`, borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '120px' }}>
+                <strong style={{ color: s.is_off ? '#999' : '#105550' }}>{s.day_of_week.charAt(0) + s.day_of_week.slice(1).toLowerCase()}</strong>
+                <div style={{ fontSize: '0.85rem', color: s.is_off ? '#999' : '#444' }}>{s.is_off ? 'OFF' : `${String(s.start_time || '').slice(0, 5)} — ${String(s.end_time || '').slice(0, 5)}`}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <PatientSearch />
 
       <section className="reception-panel">
@@ -750,24 +769,48 @@ function ReceptionistPage() {
                 <th>Requested Date/Time</th>
                 <th>Preferred Location</th>
                 <th>Reason</th>
+                <th style={{ width: '40px' }}></th>
               </tr>
             </thead>
             <tbody>
               {requests.map((request) => (
-                <tr key={request.preference_request_id} className="reception-clickable-row" onClick={() => navigateToPatientProfile(request.patient_id)}>
-                  <td>
+                <tr key={request.preference_request_id} className="reception-clickable-row">
+                  <td onClick={() => navigateToPatientProfile(request.patient_id)}>
                     {request.p_first_name} {request.p_last_name}
                   </td>
-                  <td>
+                  <td onClick={() => navigateToPatientProfile(request.patient_id)}>
                     {formatDate(request.preferred_date)} {formatTime(request.preferred_time)}
                   </td>
-                  <td>{request.preferred_location || 'N/A'}</td>
-                  <td>{request.appointment_reason || 'N/A'}</td>
+                  <td onClick={() => navigateToPatientProfile(request.patient_id)}>{request.preferred_location || 'N/A'}</td>
+                  <td onClick={() => navigateToPatientProfile(request.patient_id)}>{request.appointment_reason || 'N/A'}</td>
+                  <td>
+                    <button
+                      type="button"
+                      title="Cancel this request"
+                      style={{ background: 'none', border: 'none', color: '#c0392b', cursor: 'pointer', fontWeight: 700, fontSize: '1.1rem', padding: '0.2rem 0.5rem' }}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!window.confirm(`Cancel appointment request for ${request.p_first_name} ${request.p_last_name}?`)) return;
+                        try {
+                          const cancelRes = await fetch(`${API_BASE_URL}/api/appointments/preference-requests/${request.preference_request_id}/cancel`, { method: 'PUT' });
+                          const payload = await cancelRes.json().catch(() => ({}));
+                          if (!cancelRes.ok) throw new Error(payload.error || 'Failed to cancel');
+                          setMessage('Appointment request cancelled.');
+                          const freshRequests = await fetchWithTimeout(`${API_BASE_URL}/api/appointments/preference-requests`).then(safeJson);
+                          setRequests(Array.isArray(freshRequests) ? freshRequests : []);
+                        } catch (err) {
+                          setMessage(err.message || 'Failed to cancel request.');
+                        }
+                      }}
+                    >
+                      &times;
+                    </button>
+                  </td>
                 </tr>
               ))}
               {!requests.length && (
                 <tr>
-                  <td colSpan="4">No appointment requests found.</td>
+                  <td colSpan="5">No appointment requests found.</td>
                 </tr>
               )}
             </tbody>

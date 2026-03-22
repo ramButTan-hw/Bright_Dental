@@ -34,7 +34,7 @@ function createPatientIntakeHandlers(deps) {
   function registerPatient(req, data, res) {
     const {
       firstName, lastName, dob, gender, phone, email, ssn, driversLicense,
-      username, password, locationId, reason, address, emergencyContactName, emergencyContactPhone,
+      username, password, locationId, reason, address, city, state, zipcode, emergencyContactName, emergencyContactPhone,
       medicalHistory, medicalHistoryOtherText, adverseReactions, medications, dentalFindings, dentalHistory,
       sleepSocial, tobacco, caffeine, painAssessment, appointmentSelection
     } = data;
@@ -42,6 +42,12 @@ function createPatientIntakeHandlers(deps) {
     if (!firstName || !lastName || !dob || !gender || !phone || !email || !ssn || !driversLicense || !username || !password || !address || !emergencyContactName || !emergencyContactPhone) {
       return sendJSON(res, 400, {
         error: 'All identity fields including address and emergency contact details are required'
+      });
+    }
+
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      return sendJSON(res, 400, {
+        error: 'Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number'
       });
     }
 
@@ -63,7 +69,10 @@ function createPatientIntakeHandlers(deps) {
 
     const normalizedSsn = String(ssn).trim();
     const normalizedDriversLicense = String(driversLicense).trim().toUpperCase();
-    const normalizedAddress = String(address).trim();
+    const normalizedAddress = String(address || '').trim();
+    const normalizedCity = String(city || '').trim();
+    const normalizedState = String(state || '').trim().toUpperCase();
+    const normalizedZipcode = String(zipcode || '').trim();
     const normalizedEmergencyContactName = String(emergencyContactName).trim();
     const ssnPattern = /^\d{3}-\d{2}-\d{4}$/;
     const driversLicensePattern = /^[A-Z0-9-]{5,20}$/;
@@ -82,7 +91,16 @@ function createPatientIntakeHandlers(deps) {
     }
 
     if (!normalizedAddress) {
-      return sendJSON(res, 400, { error: 'Address is required' });
+      return sendJSON(res, 400, { error: 'Street address is required' });
+    }
+    if (!normalizedCity) {
+      return sendJSON(res, 400, { error: 'City is required' });
+    }
+    if (!normalizedState || !/^[A-Z]{2}$/.test(normalizedState)) {
+      return sendJSON(res, 400, { error: 'State must be a 2-letter abbreviation (e.g., TX)' });
+    }
+    if (!normalizedZipcode || !/^\d{5}(-\d{4})?$/.test(normalizedZipcode)) {
+      return sendJSON(res, 400, { error: 'Zip code must be 5 digits (e.g., 77004)' });
     }
 
     if (!normalizedEmergencyContactPhone) {
@@ -206,8 +224,9 @@ function createPatientIntakeHandlers(deps) {
           const patientQuery = `
             INSERT INTO patients (
               user_id, p_first_name, p_last_name, p_dob, p_gender, p_phone, p_email,
-              p_ssn, p_drivers_license, p_address, p_emergency_contact_name, p_emergency_contact_phone, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PORTAL', 'PORTAL')
+              p_ssn, p_drivers_license, p_address, p_city, p_state, p_zipcode,
+              p_emergency_contact_name, p_emergency_contact_phone, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PORTAL', 'PORTAL')
           `;
           conn.query(
             patientQuery,
@@ -222,6 +241,9 @@ function createPatientIntakeHandlers(deps) {
               normalizedSsn,
               normalizedDriversLicense,
               normalizedAddress,
+              normalizedCity,
+              normalizedState,
+              normalizedZipcode,
               normalizedEmergencyContactName,
               normalizedEmergencyContactPhone
             ],

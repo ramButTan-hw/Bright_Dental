@@ -564,6 +564,7 @@ function PatientNewAppointmentPage() {
       }
 
       setSuccess(payload?.message || 'New appointment request submitted successfully.');
+      setTimeout(() => navigate('/patient-portal'), 1500);
     } catch (submitErr) {
       setError(submitErr.message || 'Unable to submit your new appointment request.');
     } finally {

@@ -365,8 +365,8 @@ function createAdminHandlers(deps) {
       return sendJSON(res, 400, { error: 'npi is required and must be a 10-digit number' });
     }
 
-    if (password.length < 4) {
-      return sendJSON(res, 400, { error: 'Password must be at least 4 characters' });
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      return sendJSON(res, 400, { error: 'Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number' });
     }
 
     pool.getConnection((err, conn) => {
@@ -844,8 +844,8 @@ function createAdminHandlers(deps) {
     if (!username || !password || !normalizedPhone) {
       return sendJSON(res, 400, { error: 'username, password, and phone are required' });
     }
-    if (password.length < 4) {
-      return sendJSON(res, 400, { error: 'Password must be at least 4 characters' });
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      return sendJSON(res, 400, { error: 'Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number' });
     }
 
     pool.getConnection((err, conn) => {
@@ -1102,6 +1102,289 @@ function createAdminHandlers(deps) {
     });
   }
 
+  function resetStaffPassword(req, staffId, data, res) {
+    const newPassword = String(data?.newPassword || '').trim();
+    if (!newPassword || newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      return sendJSON(res, 400, { error: 'Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number' });
+    }
+
+    pool.query(
+      `UPDATE users u JOIN staff st ON st.user_id = u.user_id
+       SET u.password_hash = SHA2(?, 256)
+       WHERE st.staff_id = ?`,
+      [newPassword, staffId],
+      (err, result) => {
+        if (err) {
+          console.error('Error resetting staff password:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        if (!result.affectedRows) {
+          return sendJSON(res, 404, { error: 'Staff member not found' });
+        }
+        sendJSON(res, 200, { message: 'Password reset successfully' });
+      }
+    );
+  }
+
+  function toggleStaffVisibility(req, staffId, res) {
+    pool.query(
+      `UPDATE users u JOIN staff st ON st.user_id = u.user_id
+       SET u.is_deleted = IF(u.is_deleted = 1, 0, 1)
+       WHERE st.staff_id = ?`,
+      [staffId],
+      (err, result) => {
+        if (err) {
+          console.error('Error toggling staff visibility:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        if (!result.affectedRows) {
+          return sendJSON(res, 404, { error: 'Staff member not found' });
+        }
+        // Return new state
+        pool.query(
+          'SELECT u.is_deleted FROM users u JOIN staff st ON st.user_id = u.user_id WHERE st.staff_id = ? LIMIT 1',
+          [staffId],
+          (err2, rows) => {
+            if (err2) return sendJSON(res, 200, { message: 'Visibility toggled' });
+            const isHidden = rows?.[0]?.is_deleted === 1;
+            sendJSON(res, 200, { message: isHidden ? 'Staff member hidden' : 'Staff member restored', isHidden });
+          }
+        );
+      }
+    );
+  }
+
+  function generateAdminReport(req, res) {
+    const parsedUrl = url.parse(req.url, true);
+    const dateFrom = String(parsedUrl.query.dateFrom || '').trim();
+    const dateTo = String(parsedUrl.query.dateTo || '').trim();
+    const zipCode = String(parsedUrl.query.zipCode || '').trim();
+    const locationId = Number(parsedUrl.query.locationId || 0);
+    const patientCity = String(parsedUrl.query.patientCity || '').trim();
+    const patientState = String(parsedUrl.query.patientState || '').trim();
+    const treatmentCode = String(parsedUrl.query.treatmentCode || '').trim();
+    const departmentId = Number(parsedUrl.query.departmentId || 0);
+    const doctorId = Number(parsedUrl.query.doctorId || 0);
+
+    if (!dateFrom || !dateTo || !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+      return sendJSON(res, 400, { error: 'dateFrom and dateTo are required in YYYY-MM-DD format' });
+    }
+
+    const conditions = ['a.appointment_date BETWEEN ? AND ?', "s.status_name = 'COMPLETED'"];
+    const params = [dateFrom, dateTo];
+
+    if (zipCode) {
+      conditions.push('p.p_zipcode = ?');
+      params.push(zipCode);
+    }
+    if (locationId > 0) {
+      conditions.push('a.location_id = ?');
+      params.push(locationId);
+    }
+    if (patientCity) {
+      conditions.push('LOWER(p.p_city) = LOWER(?)');
+      params.push(patientCity);
+    }
+    if (patientState) {
+      conditions.push('UPPER(p.p_state) = UPPER(?)');
+      params.push(patientState);
+    }
+    if (treatmentCode) {
+      conditions.push('tp.procedure_code = ?');
+      params.push(treatmentCode);
+    }
+    if (departmentId > 0) {
+      conditions.push('(dep.department_id = ? OR apr.appointment_reason = (SELECT department_name FROM departments WHERE department_id = ?))');
+      params.push(departmentId, departmentId);
+    }
+    if (doctorId > 0) {
+      conditions.push('a.doctor_id = ?');
+      params.push(doctorId);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const needsTreatmentJoin = Boolean(treatmentCode);
+
+    const sql = `SELECT
+        a.appointment_id,
+        a.appointment_date,
+        a.appointment_time,
+        s.status_name,
+        p.patient_id,
+        CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+        p.p_address AS patient_address,
+        p.p_city AS patient_city,
+        p.p_state AS patient_state,
+        p.p_zipcode AS patient_zip,
+        CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+        d.doctor_id,
+        CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS clinic_location,
+        l.location_city AS clinic_city,
+        l.location_state AS clinic_state,
+        l.loc_zip_code AS clinic_zip,
+        GROUP_CONCAT(DISTINCT CONCAT(apc.procedure_code, ' - ', apc.description) SEPARATOR '; ') AS treatment_name,
+        GROUP_CONCAT(DISTINCT apc.category SEPARATOR ', ') AS treatment_category,
+        COALESCE(apr.appointment_reason, GROUP_CONCAT(DISTINCT dep.department_name SEPARATOR ', ')) AS department_name,
+        COALESCE(i.payment_status, 'No Invoice') AS payment_status,
+        COALESCE(i.amount, 0) AS invoice_total,
+        COALESCE(i.patient_amount, 0) AS patient_amount
+      FROM appointments a
+      JOIN appointment_statuses s ON s.status_id = a.status_id
+      JOIN patients p ON p.patient_id = a.patient_id
+      JOIN doctors d ON d.doctor_id = a.doctor_id
+      JOIN staff st ON st.staff_id = d.staff_id
+      LEFT JOIN locations l ON l.location_id = a.location_id
+      LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
+      LEFT JOIN appointment_preference_requests apr ON apr.patient_id = a.patient_id
+        AND apr.assigned_doctor_id = a.doctor_id
+        AND apr.assigned_date = a.appointment_date
+      ${needsTreatmentJoin
+        ? `JOIN treatment_plans tp ON tp.patient_id = p.patient_id AND tp.doctor_id = d.doctor_id AND tp.start_date = a.appointment_date
+           JOIN ada_procedure_codes apc ON apc.procedure_code = tp.procedure_code`
+        : `LEFT JOIN treatment_plans tp ON tp.patient_id = p.patient_id AND tp.doctor_id = d.doctor_id AND tp.start_date = a.appointment_date
+           LEFT JOIN ada_procedure_codes apc ON apc.procedure_code = tp.procedure_code`}
+      LEFT JOIN specialties_department sd ON sd.doctor_id = d.doctor_id
+      LEFT JOIN departments dep ON dep.department_id = sd.department_id
+      WHERE ${whereClause}
+      GROUP BY a.appointment_id, a.appointment_date, a.appointment_time, s.status_name,
+               p.patient_id, p.p_first_name, p.p_last_name, p.p_address, p.p_city, p.p_state, p.p_zipcode,
+               st.first_name, st.last_name, d.doctor_id,
+               l.loc_street_no, l.loc_street_name, l.location_city, l.location_state, l.loc_zip_code,
+               i.payment_status, i.amount, i.patient_amount,
+               apr.appointment_reason
+      ORDER BY a.appointment_date ASC, a.appointment_time ASC`;
+
+    pool.query(sql, params, (err, rows) => {
+      if (err) {
+        console.error('Error generating admin report:', err);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+      sendJSON(res, 200, {
+        dateFrom,
+        dateTo,
+        filters: { zipCode: zipCode || null, locationId: locationId || null, patientCity: patientCity || null, patientState: patientState || null, treatmentCode: treatmentCode || null, departmentId: departmentId || null, doctorId: doctorId || null },
+        generatedAt: new Date().toISOString(),
+        totalRows: (rows || []).length,
+        rows: rows || []
+      });
+    });
+  }
+
+  function getReportFilterOptions(req, res) {
+    (async () => {
+      const db = pool.promise();
+      const [locations] = await db.query(
+        `SELECT location_id, CONCAT(loc_street_no, ' ', loc_street_name, ', ', location_city, ', ', location_state, ' ', loc_zip_code) AS full_address FROM locations ORDER BY location_city`
+      );
+      const [departments] = await db.query(
+        'SELECT department_id, department_name FROM departments ORDER BY department_name'
+      );
+      const [doctors] = await db.query(
+        `SELECT d.doctor_id, CONCAT(st.first_name, ' ', st.last_name) AS doctor_name
+         FROM doctors d JOIN staff st ON st.staff_id = d.staff_id
+         JOIN users u ON u.user_id = st.user_id
+         WHERE COALESCE(u.is_deleted, 0) = 0
+         ORDER BY st.last_name`
+      );
+      const [treatments] = await db.query(
+        'SELECT procedure_code, description, category FROM ada_procedure_codes ORDER BY category, description'
+      );
+      sendJSON(res, 200, {
+        locations: locations || [],
+        departments: departments || [],
+        doctors: doctors || [],
+        treatments: treatments || []
+      });
+    })().catch((err) => {
+      console.error('Error fetching report filter options:', err);
+      sendJSON(res, 500, { error: 'Database error' });
+    });
+  }
+
+  function getCancelledAppointmentRequests(req, res) {
+    pool.query(
+      `SELECT
+        apr.preference_request_id,
+        apr.preferred_date,
+        apr.preferred_time,
+        apr.preferred_location,
+        apr.appointment_reason,
+        apr.request_status,
+        apr.updated_at,
+        apr.updated_by,
+        apr.created_at,
+        CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+        p.patient_id
+      FROM appointment_preference_requests apr
+      JOIN patients p ON p.patient_id = apr.patient_id
+      WHERE apr.request_status = 'CANCELLED'
+      ORDER BY apr.updated_at DESC
+      LIMIT 200`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching cancelled requests:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function restoreAppointmentRequest(req, requestId, res) {
+    pool.query(
+      `UPDATE appointment_preference_requests
+       SET request_status = 'PREFERRED_PENDING', updated_by = 'ADMIN_PORTAL'
+       WHERE preference_request_id = ? AND request_status = 'CANCELLED'`,
+      [requestId],
+      (err, result) => {
+        if (err) {
+          console.error('Error restoring appointment request:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        if (!result.affectedRows) {
+          return sendJSON(res, 404, { error: 'Request not found or not cancelled' });
+        }
+        sendJSON(res, 200, { message: 'Appointment request restored' });
+      }
+    );
+  }
+
+  function getAdminAllStaff(req, res) {
+    pool.query(
+      `SELECT
+        st.staff_id,
+        st.first_name,
+        st.last_name,
+        st.date_of_birth,
+        st.phone_number,
+        u.user_username,
+        u.user_email,
+        u.user_role,
+        u.is_deleted,
+        GROUP_CONCAT(
+          DISTINCT CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city)
+          SEPARATOR ' | '
+        ) AS location_address
+      FROM staff st
+      JOIN users u ON u.user_id = st.user_id
+      LEFT JOIN staff_locations sl ON sl.staff_id = st.staff_id
+      LEFT JOIN locations l ON l.location_id = sl.location_id
+      WHERE u.user_role IN ('DOCTOR', 'RECEPTIONIST')
+      GROUP BY st.staff_id, st.first_name, st.last_name, st.date_of_birth,
+               st.phone_number, u.user_username, u.user_email, u.user_role, u.is_deleted
+      ORDER BY u.is_deleted ASC, st.last_name ASC, st.first_name ASC
+      LIMIT 200`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching all staff:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
   return {
     getAdminDashboardSummary,
     getAdminAppointmentsQueue,
@@ -1122,8 +1405,308 @@ function createAdminHandlers(deps) {
     approveAdminStaffTimeOffRequest,
     denyAdminStaffTimeOffRequest,
     getAdminStaffMembersByRole,
-    createAdminStaffMember
+    createAdminStaffMember,
+    resetStaffPassword,
+    toggleStaffVisibility,
+    getAdminAllStaff,
+    generateAdminReport,
+    getReportFilterOptions,
+    getCancelledAppointmentRequests,
+    restoreAppointmentRequest,
+    submitScheduleRequest,
+    getScheduleRequestsByStaffId,
+    getAdminScheduleRequests,
+    approveScheduleRequest,
+    denyScheduleRequest,
+    getStaffSchedules,
+    getAllStaffSchedules,
+    getStaffScheduleGaps,
+    adminUpdateStaffSchedule
   };
+
+  // ── Staff Schedule Request Handlers ──
+
+  function submitScheduleRequest(req, data, res) {
+    const staffId = Number(data.staffId || 0);
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    if (!Number.isInteger(staffId) || staffId <= 0 || !entries.length) {
+      return sendJSON(res, 400, { error: 'staffId and entries[] are required' });
+    }
+
+    const VALID_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+    const rows = [];
+    for (const e of entries) {
+      const day = String(e.day || '').toUpperCase();
+      const isOff = !!e.isOff;
+      const start = isOff ? null : String(e.startTime || '').trim();
+      const end = isOff ? null : String(e.endTime || '').trim();
+      if (!VALID_DAYS.includes(day)) {
+        return sendJSON(res, 400, { error: `Invalid day: ${day}` });
+      }
+      if (!isOff && (!start || !end || start >= end)) {
+        return sendJSON(res, 400, { error: `Invalid entry: ${day} ${start}-${end}` });
+      }
+      rows.push([staffId, day, start, end, isOff ? 1 : 0, 'PENDING']);
+    }
+
+    // Cancel any existing PENDING requests for this staff, then insert new ones
+    pool.query(
+      `DELETE FROM staff_schedule_requests WHERE staff_id = ? AND request_status = 'PENDING'`,
+      [staffId],
+      (err) => {
+        if (err) {
+          console.error('Error clearing old schedule requests:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        pool.query(
+          `INSERT INTO staff_schedule_requests (staff_id, day_of_week, start_time, end_time, is_off, request_status) VALUES ?`,
+          [rows],
+          (err2) => {
+            if (err2) {
+              console.error('Error inserting schedule requests:', err2);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            sendJSON(res, 200, { message: 'Schedule request submitted' });
+          }
+        );
+      }
+    );
+  }
+
+  function getScheduleRequestsByStaffId(req, res, staffId) {
+    pool.query(
+      `SELECT request_id, day_of_week, start_time, end_time, is_off, request_status, submitted_at, reviewed_at
+       FROM staff_schedule_requests
+       WHERE staff_id = ?
+       ORDER BY FIELD(day_of_week,'MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'), start_time`,
+      [staffId],
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching schedule requests:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function getAdminScheduleRequests(req, res) {
+    pool.query(
+      `SELECT
+        sr.request_id,
+        sr.staff_id,
+        CONCAT(st.first_name, ' ', st.last_name) AS staff_name,
+        u.user_role AS role,
+        sr.day_of_week,
+        sr.start_time,
+        sr.end_time,
+        sr.is_off,
+        sr.request_status,
+        sr.submitted_at
+      FROM staff_schedule_requests sr
+      JOIN staff st ON st.staff_id = sr.staff_id
+      LEFT JOIN users u ON u.user_id = st.user_id
+      WHERE sr.request_status = 'PENDING'
+      ORDER BY sr.submitted_at DESC, st.first_name`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching admin schedule requests:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function approveScheduleRequest(req, requestId, res) {
+    // Get the request details first
+    pool.query(
+      `SELECT staff_id, day_of_week, start_time, end_time, is_off FROM staff_schedule_requests WHERE request_id = ? AND request_status = 'PENDING'`,
+      [requestId],
+      (err, rows) => {
+        if (err) return sendJSON(res, 500, { error: 'Database error' });
+        if (!rows.length) return sendJSON(res, 404, { error: 'Request not found or already handled' });
+
+        const { staff_id, day_of_week, start_time, end_time, is_off } = rows[0];
+
+        // Upsert the approved schedule
+        pool.query(
+          `INSERT INTO staff_schedules (staff_id, day_of_week, start_time, end_time, is_off)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE start_time = VALUES(start_time), end_time = VALUES(end_time), is_off = VALUES(is_off)`,
+          [staff_id, day_of_week, start_time, end_time, is_off ? 1 : 0],
+          (err2) => {
+            if (err2) return sendJSON(res, 500, { error: 'Database error' });
+
+            // Mark request approved
+            pool.query(
+              `UPDATE staff_schedule_requests SET request_status = 'APPROVED', reviewed_at = NOW() WHERE request_id = ?`,
+              [requestId],
+              (err3) => {
+                if (err3) return sendJSON(res, 500, { error: 'Database error' });
+                sendJSON(res, 200, { message: 'Schedule request approved' });
+              }
+            );
+          }
+        );
+      }
+    );
+  }
+
+  function denyScheduleRequest(req, requestId, res) {
+    pool.query(
+      `UPDATE staff_schedule_requests SET request_status = 'DENIED', reviewed_at = NOW() WHERE request_id = ? AND request_status = 'PENDING'`,
+      [requestId],
+      (err, result) => {
+        if (err) return sendJSON(res, 500, { error: 'Database error' });
+        if (!result.affectedRows) return sendJSON(res, 404, { error: 'Request not found or already handled' });
+        sendJSON(res, 200, { message: 'Schedule request denied' });
+      }
+    );
+  }
+
+  function getStaffSchedules(req, res, staffId) {
+    pool.query(
+      `SELECT schedule_id, day_of_week, start_time, end_time, is_off
+       FROM staff_schedules WHERE staff_id = ?
+       ORDER BY FIELD(day_of_week,'MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY')`,
+      [staffId],
+      (err, rows) => {
+        if (err) return sendJSON(res, 500, { error: 'Database error' });
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function getAllStaffSchedules(req, res) {
+    pool.query(
+      `SELECT
+        ss.schedule_id,
+        ss.staff_id,
+        CONCAT(st.first_name, ' ', st.last_name) AS staff_name,
+        u.user_role AS role,
+        ss.day_of_week,
+        ss.start_time,
+        ss.end_time,
+        ss.is_off
+      FROM staff_schedules ss
+      JOIN staff st ON st.staff_id = ss.staff_id
+      LEFT JOIN users u ON u.user_id = st.user_id
+      WHERE u.is_deleted = 0
+      ORDER BY st.first_name, FIELD(ss.day_of_week,'MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY')`,
+      (err, rows) => {
+        if (err) return sendJSON(res, 500, { error: 'Database error' });
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function getStaffScheduleGaps(req, res) {
+    // Find days/hours where no staff are scheduled vs clinic hours (09:00-19:00, Mon-Sat)
+    const CLINIC_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+    const CLINIC_START = '09:00:00';
+    const CLINIC_END = '19:00:00';
+
+    pool.query(
+      `SELECT
+        ss.staff_id,
+        CONCAT(st.first_name, ' ', st.last_name) AS staff_name,
+        u.user_role AS role,
+        ss.day_of_week,
+        ss.start_time,
+        ss.end_time,
+        ss.is_off
+      FROM staff_schedules ss
+      JOIN staff st ON st.staff_id = ss.staff_id
+      LEFT JOIN users u ON u.user_id = st.user_id
+      WHERE u.is_deleted = 0
+      ORDER BY FIELD(ss.day_of_week,'MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'), ss.start_time`,
+      (err, rows) => {
+        if (err) return sendJSON(res, 500, { error: 'Database error' });
+
+        const schedulesByDay = {};
+        CLINIC_DAYS.forEach((d) => { schedulesByDay[d] = []; });
+        (rows || []).forEach((r) => {
+          if (schedulesByDay[r.day_of_week] && !r.is_off) {
+            schedulesByDay[r.day_of_week].push(r);
+          }
+        });
+
+        const gaps = [];
+        CLINIC_DAYS.forEach((day) => {
+          const daySchedules = schedulesByDay[day];
+          if (!daySchedules.length) {
+            gaps.push({ day_of_week: day, gap_start: CLINIC_START, gap_end: CLINIC_END, type: 'NO_COVERAGE' });
+            return;
+          }
+
+          // Check each clinic hour for coverage
+          for (let h = 9; h < 19; h++) {
+            const hourStart = `${String(h).padStart(2, '0')}:00:00`;
+            const hourEnd = `${String(h + 1).padStart(2, '0')}:00:00`;
+            const hasDoctorCoverage = daySchedules.some((s) =>
+              s.role === 'DOCTOR' && s.start_time <= hourStart && s.end_time >= hourEnd
+            );
+            const hasReceptionistCoverage = daySchedules.some((s) =>
+              s.role === 'RECEPTIONIST' && s.start_time <= hourStart && s.end_time >= hourEnd
+            );
+            if (!hasDoctorCoverage && !hasReceptionistCoverage) {
+              gaps.push({ day_of_week: day, gap_start: hourStart, gap_end: hourEnd, type: 'NO_COVERAGE' });
+            } else if (!hasDoctorCoverage) {
+              gaps.push({ day_of_week: day, gap_start: hourStart, gap_end: hourEnd, type: 'NO_DOCTOR' });
+            } else if (!hasReceptionistCoverage) {
+              gaps.push({ day_of_week: day, gap_start: hourStart, gap_end: hourEnd, type: 'NO_RECEPTIONIST' });
+            }
+          }
+        });
+
+        sendJSON(res, 200, gaps);
+      }
+    );
+  }
+
+  function adminUpdateStaffSchedule(req, data, res) {
+    const staffId = Number(data.staffId || 0);
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    if (!Number.isInteger(staffId) || staffId <= 0) {
+      return sendJSON(res, 400, { error: 'Valid staffId is required' });
+    }
+
+    const VALID_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+
+    // Delete all existing schedules for this staff, then insert the new ones
+    pool.query(`DELETE FROM staff_schedules WHERE staff_id = ?`, [staffId], (err) => {
+      if (err) return sendJSON(res, 500, { error: 'Database error' });
+
+      // Filter out entries with no data
+      const rows = [];
+      for (const e of entries) {
+        const day = String(e.day || '').toUpperCase();
+        if (!VALID_DAYS.includes(day)) continue;
+        const isOff = !!e.isOff;
+        const start = isOff ? null : String(e.startTime || '').trim() || null;
+        const end = isOff ? null : String(e.endTime || '').trim() || null;
+        if (!isOff && (!start || !end || start >= end)) continue;
+        rows.push([staffId, day, start, end, isOff ? 1 : 0]);
+      }
+
+      if (!rows.length) {
+        return sendJSON(res, 200, { message: 'Schedule cleared' });
+      }
+
+      pool.query(
+        `INSERT INTO staff_schedules (staff_id, day_of_week, start_time, end_time, is_off) VALUES ?`,
+        [rows],
+        (err2) => {
+          if (err2) {
+            console.error('Error updating staff schedule:', err2);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          sendJSON(res, 200, { message: 'Schedule updated' });
+        }
+      );
+    });
+  }
 }
 
 module.exports = {

@@ -119,6 +119,11 @@ function PatientPortalPage() {
 
   const canCreateNewAppointment = !nextAppointment && !hasActiveRequest;
 
+  const visibleRequests = appointmentRequests.filter((r) => {
+    const status = String(r?.request_status || '').toUpperCase();
+    return status !== 'COMPLETED' && status !== 'CANCELLED';
+  });
+
   const invoiceByAppointmentId = useMemo(() => {
     const mapped = new Map();
     (Array.isArray(invoices) ? invoices : []).forEach((inv) => {
@@ -136,11 +141,7 @@ function PatientPortalPage() {
     if (!item?.appointment_date) {
       return false;
     }
-    if (String(item.status_name || '').toUpperCase() !== 'COMPLETED') {
-      return false;
-    }
-    const date = new Date(`${String(item.appointment_date).slice(0, 10)}T00:00:00`);
-    return !Number.isNaN(date.getTime()) && date < new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return String(item.status_name || '').toUpperCase() === 'COMPLETED';
   }).sort((a, b) => toAppointmentTimestamp(b) - toAppointmentTimestamp(a));
 
   const handleCancelAppointment = async () => {
@@ -454,7 +455,7 @@ function PatientPortalPage() {
           <h2>My Appointment Requests</h2>
         </div>
 
-        {appointmentRequests.length === 0 ? (
+        {visibleRequests.length === 0 ? (
           <p>No appointment requests submitted yet.</p>
         ) : (
           <div className="portal-table-wrap">
@@ -470,7 +471,7 @@ function PatientPortalPage() {
                 </tr>
               </thead>
               <tbody>
-                {appointmentRequests.map((request) => {
+                {visibleRequests.map((request) => {
                   const canCancel = request.request_status === 'PREFERRED_PENDING' || request.request_status === 'ASSIGNED';
                   return (
                     <tr key={request.preference_request_id}>

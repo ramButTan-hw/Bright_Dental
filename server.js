@@ -210,6 +210,67 @@ pool.query(
   }
 );
 
+// Ensure staff scheduling tables exist.
+pool.query(
+  `CREATE TABLE IF NOT EXISTS staff_schedule_requests (
+    request_id INT AUTO_INCREMENT PRIMARY KEY,
+    staff_id INT NOT NULL,
+    day_of_week ENUM('MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY') NOT NULL,
+    start_time TIME NULL,
+    end_time TIME NULL,
+    is_off TINYINT(1) NOT NULL DEFAULT 0,
+    request_status ENUM('PENDING','APPROVED','DENIED') NOT NULL DEFAULT 'PENDING',
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at TIMESTAMP NULL,
+    FOREIGN KEY (staff_id) REFERENCES staff(staff_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    INDEX idx_sched_req_staff (staff_id),
+    INDEX idx_sched_req_status (request_status)
+  )`,
+  (err) => {
+    if (err) console.error('Error ensuring staff_schedule_requests table:', err.message);
+  }
+);
+
+pool.query(
+  `CREATE TABLE IF NOT EXISTS staff_schedules (
+    schedule_id INT AUTO_INCREMENT PRIMARY KEY,
+    staff_id INT NOT NULL,
+    day_of_week ENUM('MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY') NOT NULL,
+    start_time TIME NULL,
+    end_time TIME NULL,
+    is_off TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (staff_id) REFERENCES staff(staff_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_staff_day (staff_id, day_of_week),
+    INDEX idx_sched_staff (staff_id)
+  )`,
+  (err) => {
+    if (err) console.error('Error ensuring staff_schedules table:', err.message);
+  }
+);
+
+// Migration: add is_off column to existing schedule tables
+pool.query(`ALTER TABLE staff_schedules ADD COLUMN is_off TINYINT(1) NOT NULL DEFAULT 0`, (err) => {
+  if (err && !err.message.includes('Duplicate column')) console.error('Migration staff_schedules.is_off:', err.message);
+});
+pool.query(`ALTER TABLE staff_schedule_requests ADD COLUMN is_off TINYINT(1) NOT NULL DEFAULT 0`, (err) => {
+  if (err && !err.message.includes('Duplicate column')) console.error('Migration staff_schedule_requests.is_off:', err.message);
+});
+// Migration: allow NULL times for OFF days
+pool.query(`ALTER TABLE staff_schedules MODIFY start_time TIME NULL, MODIFY end_time TIME NULL`, (err) => {
+  if (err) console.error('Migration staff_schedules nullable times:', err.message);
+});
+pool.query(`ALTER TABLE staff_schedule_requests MODIFY start_time TIME NULL, MODIFY end_time TIME NULL`, (err) => {
+  if (err) console.error('Migration staff_schedule_requests nullable times:', err.message);
+});
+// Migration: drop CHECK constraints that block NULL times for OFF days
+pool.query(`ALTER TABLE staff_schedules DROP CHECK chk_sched_time`, (err) => {
+  if (err && !err.message.includes('not found') && !err.message.includes("doesn't exist") && !err.code === 'ER_CHECK_CONSTRAINT_NOT_FOUND') { /* ignore */ }
+});
+pool.query(`ALTER TABLE staff_schedule_requests DROP CHECK chk_sched_req_time`, (err) => {
+  if (err && !err.message.includes('not found') && !err.message.includes("doesn't exist") && !err.code === 'ER_CHECK_CONSTRAINT_NOT_FOUND') { /* ignore */ }
+});
+
 // ============================================================================
 // MIDDLEWARE: Parse JSON body
 // ============================================================================
@@ -298,6 +359,7 @@ const patientPortalRoutes = createPatientPortalRoutes({
   getInsuranceCompanies: patientCoreHandlers.getInsuranceCompanies,
   updatePatientProfile: patientCoreHandlers.updatePatientProfile,
   addPatientInsurance: patientCoreHandlers.addPatientInsurance,
+  changeUserPassword: patientCoreHandlers.changeUserPassword,
   registerPatient: patientIntakeHandlers.registerPatient,
   getPainSymptoms: patientIntakeHandlers.getPainSymptoms,
   getLocations: patientIntakeHandlers.getLocations,

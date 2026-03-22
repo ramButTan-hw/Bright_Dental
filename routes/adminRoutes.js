@@ -20,7 +20,23 @@ function createAdminRoutes(handlers) {
     approveAdminStaffTimeOffRequest,
     denyAdminStaffTimeOffRequest,
     getAdminStaffMembersByRole,
-    createAdminStaffMember
+    createAdminStaffMember,
+    resetStaffPassword,
+    toggleStaffVisibility,
+    getAdminAllStaff,
+    generateAdminReport,
+    getReportFilterOptions,
+    getCancelledAppointmentRequests,
+    restoreAppointmentRequest,
+    submitScheduleRequest,
+    getScheduleRequestsByStaffId,
+    getAdminScheduleRequests,
+    approveScheduleRequest,
+    denyScheduleRequest,
+    getStaffSchedules,
+    getAllStaffSchedules,
+    getStaffScheduleGaps,
+    adminUpdateStaffSchedule
   } = handlers;
 
   function handleAdminRoutes(req, res, method, parts, parseJSON, parsedUrl) {
@@ -180,6 +196,148 @@ function createAdminRoutes(handlers) {
           return sendJSON(res, 400, { error: 'Invalid JSON' });
         }
         createAdminStaffMember(req, data, 'RECEPTIONIST', res);
+      });
+      return true;
+    }
+
+    // GET /api/admin/reports/generate — comprehensive report with filters
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'generate') {
+      generateAdminReport(req, res);
+      return true;
+    }
+
+    // GET /api/admin/reports/filter-options — dropdown options for report filters
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'filter-options') {
+      getReportFilterOptions(req, res);
+      return true;
+    }
+
+    // GET /api/admin/appointment-requests/cancelled — list cancelled requests
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'appointment-requests' && parts[3] === 'cancelled') {
+      getCancelledAppointmentRequests(req, res);
+      return true;
+    }
+
+    // PUT /api/admin/appointment-requests/:id/restore — restore a cancelled request
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'appointment-requests' && parts[3] && parts[4] === 'restore') {
+      const requestId = Number(parts[3]);
+      if (!Number.isInteger(requestId) || requestId <= 0) {
+        sendJSON(res, 400, { error: 'Invalid request id' });
+        return true;
+      }
+      restoreAppointmentRequest(req, requestId, res);
+      return true;
+    }
+
+    // GET /api/admin/staff/all — get all staff including hidden
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'staff' && parts[3] === 'all') {
+      getAdminAllStaff(req, res);
+      return true;
+    }
+
+    // PUT /api/admin/staff/:staffId/reset-password
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'staff' && parts[3] && parts[4] === 'reset-password') {
+      const staffId = Number(parts[3]);
+      if (!Number.isInteger(staffId) || staffId <= 0) {
+        sendJSON(res, 400, { error: 'Invalid staff id' });
+        return true;
+      }
+      parseJSON(req, (err, data) => {
+        if (err) {
+          return sendJSON(res, 400, { error: 'Invalid JSON' });
+        }
+        resetStaffPassword(req, staffId, data, res);
+      });
+      return true;
+    }
+
+    // PUT /api/admin/staff/:staffId/toggle-visibility
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'staff' && parts[3] && parts[4] === 'toggle-visibility') {
+      const staffId = Number(parts[3]);
+      if (!Number.isInteger(staffId) || staffId <= 0) {
+        sendJSON(res, 400, { error: 'Invalid staff id' });
+        return true;
+      }
+      toggleStaffVisibility(req, staffId, res);
+      return true;
+    }
+
+    // POST /api/staff/schedule-requests — staff submits preferred schedule
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'staff' && parts[2] === 'schedule-requests') {
+      parseJSON(req, (err, data) => {
+        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        submitScheduleRequest(req, data, res);
+      });
+      return true;
+    }
+
+    // GET /api/staff/schedule-requests?staffId=X — staff views their requests
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'staff' && parts[2] === 'schedule-requests') {
+      const staffId = Number(parsedUrl.query.staffId || 0);
+      if (!Number.isInteger(staffId) || staffId <= 0) {
+        sendJSON(res, 400, { error: 'A valid staffId query parameter is required' });
+        return true;
+      }
+      getScheduleRequestsByStaffId(req, res, staffId);
+      return true;
+    }
+
+    // GET /api/staff/schedules?staffId=X — staff views their approved schedule
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'staff' && parts[2] === 'schedules' && !parts[3]) {
+      const staffId = Number(parsedUrl.query.staffId || 0);
+      if (!Number.isInteger(staffId) || staffId <= 0) {
+        sendJSON(res, 400, { error: 'A valid staffId query parameter is required' });
+        return true;
+      }
+      getStaffSchedules(req, res, staffId);
+      return true;
+    }
+
+    // GET /api/admin/schedule-requests — admin views pending requests
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'schedule-requests') {
+      getAdminScheduleRequests(req, res);
+      return true;
+    }
+
+    // PUT /api/admin/schedule-requests/:id/approve
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'schedule-requests' && parts[3] && parts[4] === 'approve') {
+      const requestId = Number(parts[3]);
+      if (!Number.isInteger(requestId) || requestId <= 0) {
+        sendJSON(res, 400, { error: 'Invalid request id' });
+        return true;
+      }
+      approveScheduleRequest(req, requestId, res);
+      return true;
+    }
+
+    // PUT /api/admin/schedule-requests/:id/deny
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'schedule-requests' && parts[3] && parts[4] === 'deny') {
+      const requestId = Number(parts[3]);
+      if (!Number.isInteger(requestId) || requestId <= 0) {
+        sendJSON(res, 400, { error: 'Invalid request id' });
+        return true;
+      }
+      denyScheduleRequest(req, requestId, res);
+      return true;
+    }
+
+    // GET /api/admin/staff-schedules — all approved schedules
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'staff-schedules' && !parts[3]) {
+      getAllStaffSchedules(req, res);
+      return true;
+    }
+
+    // GET /api/admin/staff-schedules/gaps — empty hours
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'staff-schedules' && parts[3] === 'gaps') {
+      getStaffScheduleGaps(req, res);
+      return true;
+    }
+
+    // PUT /api/admin/staff-schedules/update — admin directly updates a staff member's schedule
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'staff-schedules' && parts[3] === 'update') {
+      parseJSON(req, (err, data) => {
+        if (err) { res.writeHead(400); return res.end(JSON.stringify({ error: 'Invalid JSON' })); }
+        adminUpdateStaffSchedule(req, data, res);
       });
       return true;
     }

@@ -36,6 +36,7 @@ function DentistLoginPage() {
   const [searchResultAppointments, setSearchResultAppointments] = useState([]);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [mySchedule, setMySchedule] = useState([]);
   const [allAppointments, setAllAppointments] = useState([]);
   const [selectedPastDate, setSelectedPastDate] = useState('');
   const [singleReportForm, setSingleReportForm] = useState({
@@ -301,6 +302,15 @@ function DentistLoginPage() {
       setDentistPortalSession(updatedSession);
       setSession(updatedSession);
       await refreshAppointments(resolvedDoctorId, selectedDate);
+
+      // Load approved schedule
+      const staffId = updatedSession.staffId;
+      if (staffId) {
+        fetch(`${API_BASE_URL}/api/staff/schedules?staffId=${staffId}`)
+          .then((r) => r.json().catch(() => []))
+          .then((data) => setMySchedule(Array.isArray(data) ? data : []))
+          .catch(() => {});
+      }
     };
 
     load().catch((err) => {
@@ -585,6 +595,20 @@ function DentistLoginPage() {
         </div>
       </section>
 
+      {mySchedule.length > 0 && (
+        <section className="dentist-panel" style={{ marginBottom: '1rem' }}>
+          <h2>My Schedule</h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+            {mySchedule.map((s) => (
+              <div key={s.schedule_id} style={{ background: s.is_off ? '#f5f5f5' : '#eefbfa', border: `1px solid ${s.is_off ? '#ddd' : '#d6e7e4'}`, borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '120px' }}>
+                <strong style={{ color: s.is_off ? '#999' : '#105550' }}>{s.day_of_week.charAt(0) + s.day_of_week.slice(1).toLowerCase()}</strong>
+                <div style={{ fontSize: '0.85rem', color: s.is_off ? '#999' : '#444' }}>{s.is_off ? 'OFF' : `${String(s.start_time || '').slice(0, 5)} — ${String(s.end_time || '').slice(0, 5)}`}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="dentist-main-grid">
         <article className="dentist-panel dentist-appointments">
           <div className="dentist-detail-head">
@@ -603,16 +627,23 @@ function DentistLoginPage() {
           ) : (
             <ul>
               {appointments.map((appt) => {
+                const status = getAppointmentStatus(appt);
+                const isCheckedIn = status === 'CHECKED_IN';
                 return (
                   <li key={appt.appointment_id}>
                     <button
                       type="button"
-                      className="dentist-appointment-item"
-                      onClick={() => navigate(`/dentist/patient/${appt.appointment_id}`)}
+                      className={`dentist-appointment-item${isCheckedIn ? '' : ' is-locked'}`}
+                      disabled={!isCheckedIn}
+                      title={isCheckedIn ? '' : 'Patient has not checked in yet'}
+                      onClick={() => isCheckedIn && navigate(`/dentist/patient/${appt.appointment_id}`)}
                     >
+                      <div>
+                        <div>{appt.patient_name}</div>
+                        <small>Patient ID: {appt.patient_id}</small>
+                        {!isCheckedIn && <small className="dentist-lock-label">Not checked in</small>}
+                      </div>
                       <div className="dentist-time">{String(appt.appointment_time || '').slice(0, 5)}</div>
-                      <div>{appt.patient_name}</div>
-                      <small>Patient ID: {appt.patient_id}</small>
                     </button>
                   </li>
                 );

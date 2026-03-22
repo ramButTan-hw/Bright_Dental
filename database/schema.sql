@@ -416,7 +416,7 @@ CREATE TABLE IF NOT EXISTS appointment_preference_requests (
     preferred_location VARCHAR(255),
     location_id INT,
     appointment_reason VARCHAR(255),
-    request_status ENUM('PREFERRED_PENDING', 'ASSIGNED', 'CANCELLED') NOT NULL DEFAULT 'PREFERRED_PENDING',
+    request_status ENUM('PREFERRED_PENDING', 'ASSIGNED', 'CANCELLED', 'COMPLETED') NOT NULL DEFAULT 'PREFERRED_PENDING',
     assigned_doctor_id INT,
     assigned_date DATE,
     assigned_time TIME,
@@ -476,6 +476,37 @@ CREATE TABLE IF NOT EXISTS staff_time_off_requests (
     INDEX idx_staff_time_off_staff (staff_id),
     INDEX idx_staff_time_off_start (start_datetime),
     CONSTRAINT chk_staff_time_off_range CHECK (start_datetime < end_datetime)
+);
+
+
+-- Staff schedule requests: preferred hours submitted by staff, approved by admin
+CREATE TABLE IF NOT EXISTS staff_schedule_requests (
+    request_id INT AUTO_INCREMENT PRIMARY KEY,
+    staff_id INT NOT NULL,
+    day_of_week ENUM('MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY') NOT NULL,
+    start_time TIME NULL,
+    end_time TIME NULL,
+    is_off TINYINT(1) NOT NULL DEFAULT 0,
+    request_status ENUM('PENDING','APPROVED','DENIED') NOT NULL DEFAULT 'PENDING',
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at TIMESTAMP NULL,
+    FOREIGN KEY (staff_id) REFERENCES staff(staff_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    INDEX idx_sched_req_staff (staff_id),
+    INDEX idx_sched_req_status (request_status)
+);
+
+-- Active approved schedules for staff
+CREATE TABLE IF NOT EXISTS staff_schedules (
+    schedule_id INT AUTO_INCREMENT PRIMARY KEY,
+    staff_id INT NOT NULL,
+    day_of_week ENUM('MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY') NOT NULL,
+    start_time TIME NULL,
+    end_time TIME NULL,
+    is_off TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (staff_id) REFERENCES staff(staff_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_staff_day (staff_id, day_of_week),
+    INDEX idx_sched_staff (staff_id)
 );
 
 

@@ -480,11 +480,13 @@ function createReceptionRoutes({ pool, sendJSON }) {
         GROUP_CONCAT(DISTINCT CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) ORDER BY sl.location_id SEPARATOR ' | ') AS location_names
       FROM doctors d
       JOIN staff st ON st.staff_id = d.staff_id
+      JOIN users u ON u.user_id = st.user_id
       LEFT JOIN specialties_department sd ON sd.doctor_id = d.doctor_id
       LEFT JOIN departments dept ON dept.department_id = sd.department_id
       LEFT JOIN staff_locations sl ON sl.staff_id = st.staff_id
       LEFT JOIN locations l ON l.location_id = sl.location_id
-      ${locationId ? 'WHERE sl.location_id = ?' : ''}
+      WHERE COALESCE(u.is_deleted, 0) = 0
+      ${locationId ? 'AND sl.location_id = ?' : ''}
       GROUP BY d.doctor_id, st.first_name, st.last_name, st.phone_number
       ORDER BY st.last_name ASC, st.first_name ASC`;
 

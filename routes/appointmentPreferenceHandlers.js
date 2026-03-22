@@ -67,13 +67,44 @@ function createAppointmentPreferenceHandlers(deps) {
           : null;
         const timeOffParams = hasDoctorFilter ? [doctorIdParam, days, doctorIdParam, days] : [];
 
+        // Query doctor's approved schedule
+        const scheduleSql = hasDoctorFilter
+          ? `SELECT ss.day_of_week, ss.start_time, ss.end_time, ss.is_off
+             FROM staff_schedules ss
+             JOIN doctors d ON d.staff_id = ss.staff_id
+             WHERE d.doctor_id = ?`
+          : null;
+        const scheduleParams = hasDoctorFilter ? [doctorIdParam] : [];
+
         pool.query(slotSql, slotParams, (slotErr, slotResults) => {
           if (slotErr) {
             console.error('Error fetching slot availability:', slotErr);
             return sendJSON(res, 500, { error: 'Database error' });
           }
 
-          const processResults = (timeOffResults) => {
+          const processResults = (timeOffResults, scheduleResults) => {
+            // Build doctor schedule map: DAY_OF_WEEK -> { start, end }
+            const doctorScheduleByDay = new Map();
+            (scheduleResults || []).forEach((row) => {
+              doctorScheduleByDay.set(row.day_of_week, {
+                start: String(row.start_time || '').slice(0, 5),
+                end: String(row.end_time || '').slice(0, 5),
+                isOff: !!row.is_off
+              });
+            });
+            const hasSchedule = doctorScheduleByDay.size > 0;
+
+            const DAY_NAMES = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+            const isOutsideSchedule = (dateKey, hourStr) => {
+              if (!hasSchedule) return false;
+              const dayIndex = new Date(`${dateKey}T12:00:00`).getDay();
+              const dayName = DAY_NAMES[dayIndex];
+              const sched = doctorScheduleByDay.get(dayName);
+              if (!sched) return true; // Doctor doesn't work this day
+              if (sched.isOff) return true; // Doctor is OFF this day
+              const slotTime = hourStr.length === 2 ? `${hourStr}:00` : hourStr;
+              return slotTime < sched.start || slotTime >= sched.end;
+            };
             // Helper: mysql2 returns DATE as JS Date objects — normalise to YYYY-MM-DD
             const toDateKey = (val) => {
               if (val instanceof Date) {
@@ -154,14 +185,16 @@ function createAppointmentPreferenceHandlers(deps) {
                 const capacity = slot ? slot.maxPatients : maxPatientsPerTime;
                 const slotFull = slot ? (slot.currentBookings >= slot.maxPatients || !slot.isAvailable) : false;
                 const doctorOff = isOnTimeOff(dateKey, shortTime);
+                const outsideSched = isOutsideSchedule(dateKey, shortTime);
                 const booked = Math.max(prefBooked, slot ? slot.currentBookings : 0);
-                const remaining = (slotFull || doctorOff) ? 0 : Math.max(capacity - booked, 0);
+                const remaining = (slotFull || doctorOff || outsideSched) ? 0 : Math.max(capacity - booked, 0);
                 return {
                   time: shortTime,
                   booked,
                   remaining,
-                  isFull: slotFull || doctorOff || remaining <= 0,
-                  timeOff: doctorOff
+                  isFull: slotFull || doctorOff || outsideSched || remaining <= 0,
+                  timeOff: doctorOff,
+                  outsideSchedule: outsideSched
                 };
               });
 
@@ -190,16 +223,30 @@ function createAppointmentPreferenceHandlers(deps) {
             });
           };
 
+          const fetchScheduleAndProcess = (toResults) => {
+            if (scheduleSql) {
+              pool.query(scheduleSql, scheduleParams, (schErr, schResults) => {
+                if (schErr) {
+                  console.error('Error fetching doctor schedule:', schErr);
+                  return sendJSON(res, 500, { error: 'Database error' });
+                }
+                processResults(toResults, schResults);
+              });
+            } else {
+              processResults(toResults, []);
+            }
+          };
+
           if (timeOffSql) {
             pool.query(timeOffSql, timeOffParams, (toErr, toResults) => {
               if (toErr) {
                 console.error('Error fetching doctor time-off:', toErr);
                 return sendJSON(res, 500, { error: 'Database error' });
               }
-              processResults(toResults);
+              fetchScheduleAndProcess(toResults);
             });
           } else {
-            processResults([]);
+            fetchScheduleAndProcess([]);
           }
         });
       }
@@ -232,7 +279,7 @@ function createAppointmentPreferenceHandlers(deps) {
       JOIN patients p ON p.patient_id = apr.patient_id
       LEFT JOIN doctors d ON d.doctor_id = apr.assigned_doctor_id
       LEFT JOIN staff st ON st.staff_id = d.staff_id
-      WHERE apr.request_status NOT IN ('CANCELLED', 'ASSIGNED')
+      WHERE apr.request_status NOT IN ('CANCELLED', 'ASSIGNED', 'COMPLETED')
       ORDER BY apr.created_at DESC`,
       (err, results) => {
         if (err) {
@@ -358,6 +405,20 @@ function createAppointmentPreferenceHandlers(deps) {
           }
           if (!receptionistActor) {
             receptionistActor = 'RECEPTIONIST';
+          }
+
+          // Ensure the doctor is not hidden
+          const [doctorCheck] = await conn.promise().query(
+            `SELECT 1 FROM doctors d
+             JOIN staff st ON st.staff_id = d.staff_id
+             JOIN users u ON u.user_id = st.user_id
+             WHERE d.doctor_id = ? AND COALESCE(u.is_deleted, 0) = 0
+             LIMIT 1`,
+            [assignedDoctorId]
+          );
+          if (!doctorCheck?.length) {
+            conn.release();
+            return sendJSON(res, 400, { error: 'This doctor is unavailable and cannot be assigned appointments' });
           }
 
           const [prefRows] = await conn.promise().query(

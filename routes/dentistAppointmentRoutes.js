@@ -93,7 +93,7 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
   function buildGroupedReport(treatmentRows, findingRows) {
     const findingMap = new Map();
     findingRows.forEach((item) => {
-      const dateKey = String(item.visit_date || '').slice(0, 10) || 'Unknown date';
+      const dateKey = (item.visit_date instanceof Date ? item.visit_date.toISOString().slice(0, 10) : String(item.visit_date || '').slice(0, 10)) || 'Unknown date';
       const key = `${Number(item.patient_id || 0)}::${dateKey}`;
       findingMap.set(key, String(item.finding_summary || ''));
     });
@@ -101,7 +101,7 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     const grouped = new Map();
 
     treatmentRows.forEach((row) => {
-      const dateKey = String(row.visit_date || '').slice(0, 10) || 'Unknown date';
+      const dateKey = (row.visit_date instanceof Date ? row.visit_date.toISOString().slice(0, 10) : String(row.visit_date || '').slice(0, 10)) || 'Unknown date';
       const patientId = Number(row.patient_id || 0);
       const patientName = String(row.patient_name || 'Unknown patient');
       const groupKey = `${patientId}::${dateKey}`;
@@ -292,6 +292,23 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
         [completedStatusId, appointmentId, doctorId],
         (updateErr) => {
           if (updateErr) return callback(updateErr);
+
+          // Mark linked preference request as COMPLETED
+          pool.query(
+            `UPDATE appointment_preference_requests apr
+             JOIN appointments a ON a.patient_id = apr.patient_id
+               AND apr.assigned_doctor_id = a.doctor_id
+               AND apr.assigned_date = a.appointment_date
+             SET apr.request_status = 'COMPLETED', apr.updated_by = 'DENTIST_PORTAL'
+             WHERE a.appointment_id = ? AND apr.request_status = 'ASSIGNED'`,
+            [appointmentId],
+            (aprErr) => {
+              if (aprErr) {
+                console.error('Error updating preference request status (non-fatal):', aprErr);
+              }
+            }
+          );
+
           generateInvoiceForAppointment(appointmentId, (invoiceErr) => {
             if (invoiceErr) {
               console.error('Error auto-generating invoice (non-fatal):', invoiceErr);
@@ -324,7 +341,9 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
             if (!apptRows?.length) return callback(null);
 
             const { patient_id: patientId, appointment_date: apptDate } = apptRows[0];
-            const dateStr = String(apptDate || '').slice(0, 10);
+            const dateStr = apptDate instanceof Date
+              ? apptDate.toISOString().slice(0, 10)
+              : String(apptDate || '').slice(0, 10);
 
             // Get all treatment plans for this patient on this appointment date
             pool.query(

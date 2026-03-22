@@ -110,6 +110,20 @@ function DentistProfilePage() {
   const [locationStatus, setLocationStatus] = useState('');
   const [isSavingLocations, setIsSavingLocations] = useState(false);
 
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwMessage, setPwMessage] = useState('');
+
+  const DAYS_OF_WEEK = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+  const SCHEDULE_TIME_OPTIONS = CLINIC_TIME_SELECT_OPTIONS;
+  const [scheduleEntries, setScheduleEntries] = useState(
+    DAYS_OF_WEEK.map((d) => ({ day: d, startTime: '09:00', endTime: '19:00', isOff: false }))
+  );
+  const [approvedSchedule, setApprovedSchedule] = useState([]);
+  const [scheduleRequests, setScheduleRequests] = useState([]);
+  const [scheduleStatus, setScheduleStatus] = useState('');
+  const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
+  const [pwSaving, setPwSaving] = useState(false);
+
   useEffect(() => {
     if (!session?.userId) {
       navigate('/staff-login');
@@ -196,6 +210,55 @@ function DentistProfilePage() {
     };
     loadLocations().catch(() => {});
   }, [API_BASE_URL, resolvedStaffId]);
+
+  useEffect(() => {
+    if (!resolvedStaffId) return;
+    const loadScheduleData = async () => {
+      const [approved, requests] = await Promise.all([
+        fetchWithTimeout(`${API_BASE_URL}/api/staff/schedules?staffId=${resolvedStaffId}`).then((r) => r.json().catch(() => [])),
+        fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests?staffId=${resolvedStaffId}`).then((r) => r.json().catch(() => []))
+      ]);
+      setApprovedSchedule(Array.isArray(approved) ? approved : []);
+      setScheduleRequests(Array.isArray(requests) ? requests : []);
+      // Pre-fill schedule entries from approved schedule (always show all 6 days)
+      const approvedMap = {};
+      (Array.isArray(approved) ? approved : []).forEach((s) => { approvedMap[s.day_of_week] = s; });
+      setScheduleEntries(DAYS_OF_WEEK.map((d) => {
+        const s = approvedMap[d];
+        if (s) return { day: d, startTime: String(s.start_time || '').slice(0, 5), endTime: String(s.end_time || '').slice(0, 5), isOff: s.is_off === 1 || s.is_off === true };
+        return { day: d, startTime: '09:00', endTime: '19:00', isOff: false };
+      }));
+    };
+    loadScheduleData().catch(() => {});
+  }, [API_BASE_URL, resolvedStaffId]);
+
+  const handleScheduleSubmit = async (e) => {
+    e.preventDefault();
+    if (!resolvedStaffId) return;
+    setIsSubmittingSchedule(true);
+    setScheduleStatus('');
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffId: resolvedStaffId, entries: scheduleEntries.map((e) => ({ ...e, isOff: !!e.isOff })) })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to submit schedule');
+      setScheduleStatus('Schedule preference submitted for admin approval.');
+      // Reload requests
+      const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests?staffId=${resolvedStaffId}`).then((r) => r.json().catch(() => []));
+      setScheduleRequests(Array.isArray(fresh) ? fresh : []);
+    } catch (err) {
+      setScheduleStatus(err.message || 'Failed to submit schedule.');
+    } finally {
+      setIsSubmittingSchedule(false);
+    }
+  };
+
+  const updateScheduleEntry = (idx, field, value) => {
+    setScheduleEntries((prev) => prev.map((entry, i) => i === idx ? { ...entry, [field]: value } : entry));
+  };
 
   const updateField = (field, value) => {
     if (field === 'emergencyContactPhone') {
@@ -354,6 +417,35 @@ function DentistProfilePage() {
       setTimeOffStatus(err.message || 'Failed to submit time-off request.');
     } finally {
       setIsSubmittingTimeOff(false);
+    }
+  };
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    setPwMessage('');
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      setPwMessage('New passwords do not match.');
+      return;
+    }
+    if (pwForm.newPassword.length < 8 || !/[A-Z]/.test(pwForm.newPassword) || !/[a-z]/.test(pwForm.newPassword) || !/[0-9]/.test(pwForm.newPassword)) {
+      setPwMessage('Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number.');
+      return;
+    }
+    setPwSaving(true);
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/api/users/${session.userId}/password`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: pwForm.currentPassword, newPassword: pwForm.newPassword })
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || 'Failed to change password');
+      setPwMessage('Password updated successfully.');
+      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      setPwMessage(err.message || 'Failed to change password');
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -643,6 +735,95 @@ function DentistProfilePage() {
           </div>
 
           {timeOffStatus && <p className="dentist-profile-status">{timeOffStatus}</p>}
+        </section>
+
+        <section className="dentist-profile-timeoff">
+          <h2>Preferred Work Schedule</h2>
+          <p className="dentist-profile-subtitle">Set your preferred hours for each day. Submit for admin approval.</p>
+
+          {approvedSchedule.length > 0 && (
+            <div className="dentist-profile-timeoff-history">
+              <h3>Current Approved Schedule</h3>
+              <ul>
+                {approvedSchedule.map((s) => (
+                  <li key={s.schedule_id}>
+                    <strong>{s.day_of_week}</strong>: {s.is_off ? <em style={{ color: '#999' }}>OFF</em> : <>{String(s.start_time || '').slice(0, 5)} — {String(s.end_time || '').slice(0, 5)}</>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {scheduleRequests.some((r) => r.request_status === 'PENDING') && (
+            <div className="dentist-profile-timeoff-history">
+              <h3>Pending Request</h3>
+              <ul>
+                {scheduleRequests.filter((r) => r.request_status === 'PENDING').map((r) => (
+                  <li key={r.request_id}>
+                    <strong>{r.day_of_week}</strong>: {r.is_off ? <em style={{ color: '#999' }}>OFF</em> : <>{String(r.start_time || '').slice(0, 5)} — {String(r.end_time || '').slice(0, 5)}</>} <em>(Pending)</em>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <form className="dentist-profile-form" onSubmit={handleScheduleSubmit}>
+            {scheduleEntries.map((entry, idx) => (
+              <div key={entry.day} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                <span style={{ flex: '0 0 100px', fontWeight: 600 }}>{entry.day.charAt(0) + entry.day.slice(1).toLowerCase()}</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!entry.isOff} onChange={(e) => updateScheduleEntry(idx, 'isOff', e.target.checked)} />
+                  OFF
+                </label>
+                {!entry.isOff && (
+                  <>
+                    <label style={{ flex: '1 1 100px' }}>
+                      Start
+                      <select value={entry.startTime} onChange={(e) => updateScheduleEntry(idx, 'startTime', e.target.value)}>
+                        {SCHEDULE_TIME_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                    </label>
+                    <label style={{ flex: '1 1 100px' }}>
+                      End
+                      <select value={entry.endTime} onChange={(e) => updateScheduleEntry(idx, 'endTime', e.target.value)}>
+                        {SCHEDULE_TIME_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                    </label>
+                  </>
+                )}
+              </div>
+            ))}
+            <div className="dentist-profile-actions">
+              <button type="submit" className="dentist-profile-primary" disabled={isSubmittingSchedule}>
+                {isSubmittingSchedule ? 'Submitting...' : 'Submit Schedule Preference'}
+              </button>
+            </div>
+          </form>
+          {scheduleStatus && <p className="dentist-profile-status">{scheduleStatus}</p>}
+        </section>
+
+        <section className="dentist-profile-timeoff">
+          <h2>Change Password</h2>
+          {pwMessage && <p className="dentist-profile-status">{pwMessage}</p>}
+          <form className="dentist-profile-form" onSubmit={handlePasswordChange}>
+            <label>
+              Current Password
+              <input type="password" value={pwForm.currentPassword} onChange={(e) => setPwForm((p) => ({ ...p, currentPassword: e.target.value }))} required />
+            </label>
+            <label>
+              New Password
+              <input type="password" value={pwForm.newPassword} onChange={(e) => setPwForm((p) => ({ ...p, newPassword: e.target.value }))} minLength={8} pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}" title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number" required />
+            </label>
+            <label>
+              Confirm New Password
+              <input type="password" value={pwForm.confirmPassword} onChange={(e) => setPwForm((p) => ({ ...p, confirmPassword: e.target.value }))} minLength={8} required />
+            </label>
+            <div className="dentist-profile-actions">
+              <button type="submit" className="dentist-profile-primary" disabled={pwSaving}>
+                {pwSaving ? 'Updating...' : 'Change Password'}
+              </button>
+            </div>
+          </form>
         </section>
       </section>
     </main>

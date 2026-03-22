@@ -27,7 +27,8 @@ function createPatientPortalRoutes(handlers) {
     getInsuranceCompanies,
     updatePatientProfile,
     addPatientInsurance,
-    getLocations
+    getLocations,
+    changeUserPassword
   } = handlers;
 
   function handlePatientPortalRoutes(req, res, method, parts, parseJSON) {
@@ -386,6 +387,48 @@ function createPatientPortalRoutes(handlers) {
           return sendJSON(res, 400, { error: 'Invalid JSON' });
         }
         revertAppointmentPreferenceRequest(req, preferenceRequestId, data, res);
+      });
+      return true;
+    }
+
+    // PUT /api/appointments/preference-requests/:id/cancel — receptionist cancels a request
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'appointments' && parts[2] === 'preference-requests' && parts[3] && parts[4] === 'cancel') {
+      const preferenceRequestId = Number(parts[3]);
+      if (!Number.isInteger(preferenceRequestId) || preferenceRequestId <= 0) {
+        sendJSON(res, 400, { error: 'Invalid preference request id' });
+        return true;
+      }
+      pool.query(
+        `UPDATE appointment_preference_requests
+         SET request_status = 'CANCELLED', updated_by = 'RECEPTIONIST_PORTAL'
+         WHERE preference_request_id = ? AND request_status IN ('PREFERRED_PENDING', 'ASSIGNED')`,
+        [preferenceRequestId],
+        (err, result) => {
+          if (err) {
+            console.error('Error cancelling preference request:', err);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          if (!result.affectedRows) {
+            return sendJSON(res, 404, { error: 'Request not found or already cancelled' });
+          }
+          sendJSON(res, 200, { message: 'Appointment request cancelled' });
+        }
+      );
+      return true;
+    }
+
+    // PUT /api/users/:userId/password — any user changes their own password
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'users' && parts[2] && parts[3] === 'password') {
+      const userId = parseInt(parts[2], 10);
+      if (!Number.isInteger(userId) || userId <= 0) {
+        sendJSON(res, 400, { error: 'Invalid user id' });
+        return true;
+      }
+      parseJSON(req, (err, data) => {
+        if (err) {
+          return sendJSON(res, 400, { error: 'Invalid JSON' });
+        }
+        changeUserPassword(req, userId, data, res);
       });
       return true;
     }

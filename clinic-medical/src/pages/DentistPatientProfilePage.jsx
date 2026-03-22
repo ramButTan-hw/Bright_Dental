@@ -232,62 +232,67 @@ function DentistPatientProfilePage() {
         }))
         .filter((entry) => entry.toothNumber || entry.conditionType);
 
-      if (!rowsWithValues.length) {
-        throw new Error('Please add at least one finding condition row.');
-      }
+      const hasFindings = rowsWithValues.length > 0;
 
-      const incompleteRow = rowsWithValues.find((entry) => !entry.toothNumber || !entry.conditionType);
-      if (incompleteRow) {
-        throw new Error('Each finding condition row must include both tooth number and condition.');
-      }
-
-      const duplicateTooth = (() => {
-        const seen = new Set();
-        for (const row of rowsWithValues) {
-          if (seen.has(row.toothNumber)) {
-            return row.toothNumber;
-          }
-          seen.add(row.toothNumber);
+      if (hasFindings) {
+        const incompleteRow = rowsWithValues.find((entry) => !entry.toothNumber || !entry.conditionType);
+        if (incompleteRow) {
+          throw new Error('Each finding condition row must include both tooth number and condition.');
         }
-        return '';
-      })();
-      if (duplicateTooth) {
-        throw new Error(`Tooth ${duplicateTooth} appears more than once. Use one row per tooth.`);
-      }
 
-      const toothNumbers = rowsWithValues.map((entry) => entry.toothNumber);
-      const normalizedConditionMap = rowsWithValues.reduce((acc, row) => {
-        acc[row.toothNumber] = row.conditionType;
-        return acc;
-      }, {});
+        const duplicateTooth = (() => {
+          const seen = new Set();
+          for (const row of rowsWithValues) {
+            if (seen.has(row.toothNumber)) {
+              return row.toothNumber;
+            }
+            seen.add(row.toothNumber);
+          }
+          return '';
+        })();
+        if (duplicateTooth) {
+          throw new Error(`Tooth ${duplicateTooth} appears more than once. Use one row per tooth.`);
+        }
+      }
 
       if (!String(treatmentForm.procedureCode || '').trim()) {
         throw new Error('Please select an ADA procedure code for the treatment entry.');
       }
 
-      const findingRequestBody = {
-        ...findingForm,
-        toothNumbers,
-        conditionTypesByTooth: normalizedConditionMap,
-        toothNumber: toothNumbers.join(', '),
-        conditionType: ''
-      };
+      let savedCount = 0;
+
+      if (hasFindings) {
+        const toothNumbers = rowsWithValues.map((entry) => entry.toothNumber);
+        const normalizedConditionMap = rowsWithValues.reduce((acc, row) => {
+          acc[row.toothNumber] = row.conditionType;
+          return acc;
+        }, {});
+
+        const findingRequestBody = {
+          ...findingForm,
+          toothNumbers,
+          conditionTypesByTooth: normalizedConditionMap,
+          toothNumber: toothNumbers.join(', '),
+          conditionType: ''
+        };
+
+        const findingResponse = await fetch(`${API_BASE_URL}/api/dentist/appointments/${appointmentId}/dental-findings?doctorId=${doctorId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(findingRequestBody)
+        });
+
+        const findingPayload = await findingResponse.json().catch(() => ({}));
+        if (!findingResponse.ok) {
+          throw new Error(findingPayload.error || 'Failed to save dental finding.');
+        }
+        savedCount = Number(findingPayload?.savedCount || toothNumbers.length || 1);
+      }
 
       const treatmentRequestBody = {
         ...treatmentForm,
         estimatedCost: treatmentForm.estimatedCost ? Number(treatmentForm.estimatedCost) : null
       };
-
-      const findingResponse = await fetch(`${API_BASE_URL}/api/dentist/appointments/${appointmentId}/dental-findings?doctorId=${doctorId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(findingRequestBody)
-      });
-
-      const findingPayload = await findingResponse.json().catch(() => ({}));
-      if (!findingResponse.ok) {
-        throw new Error(findingPayload.error || 'Failed to save dental finding.');
-      }
 
       const treatmentResponse = await fetch(`${API_BASE_URL}/api/dentist/appointments/${appointmentId}/treatments?doctorId=${doctorId}`, {
         method: 'POST',
@@ -300,7 +305,6 @@ function DentistPatientProfilePage() {
         throw new Error(treatmentPayload.error || 'Failed to save treatment entry.');
       }
 
-      const savedCount = Number(findingPayload?.savedCount || toothNumbers.length || 1);
       const savedCostLabel = formatCurrency(treatmentPayload?.estimatedCost);
       const pricingSourceLabel = treatmentPayload?.pricingSource === 'ADA_DEFAULT_FEE'
         ? 'using ADA default fee'
@@ -308,7 +312,8 @@ function DentistPatientProfilePage() {
           ? 'using manual fee'
           : 'without an estimated fee';
 
-      setMessage(`Saved ${savedCount} finding${savedCount > 1 ? 's' : ''} and 1 treatment ${pricingSourceLabel}${savedCostLabel ? ` (${savedCostLabel})` : ''}. Appointment moved to Completed.`);
+      const findingMsg = savedCount > 0 ? `Saved ${savedCount} finding${savedCount > 1 ? 's' : ''} and ` : 'Saved ';
+      setMessage(`${findingMsg}1 treatment ${pricingSourceLabel}${savedCostLabel ? ` (${savedCostLabel})` : ''}. Appointment moved to Completed.`);
       setFindingForm({ surface: '', notes: '', findingEntries: [createEmptyFindingEntry()] });
       setTreatmentForm({
         procedureCode: '',

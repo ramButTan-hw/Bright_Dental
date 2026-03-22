@@ -11,6 +11,9 @@ function PatientSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwMessage, setPwMessage] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
 
   const [form, setForm] = useState({
     firstName: '', lastName: '', phone: '', email: '',
@@ -73,6 +76,35 @@ function PatientSettingsPage() {
       setMessage(err.message || 'Failed to update profile');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    setPwMessage('');
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      setPwMessage('New passwords do not match.');
+      return;
+    }
+    if (pwForm.newPassword.length < 8 || !/[A-Z]/.test(pwForm.newPassword) || !/[a-z]/.test(pwForm.newPassword) || !/[0-9]/.test(pwForm.newPassword)) {
+      setPwMessage('Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number.');
+      return;
+    }
+    setPwSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/${session.userId}/password`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: pwForm.currentPassword, newPassword: pwForm.newPassword })
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || 'Failed to change password');
+      setPwMessage('Password updated successfully.');
+      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      setPwMessage(err.message || 'Failed to change password');
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -140,6 +172,30 @@ function PatientSettingsPage() {
           <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
             <button type="submit" className="portal-primary-btn" disabled={saving} style={{ width: 'fit-content' }}>
               {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="portal-card" style={{ marginTop: '1.5rem' }}>
+        <h2>Change Password</h2>
+        {pwMessage && <p className={pwMessage.includes('successfully') ? 'portal-success' : 'portal-error'}>{pwMessage}</p>}
+        <form onSubmit={handlePasswordChange} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem' }}>
+          <div className="portal-field" style={{ gridColumn: '1 / -1' }}>
+            <label>Current Password</label>
+            <input type="password" value={pwForm.currentPassword} onChange={(e) => setPwForm((p) => ({ ...p, currentPassword: e.target.value }))} required />
+          </div>
+          <div className="portal-field">
+            <label>New Password</label>
+            <input type="password" value={pwForm.newPassword} onChange={(e) => setPwForm((p) => ({ ...p, newPassword: e.target.value }))} minLength={8} pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}" title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number" required />
+          </div>
+          <div className="portal-field">
+            <label>Confirm New Password</label>
+            <input type="password" value={pwForm.confirmPassword} onChange={(e) => setPwForm((p) => ({ ...p, confirmPassword: e.target.value }))} minLength={8} required />
+          </div>
+          <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
+            <button type="submit" className="portal-primary-btn" disabled={pwSaving} style={{ width: 'fit-content' }}>
+              {pwSaving ? 'Updating...' : 'Change Password'}
             </button>
           </div>
         </form>
