@@ -1421,7 +1421,10 @@ function createAdminHandlers(deps) {
     getStaffSchedules,
     getAllStaffSchedules,
     getStaffScheduleGaps,
-    adminUpdateStaffSchedule
+    adminUpdateStaffSchedule,
+    processRefund,
+    getRefundHistory,
+    getInvoiceLookup
   };
 
   // ── Staff Schedule Request Handlers ──
@@ -1706,6 +1709,117 @@ function createAdminHandlers(deps) {
         }
       );
     });
+  }
+
+  // ── Refund Handlers ──
+
+  function processRefund(req, data, res) {
+    const invoiceId = Number(data.invoiceId || 0);
+    const refundAmount = Number(data.refundAmount || 0);
+    const reason = String(data.reason || 'Treatment cost adjusted').trim();
+
+    if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
+      return sendJSON(res, 400, { error: 'Valid invoiceId is required' });
+    }
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+      return sendJSON(res, 400, { error: 'Refund amount must be greater than 0' });
+    }
+
+    // Verify invoice exists and check paid amounts
+    pool.query(
+      `SELECT i.invoice_id, i.amount, i.patient_amount, i.insurance_covered_amount,
+              COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS total_paid,
+              COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS total_refunded
+       FROM invoices i WHERE i.invoice_id = ?`,
+      [invoiceId],
+      (err, rows) => {
+        if (err) { console.error(err); return sendJSON(res, 500, { error: 'Database error' }); }
+        if (!rows?.length) return sendJSON(res, 404, { error: 'Invoice not found' });
+
+        const inv = rows[0];
+        const netPaid = Number(inv.total_paid) - Number(inv.total_refunded);
+        if (refundAmount > netPaid) {
+          return sendJSON(res, 400, { error: `Refund amount ($${refundAmount.toFixed(2)}) exceeds net paid ($${netPaid.toFixed(2)})` });
+        }
+
+        pool.query(
+          `INSERT INTO refunds (invoice_id, refund_amount, reason, refunded_by) VALUES (?, ?, ?, 'ADMIN')`,
+          [invoiceId, refundAmount, reason],
+          (refErr, refResult) => {
+            if (refErr) { console.error(refErr); return sendJSON(res, 500, { error: 'Failed to process refund' }); }
+
+            // Update invoice payment_status based on new net paid
+            const newNetPaid = netPaid - refundAmount;
+            const patientAmount = Number(inv.patient_amount);
+            const newStatus = patientAmount <= 0 ? 'Paid'
+              : newNetPaid >= patientAmount ? 'Paid'
+              : newNetPaid > 0 ? 'Partial' : 'Unpaid';
+
+            pool.query(
+              `UPDATE invoices SET payment_status = ?, updated_by = 'ADMIN_REFUND' WHERE invoice_id = ?`,
+              [newStatus, invoiceId],
+              (updErr) => {
+                if (updErr) console.error('Error updating invoice status after refund:', updErr);
+                sendJSON(res, 201, {
+                  message: 'Refund processed successfully',
+                  refundId: refResult.insertId,
+                  refundAmount,
+                  newPaymentStatus: newStatus
+                });
+              }
+            );
+          }
+        );
+      }
+    );
+  }
+
+  function getInvoiceLookup(req, res, invoiceId) {
+    pool.query(
+      `SELECT i.invoice_id, i.amount, i.insurance_covered_amount, i.patient_amount, i.payment_status,
+              CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+              a.appointment_date,
+              COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS total_paid,
+              COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS total_refunded
+       FROM invoices i
+       JOIN appointments a ON a.appointment_id = i.appointment_id
+       JOIN patients p ON p.patient_id = a.patient_id
+       WHERE i.invoice_id = ?`,
+      [invoiceId],
+      (err, rows) => {
+        if (err) { console.error(err); return sendJSON(res, 500, { error: 'Database error' }); }
+        if (!rows?.length) return sendJSON(res, 404, { error: 'Invoice not found' });
+        const inv = rows[0];
+        const netPaid = Number(inv.total_paid) - Number(inv.total_refunded);
+        const patientAmount = Number(inv.patient_amount);
+        const overpayment = netPaid > patientAmount ? Math.round((netPaid - patientAmount) * 100) / 100 : 0;
+        sendJSON(res, 200, {
+          ...inv,
+          net_paid: netPaid,
+          overpayment,
+          max_refundable: Math.round(netPaid * 100) / 100
+        });
+      }
+    );
+  }
+
+  function getRefundHistory(req, res) {
+    pool.query(
+      `SELECT r.refund_id, r.invoice_id, r.refund_amount, r.reason, r.refunded_by, r.created_at,
+              CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+              p.p_phone,
+              i.amount AS invoice_total, i.patient_amount,
+              a.appointment_date
+       FROM refunds r
+       JOIN invoices i ON i.invoice_id = r.invoice_id
+       JOIN appointments a ON a.appointment_id = i.appointment_id
+       JOIN patients p ON p.patient_id = a.patient_id
+       ORDER BY r.created_at DESC`,
+      (err, rows) => {
+        if (err) { console.error('Error fetching refund history:', err); return sendJSON(res, 500, { error: 'Database error' }); }
+        sendJSON(res, 200, rows || []);
+      }
+    );
   }
 }
 

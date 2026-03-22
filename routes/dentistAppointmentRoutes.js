@@ -1217,6 +1217,132 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
       return true;
     }
 
+    // PUT /api/dentist/treatments/:planId — edit a completed treatment and recalculate invoice
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'treatments' && parts[3]) {
+      const planId = Number(parts[3]);
+      if (!Number.isInteger(planId) || planId <= 0) {
+        sendJSON(res, 400, { error: 'Valid planId is required' });
+        return true;
+      }
+      parseJSON(req, (err, data) => {
+        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        const doctorId = Number(data.doctorId || 0);
+        if (!Number.isInteger(doctorId) || doctorId <= 0) {
+          return sendJSON(res, 400, { error: 'Valid doctorId is required' });
+        }
+        const updates = {};
+        if (data.procedureCode !== undefined) updates.procedure_code = String(data.procedureCode).trim();
+        if (data.toothNumber !== undefined) updates.tooth_number = String(data.toothNumber).trim();
+        if (data.surface !== undefined) updates.surface = String(data.surface).trim() || null;
+        if (data.estimatedCost !== undefined) updates.estimated_cost = Number(data.estimatedCost) || 0;
+        if (data.priority !== undefined) updates.priority = String(data.priority).trim() || null;
+        if (data.notes !== undefined) updates.notes = String(data.notes).trim() || null;
+
+        if (Object.keys(updates).length === 0) {
+          return sendJSON(res, 400, { error: 'No fields to update' });
+        }
+        updates.updated_by = 'DENTIST_PORTAL';
+
+        // Get old treatment info before updating
+        pool.query(
+          'SELECT tp.patient_id, tp.start_date, tp.estimated_cost FROM treatment_plans tp WHERE tp.plan_id = ? AND tp.doctor_id = ?',
+          [planId, doctorId],
+          (lookupErr, lookupRows) => {
+            if (lookupErr) { console.error(lookupErr); return sendJSON(res, 500, { error: 'Database error' }); }
+            if (!lookupRows?.length) return sendJSON(res, 404, { error: 'Treatment entry not found' });
+
+            const oldCost = Number(lookupRows[0].estimated_cost || 0);
+            const patientId = lookupRows[0].patient_id;
+            const startDate = lookupRows[0].start_date instanceof Date
+              ? lookupRows[0].start_date.toISOString().slice(0, 10)
+              : String(lookupRows[0].start_date || '').slice(0, 10);
+
+            const setClauses = Object.keys(updates).map((col) => `${col} = ?`).join(', ');
+            const values = [...Object.values(updates), planId, doctorId];
+
+            pool.query(
+              `UPDATE treatment_plans SET ${setClauses} WHERE plan_id = ? AND doctor_id = ?`,
+              values,
+              (updateErr, result) => {
+                if (updateErr) { console.error('Error updating treatment plan:', updateErr); return sendJSON(res, 500, { error: 'Database error' }); }
+                if (!result.affectedRows) return sendJSON(res, 404, { error: 'Treatment entry not found' });
+
+                const newCost = updates.estimated_cost !== undefined ? Number(updates.estimated_cost) : oldCost;
+                const costDiff = newCost - oldCost;
+
+                // If cost didn't change, just return
+                if (Math.abs(costDiff) < 0.01) {
+                  return sendJSON(res, 200, { message: 'Treatment updated successfully', costChanged: false });
+                }
+
+                // Recalculate invoice: find invoice for this appointment
+                pool.query(
+                  `SELECT i.invoice_id, i.amount, i.insurance_covered_amount, i.patient_amount, i.appointment_id,
+                          COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS total_paid,
+                          COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS total_refunded
+                   FROM invoices i
+                   JOIN appointments a ON a.appointment_id = i.appointment_id
+                   WHERE a.patient_id = ? AND a.appointment_date = ?
+                   LIMIT 1`,
+                  [patientId, startDate],
+                  (invErr, invRows) => {
+                    if (invErr || !invRows?.length) {
+                      // No invoice found, still report success
+                      return sendJSON(res, 200, { message: 'Treatment updated (no invoice to adjust)', costChanged: true, costDiff });
+                    }
+
+                    const inv = invRows[0];
+                    const oldTotal = Number(inv.amount);
+                    const newTotal = oldTotal + costDiff;
+                    const oldInsurance = Number(inv.insurance_covered_amount);
+                    // Scale insurance proportionally
+                    const insuranceRatio = oldTotal > 0 ? oldInsurance / oldTotal : 0;
+                    const newInsurance = Math.round(newTotal * insuranceRatio * 100) / 100;
+                    const newPatientAmount = Math.round((newTotal - newInsurance) * 100) / 100;
+                    const totalPaid = Number(inv.total_paid);
+                    const totalRefunded = Number(inv.total_refunded);
+                    const netPaid = totalPaid - totalRefunded;
+
+                    // Determine if refund is needed (patient paid more than new amount)
+                    const refundNeeded = netPaid > newPatientAmount && newPatientAmount >= 0;
+                    const refundAmount = refundNeeded ? Math.round((netPaid - newPatientAmount) * 100) / 100 : 0;
+
+                    // Update invoice amounts
+                    const newPaymentStatus = newPatientAmount <= 0 ? 'Paid'
+                      : netPaid >= newPatientAmount ? 'Paid'
+                      : netPaid > 0 ? 'Partial' : 'Unpaid';
+
+                    pool.query(
+                      `UPDATE invoices SET amount = ?, insurance_covered_amount = ?, patient_amount = ?, payment_status = ?, updated_by = 'TREATMENT_EDIT'
+                       WHERE invoice_id = ?`,
+                      [Math.max(newTotal, 0), Math.max(newInsurance, 0), Math.max(newPatientAmount, 0), newPaymentStatus, inv.invoice_id],
+                      (updInvErr) => {
+                        if (updInvErr) console.error('Error updating invoice:', updInvErr);
+
+                        return sendJSON(res, 200, {
+                          message: 'Treatment updated and invoice recalculated',
+                          costChanged: true,
+                          costDiff,
+                          invoiceId: inv.invoice_id,
+                          oldTotal,
+                          newTotal: Math.max(newTotal, 0),
+                          newPatientAmount: Math.max(newPatientAmount, 0),
+                          totalPaid: netPaid,
+                          refundNeeded,
+                          refundAmount
+                        });
+                      }
+                    );
+                  }
+                );
+              }
+            );
+          }
+        );
+      });
+      return true;
+    }
+
     return false;
   }
 

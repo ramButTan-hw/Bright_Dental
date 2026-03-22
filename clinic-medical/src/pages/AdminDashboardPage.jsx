@@ -144,6 +144,10 @@ function AdminDashboardPage() {
   const [resetPasswordStaffId, setResetPasswordStaffId] = useState(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
   const [cancelledRequests, setCancelledRequests] = useState([]);
+  const [refundHistory, setRefundHistory] = useState([]);
+  const [refundForm, setRefundForm] = useState({ invoiceId: '', amount: '', reason: '' });
+  const [invoiceLookup, setInvoiceLookup] = useState(null);
+  const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
 
   const sortFinancial = useSortState();
   const sortScheduling = useSortState();
@@ -151,6 +155,7 @@ function AdminDashboardPage() {
   const sortDoctorSchedule = useSortState();
   const sortTimeOff = useSortState();
   const sortGenReport = useSortState();
+  const sortRefund = useSortState();
 
   // Generate Report state
   const [genReportDateFrom, setGenReportDateFrom] = useState(() => {
@@ -186,7 +191,7 @@ function AdminDashboardPage() {
     setError('');
 
     try {
-      const [summaryData, queueData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData] = await Promise.all([
+      const [summaryData, queueData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData, refundData] = await Promise.all([
         fetch(`${API_BASE_URL}/api/admin/dashboard/summary?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/appointments/queue?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson),
@@ -197,7 +202,8 @@ function AdminDashboardPage() {
         fetch(`${API_BASE_URL}/api/admin/appointment-requests/cancelled`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/schedule-requests`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff-schedules`).then(safeJson),
-        fetch(`${API_BASE_URL}/api/admin/staff-schedules/gaps`).then(safeJson)
+        fetch(`${API_BASE_URL}/api/admin/staff-schedules/gaps`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/refunds`).then(safeJson)
       ]);
 
       setSummary(summaryData);
@@ -211,10 +217,56 @@ function AdminDashboardPage() {
       setScheduleRequests(Array.isArray(schedReqData) ? schedReqData : []);
       setAllStaffSchedules(Array.isArray(staffSchedData) ? staffSchedData : []);
       setScheduleGaps(Array.isArray(gapsData) ? gapsData : []);
+      setRefundHistory(Array.isArray(refundData) ? refundData : []);
     } catch (err) {
       setError(err.message || 'Unable to load admin data.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const lookupInvoice = async (id) => {
+    const invoiceId = Number(id);
+    if (!Number.isInteger(invoiceId) || invoiceId <= 0) { setInvoiceLookup(null); return; }
+    setInvoiceLookupLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/invoices/${invoiceId}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { setInvoiceLookup(null); return; }
+      setInvoiceLookup(data);
+    } catch { setInvoiceLookup(null); }
+    finally { setInvoiceLookupLoading(false); }
+  };
+
+  const processRefund = async () => {
+    const invoiceId = Number(refundForm.invoiceId);
+    const amount = Number(refundForm.amount);
+    if (!invoiceId || !amount || amount <= 0) {
+      setError('Valid invoice ID and refund amount are required.');
+      return;
+    }
+    setError('');
+    setActionMessage('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/refunds`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceId, refundAmount: amount, reason: refundForm.reason || 'Treatment cost adjusted' })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to process refund');
+      setActionMessage(`Refund of $${amount.toFixed(2)} processed successfully.`);
+      setRefundForm({ invoiceId: '', amount: '', reason: '' });
+      setInvoiceLookup(null);
+      // Reload refund history and financial data
+      const [refundData, reportData] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/admin/refunds`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson)
+      ]);
+      setRefundHistory(Array.isArray(refundData) ? refundData : []);
+      setPatientReport(reportData);
+    } catch (err) {
+      setError(err.message || 'Failed to process refund.');
     }
   };
 
@@ -866,6 +918,87 @@ function AdminDashboardPage() {
                       </div>
                     </article>
 
+                  </section>
+
+                  <section className="admin-panel">
+                    <h2>Refund Management</h2>
+                    <p className="muted">Process refunds for overpaid invoices and view refund history. Total refunds: {refundHistory.length} | Total refunded: {formatMoney(refundHistory.reduce((s, r) => s + Number(r.refund_amount || 0), 0))}</p>
+
+                    <div style={{ margin: '0.75rem 0', padding: '0.75rem', border: '1px solid #d7e7e5', borderRadius: '10px', background: '#f9fcfb' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Invoice ID
+                          <input type="number" placeholder="e.g. 5" value={refundForm.invoiceId} onChange={(e) => { setRefundForm((p) => ({ ...p, invoiceId: e.target.value })); lookupInvoice(e.target.value); }} style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
+                        </label>
+                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Refund Amount
+                          <input type="number" step="0.01" placeholder="0.00" value={refundForm.amount} onChange={(e) => setRefundForm((p) => ({ ...p, amount: e.target.value }))} style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
+                        </label>
+                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Reason
+                          <input type="text" placeholder="Treatment cost adjusted" value={refundForm.reason} onChange={(e) => setRefundForm((p) => ({ ...p, reason: e.target.value }))} style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
+                        </label>
+                        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                          <button type="button" onClick={processRefund} style={{ padding: '0.45rem 1rem', borderRadius: '6px', border: 'none', background: '#9d2e2e', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem', width: '100%' }}>
+                            Process Refund
+                          </button>
+                        </div>
+                      </div>
+                      {invoiceLookupLoading && <p className="muted" style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>Looking up invoice...</p>}
+                      {invoiceLookup && Number(refundForm.invoiceId) === invoiceLookup.invoice_id && (
+                        <div style={{ marginTop: '0.6rem', padding: '0.6rem', background: '#eef5f4', borderRadius: '8px', fontSize: '0.83rem' }}>
+                          <p style={{ margin: 0 }}><strong>{invoiceLookup.patient_name}</strong> — Invoice #{invoiceLookup.invoice_id} | Appt: {formatDate(invoiceLookup.appointment_date)}</p>
+                          <p style={{ margin: '0.2rem 0' }}>
+                            Charged: {formatMoney(invoiceLookup.amount)} | Patient responsibility: {formatMoney(invoiceLookup.patient_amount)} | Paid: {formatMoney(invoiceLookup.net_paid)} | Outstanding: {formatMoney(Math.max(Number(invoiceLookup.patient_amount) - invoiceLookup.net_paid, 0))} | Status: {invoiceLookup.payment_status}
+                          </p>
+                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+                            {invoiceLookup.overpayment > 0 && (
+                              <button type="button" onClick={() => setRefundForm((p) => ({ ...p, amount: String(invoiceLookup.overpayment), reason: p.reason || 'Overpayment — treatment cost reduced' }))}
+                                style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', border: '1px solid #2a7d6e', background: '#d4edda', color: '#155724', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
+                                Difference: {formatMoney(invoiceLookup.overpayment)}
+                              </button>
+                            )}
+                            {invoiceLookup.max_refundable > 0 && (
+                              <button type="button" onClick={() => setRefundForm((p) => ({ ...p, amount: String(invoiceLookup.max_refundable), reason: p.reason || 'Full refund' }))}
+                                style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', border: '1px solid #9d2e2e', background: '#f8d7da', color: '#721c24', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
+                                Full Refund: {formatMoney(invoiceLookup.max_refundable)}
+                              </button>
+                            )}
+                            {invoiceLookup.max_refundable <= 0 && invoiceLookup.overpayment <= 0 && (
+                              <span style={{ color: '#6c757d', fontSize: '0.8rem' }}>No payments to refund.</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {refundHistory.length > 0 && (
+                      <div className="table-wrap" style={{ maxHeight: '360px', overflowY: 'auto', marginTop: '0.5rem' }}>
+                        <table>
+                          <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                            <tr>
+                              <SortTh sort={sortRefund} column="refund_id">ID</SortTh>
+                              <SortTh sort={sortRefund} column="patient_name">Patient</SortTh>
+                              <SortTh sort={sortRefund} column="invoice_id">Invoice</SortTh>
+                              <SortTh sort={sortRefund} column="refund_amount">Amount</SortTh>
+                              <SortTh sort={sortRefund} column="reason">Reason</SortTh>
+                              <SortTh sort={sortRefund} column="appointment_date">Appt Date</SortTh>
+                              <SortTh sort={sortRefund} column="created_at">Refunded On</SortTh>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortRefund.sorted(refundHistory).map((r) => (
+                              <tr key={r.refund_id}>
+                                <td>{r.refund_id}</td>
+                                <td>{r.patient_name}</td>
+                                <td>#{r.invoice_id}</td>
+                                <td style={{ fontWeight: 700, color: '#9d2e2e' }}>-{formatMoney(r.refund_amount)}</td>
+                                <td>{r.reason || 'N/A'}</td>
+                                <td>{formatDate(r.appointment_date)}</td>
+                                <td>{new Date(r.created_at).toLocaleDateString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </section>
 
                   <section className="admin-panel">

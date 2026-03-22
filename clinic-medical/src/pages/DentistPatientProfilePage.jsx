@@ -154,6 +154,8 @@ function DentistPatientProfilePage() {
   const [message, setMessage] = useState('');
   const [detail, setDetail] = useState(null);
   const [procedureCodeOptions, setProcedureCodeOptions] = useState([]);
+  const [editingTreatment, setEditingTreatment] = useState(null);
+  const [editConfirmPending, setEditConfirmPending] = useState(false);
 
   const [findingForm, setFindingForm] = useState({
     surface: '',
@@ -452,6 +454,62 @@ function DentistPatientProfilePage() {
     }
   };
 
+  const openEditTreatment = (entry) => {
+    const planId = String(entry.uniqueId).replace('treatment-', '');
+    const treatment = completedTreatments.find((t) => String(t.plan_id) === planId);
+    if (!treatment) return;
+    setEditingTreatment({
+      planId: Number(planId),
+      procedureCode: treatment.procedure_code || '',
+      toothNumber: treatment.tooth_number || '',
+      surface: treatment.surface || '',
+      estimatedCost: treatment.default_fees != null ? String(treatment.default_fees) : String(treatment.estimated_cost || ''),
+      priority: treatment.priority || '',
+      notes: treatment.notes || ''
+    });
+    setEditConfirmPending(false);
+  };
+
+  const saveEditTreatment = async () => {
+    if (!editingTreatment) return;
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/dentist/treatments/${editingTreatment.planId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doctorId,
+          procedureCode: editingTreatment.procedureCode,
+          toothNumber: editingTreatment.toothNumber,
+          surface: editingTreatment.surface,
+          estimatedCost: editingTreatment.estimatedCost,
+          priority: editingTreatment.priority,
+          notes: editingTreatment.notes
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to update treatment.');
+      let msg = 'Treatment updated successfully.';
+      if (payload.costChanged) {
+        const diff = Number(payload.costDiff || 0);
+        msg += ` Invoice ${diff < 0 ? 'decreased' : 'increased'} by $${Math.abs(diff).toFixed(2)}.`;
+        if (payload.refundNeeded) {
+          msg += ` Refund of $${Number(payload.refundAmount).toFixed(2)} available — admin can process it from the Refund History panel.`;
+        }
+      }
+      setMessage(msg);
+      setEditingTreatment(null);
+      setEditConfirmPending(false);
+      await loadDetail();
+    } catch (err) {
+      setError(err.message || 'Failed to update treatment.');
+    }
+  };
+
+  const hasActiveAppointment = detail?.appointment?.status_name &&
+    ['CHECKED_IN', 'CONFIRMED', 'SCHEDULED', 'RESCHEDULED'].includes(detail.appointment.status_name.toUpperCase());
+
   return (
     <main className="dentist-page">
       <section className="dentist-hero">
@@ -488,6 +546,11 @@ function DentistPatientProfilePage() {
 
       <section className="dentist-panel" style={{ marginTop: '1rem' }}>
         <h2>Current Visit: Add Finding and Treatment</h2>
+        {!hasActiveAppointment ? (
+          <p className="dentist-empty" style={{ color: '#9d2e2e' }}>
+            No active appointment — findings and treatments cannot be added. The patient must be checked in first.
+          </p>
+        ) : (
         <form onSubmit={saveVisitEntries}>
           <h3 className="dentist-subtle" style={{ marginTop: '0.2rem' }}>Dental Finding</h3>
           <div style={{ display: 'grid', gap: '0.55rem', marginBottom: '0.55rem' }}>
@@ -609,6 +672,7 @@ function DentistPatientProfilePage() {
           <textarea className="dentist-note-box" placeholder="Treatment notes" value={treatmentForm.notes} onChange={(e) => setTreatmentForm((p) => ({ ...p, notes: e.target.value }))} />
           <button type="submit" className="dentist-save-btn">Save Finding + Treatment</button>
         </form>
+        )}
       </section>
 
       <section className="dentist-panel" style={{ marginTop: '1rem' }}>
@@ -632,13 +696,23 @@ function DentistPatientProfilePage() {
                         <p>{entry.description}</p>
                       </div>
                       {entry.type === 'TREATMENT' && entry.uniqueId.startsWith('treatment-') && (
-                        <button
-                          type="button"
-                          className="dentist-history-delete-btn"
-                          onClick={() => deleteTreatmentEntry(String(entry.uniqueId).replace('treatment-', ''))}
-                        >
-                          Delete
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexDirection: 'column' }}>
+                          <button
+                            type="button"
+                            className="dentist-save-btn"
+                            style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
+                            onClick={() => openEditTreatment(entry)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="dentist-history-delete-btn"
+                            onClick={() => deleteTreatmentEntry(String(entry.uniqueId).replace('treatment-', ''))}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       )}
                       {entry.type === 'FINDING' && entry.uniqueId.startsWith('finding-') && (
                         <button
@@ -669,6 +743,73 @@ function DentistPatientProfilePage() {
           />
         </div>
       </section>
+
+      {/* ── Edit Treatment Modal ── */}
+      {editingTreatment && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: '#fff', borderRadius: '14px', padding: '1.5rem', width: '95%', maxWidth: '480px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            {!editConfirmPending ? (
+              <>
+                <h2 style={{ marginTop: 0, color: '#2a4f4d' }}>Edit Treatment</h2>
+                <div style={{ display: 'grid', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Procedure Code
+                    <select
+                      className="dentist-search-input"
+                      value={editingTreatment.procedureCode}
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        const selected = procedureCodeOptions.find((item) => String(item.procedure_code) === code);
+                        setEditingTreatment((prev) => ({ ...prev, procedureCode: code, estimatedCost: normalizeFeeValue(selected?.default_fees) || prev.estimatedCost }));
+                      }}
+                    >
+                      <option value="">Select ADA procedure code</option>
+                      {procedureCodeOptions.map((item) => (
+                        <option key={item.procedure_code} value={item.procedure_code}>
+                          {item.procedure_code} - {item.description || 'Procedure'}{formatCurrency(item.default_fees) ? ` (${formatCurrency(item.default_fees)})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Tooth Number
+                    <input className="dentist-search-input" value={editingTreatment.toothNumber} onChange={(e) => setEditingTreatment((prev) => ({ ...prev, toothNumber: e.target.value }))} />
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Surface
+                    <select className="dentist-search-input" value={editingTreatment.surface} onChange={(e) => setEditingTreatment((prev) => ({ ...prev, surface: e.target.value }))}>
+                      <option value="">Select surface</option>
+                      {SURFACE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Estimated Cost
+                    <input className="dentist-search-input" type="number" step="0.01" value={editingTreatment.estimatedCost} onChange={(e) => setEditingTreatment((prev) => ({ ...prev, estimatedCost: e.target.value }))} />
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Priority
+                    <select className="dentist-search-input" value={editingTreatment.priority} onChange={(e) => setEditingTreatment((prev) => ({ ...prev, priority: e.target.value }))}>
+                      <option value="">Select priority</option>
+                      {PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Notes
+                    <textarea className="dentist-note-box" value={editingTreatment.notes} onChange={(e) => setEditingTreatment((prev) => ({ ...prev, notes: e.target.value }))} />
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                  <button type="button" className="dentist-history-delete-btn" onClick={() => { setEditingTreatment(null); setEditConfirmPending(false); }}>Cancel</button>
+                  <button type="button" className="dentist-save-btn" onClick={() => setEditConfirmPending(true)}>Save Changes</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 style={{ marginTop: 0, color: '#9d2e2e' }}>Confirm Edit</h2>
+                <p>Are you sure you want to update this completed treatment? This will modify the existing record.</p>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                  <button type="button" className="dentist-history-delete-btn" onClick={() => setEditConfirmPending(false)}>Go Back</button>
+                  <button type="button" className="dentist-save-btn" style={{ background: '#9d2e2e' }} onClick={saveEditTreatment}>Yes, Update Treatment</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

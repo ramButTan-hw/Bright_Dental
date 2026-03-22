@@ -36,7 +36,10 @@ function createAdminRoutes(handlers) {
     getStaffSchedules,
     getAllStaffSchedules,
     getStaffScheduleGaps,
-    adminUpdateStaffSchedule
+    adminUpdateStaffSchedule,
+    processRefund,
+    getRefundHistory,
+    getInvoiceLookup
   } = handlers;
 
   function handleAdminRoutes(req, res, method, parts, parseJSON, parsedUrl) {
@@ -339,6 +342,32 @@ function createAdminRoutes(handlers) {
         if (err) { res.writeHead(400); return res.end(JSON.stringify({ error: 'Invalid JSON' })); }
         adminUpdateStaffSchedule(req, data, res);
       });
+      return true;
+    }
+
+    // POST /api/admin/refunds — process a refund
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'refunds') {
+      parseJSON(req, (err, data) => {
+        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        processRefund(req, data, res);
+      });
+      return true;
+    }
+
+    // GET /api/admin/invoices/:id — invoice lookup for refund autofill
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'invoices' && parts[3]) {
+      const invoiceId = Number(parts[3]);
+      if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
+        sendJSON(res, 400, { error: 'Valid invoice ID is required' });
+        return true;
+      }
+      getInvoiceLookup(req, res, invoiceId);
+      return true;
+    }
+
+    // GET /api/admin/refunds — refund history
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'refunds') {
+      getRefundHistory(req, res);
       return true;
     }
 

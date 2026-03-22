@@ -271,6 +271,21 @@ pool.query(`ALTER TABLE staff_schedule_requests DROP CHECK chk_sched_req_time`, 
   if (err && !err.message.includes('not found') && !err.message.includes("doesn't exist") && !err.code === 'ER_CHECK_CONSTRAINT_NOT_FOUND') { /* ignore */ }
 });
 
+// Migration: create refunds table
+pool.query(`CREATE TABLE IF NOT EXISTS refunds (
+  refund_id INT AUTO_INCREMENT PRIMARY KEY,
+  invoice_id INT NOT NULL,
+  payment_id INT,
+  refund_amount DECIMAL(10,2) NOT NULL,
+  reason VARCHAR(255),
+  refunded_by VARCHAR(50),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id),
+  FOREIGN KEY (payment_id) REFERENCES payments(payment_id)
+)`, (err) => {
+  if (err && !err.message.includes('already exists')) console.error('Create refunds table:', err.message);
+});
+
 // ============================================================================
 // MIDDLEWARE: Parse JSON body
 // ============================================================================
