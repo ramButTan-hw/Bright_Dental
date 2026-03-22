@@ -148,6 +148,16 @@ function AdminDashboardPage() {
   const [refundForm, setRefundForm] = useState({ invoiceId: '', amount: '', reason: '' });
   const [invoiceLookup, setInvoiceLookup] = useState(null);
   const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
+  const [schedulingPage, setSchedulingPage] = useState(0);
+  const schedulingPageSize = 15;
+  const [docSchedPage, setDocSchedPage] = useState(0);
+  const docSchedPageSize = 20;
+  const [docSchedSearch, setDocSchedSearch] = useState('');
+  const filteredDocSchedule = useMemo(() => {
+    const q = docSchedSearch.trim().toLowerCase();
+    if (!q) return staffReport.schedule;
+    return staffReport.schedule.filter((row) => (row.doctor_name || '').toLowerCase().includes(q));
+  }, [staffReport.schedule, docSchedSearch]);
 
   const sortFinancial = useSortState();
   const sortScheduling = useSortState();
@@ -1007,10 +1017,11 @@ function AdminDashboardPage() {
                     <p className="muted">
                       Pending requests where staff must confirm date/time/location — pulls from appointment_preference_requests &amp; patients tables.
                       Count: {schedulingActionRows.length}
+                      {schedulingActionRows.length > schedulingPageSize && (<> | Page {schedulingPage + 1} of {Math.ceil(schedulingActionRows.length / schedulingPageSize)}</>)}
                     </p>
-                    <div className="table-wrap">
+                    <div className="table-wrap" style={{ maxHeight: '420px', overflowY: 'auto' }}>
                       <table>
-                        <thead>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                           <tr>
                             <SortTh sort={sortScheduling} column="patient_name">Patient</SortTh>
                             <SortTh sort={sortScheduling} column="preferred_date">Preferred Date</SortTh>
@@ -1020,7 +1031,7 @@ function AdminDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {schedulingActionRows.length ? sortScheduling.sorted(schedulingActionRows).slice(0, 14).map((row) => (
+                          {schedulingActionRows.length ? sortScheduling.sorted(schedulingActionRows).slice(schedulingPage * schedulingPageSize, (schedulingPage + 1) * schedulingPageSize).map((row) => (
                             <tr key={row.preference_request_id}>
                               <td>{row.patient_name}</td>
                               <td>{row.preferred_date ? formatDate(row.preferred_date) : 'Missing'}</td>
@@ -1038,6 +1049,18 @@ function AdminDashboardPage() {
                         </tbody>
                       </table>
                     </div>
+                    {schedulingActionRows.length > schedulingPageSize && (
+                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
+                        <button type="button" disabled={schedulingPage === 0} onClick={() => setSchedulingPage((p) => p - 1)}
+                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: schedulingPage === 0 ? '#eee' : '#fff', cursor: schedulingPage === 0 ? 'default' : 'pointer', fontSize: '0.85rem' }}>
+                          Previous
+                        </button>
+                        <button type="button" disabled={(schedulingPage + 1) * schedulingPageSize >= schedulingActionRows.length} onClick={() => setSchedulingPage((p) => p + 1)}
+                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: (schedulingPage + 1) * schedulingPageSize >= schedulingActionRows.length ? '#eee' : '#fff', cursor: (schedulingPage + 1) * schedulingPageSize >= schedulingActionRows.length ? 'default' : 'pointer', fontSize: '0.85rem' }}>
+                          Next
+                        </button>
+                      </div>
+                    )}
                   </section>
                 </>
               )}
@@ -1225,10 +1248,26 @@ function AdminDashboardPage() {
                     <p className="muted">
                       Full appointment schedule by doctor for the selected range — pulls from doctors, staff, appointments, patients &amp; locations tables.
                       Total: {staffReport.schedule.length} appointment(s)
+                      {filteredDocSchedule.length !== staffReport.schedule.length && (<> | Showing: {filteredDocSchedule.length}</>)}
+                      {filteredDocSchedule.length > docSchedPageSize && (<> | Page {docSchedPage + 1} of {Math.ceil(filteredDocSchedule.length / docSchedPageSize)}</>)}
                     </p>
-                    <div className="table-wrap">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.75rem 0' }}>
+                      <input
+                        type="text"
+                        placeholder="Search by doctor name..."
+                        value={docSchedSearch}
+                        onChange={(e) => { setDocSchedSearch(e.target.value); setDocSchedPage(0); }}
+                        style={{ flex: 1, maxWidth: '320px', padding: '0.45rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem' }}
+                      />
+                      {docSchedSearch.trim() && (
+                        <button type="button" onClick={() => { setDocSchedSearch(''); setDocSchedPage(0); }} style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', background: '#f5f5f5', cursor: 'pointer', fontSize: '0.85rem' }}>
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="table-wrap" style={{ maxHeight: '480px', overflowY: 'auto' }}>
                       <table>
-                        <thead>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                           <tr>
                             <SortTh sort={sortDoctorSchedule} column="doctor_name">Doctor</SortTh>
                             <SortTh sort={sortDoctorSchedule} column="appointment_date">Date</SortTh>
@@ -1242,7 +1281,7 @@ function AdminDashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {staffReport.schedule.length ? sortDoctorSchedule.sorted(staffReport.schedule).slice(0, 50).map((row, idx) => {
+                          {filteredDocSchedule.length ? sortDoctorSchedule.sorted(filteredDocSchedule).slice(docSchedPage * docSchedPageSize, (docSchedPage + 1) * docSchedPageSize).map((row, idx) => {
                             const payStatus = row.payment_status || '';
                             const amtDue = Number(row.amount_due || 0);
                             return (
@@ -1276,6 +1315,18 @@ function AdminDashboardPage() {
                         </tbody>
                       </table>
                     </div>
+                    {filteredDocSchedule.length > docSchedPageSize && (
+                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
+                        <button type="button" disabled={docSchedPage === 0} onClick={() => setDocSchedPage((p) => p - 1)}
+                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: docSchedPage === 0 ? '#eee' : '#fff', cursor: docSchedPage === 0 ? 'default' : 'pointer', fontSize: '0.85rem' }}>
+                          Previous
+                        </button>
+                        <button type="button" disabled={(docSchedPage + 1) * docSchedPageSize >= filteredDocSchedule.length} onClick={() => setDocSchedPage((p) => p + 1)}
+                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: (docSchedPage + 1) * docSchedPageSize >= filteredDocSchedule.length ? '#eee' : '#fff', cursor: (docSchedPage + 1) * docSchedPageSize >= filteredDocSchedule.length ? 'default' : 'pointer', fontSize: '0.85rem' }}>
+                          Next
+                        </button>
+                      </div>
+                    )}
                   </section>
 
                   <section className="admin-panel">
