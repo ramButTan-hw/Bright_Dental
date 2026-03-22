@@ -1,6 +1,6 @@
 # Medical Clinic Project
 Team 1 COSC 3380
-
+bright-dental.up.railway.app
 ## Prerequisites
 - Node.js (v14+)
 - MySQL (local or remote)
