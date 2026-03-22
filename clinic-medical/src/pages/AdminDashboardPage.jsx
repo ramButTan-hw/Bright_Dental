@@ -536,9 +536,10 @@ function AdminDashboardPage() {
     const query = financialSearch.trim().toLowerCase();
     const hasSearch = query.length > 0;
     return financialFollowUpRows.filter((row) => {
+      const queryDigits = query.replace(/\D/g, '');
       const matchesSearch = !hasSearch ||
         (row.patient_name || '').toLowerCase().includes(query) ||
-        (row.p_phone || '').replace(/\D/g, '').includes(query.replace(/\D/g, '')) ||
+        (queryDigits.length > 0 && (row.p_phone || '').replace(/\D/g, '').includes(queryDigits)) ||
         (row.p_phone || '').toLowerCase().includes(query);
       // Show all when searching, only unpaid when not searching
       if (hasSearch) return matchesSearch;
