@@ -62,5 +62,16 @@ npm run build
 # Serve backend (frontend static files must be served separately or integrated)
 node server.js
 ```
-
+### Login Credentials
+```bash
+#MiaBorbon12
+Dentist123! 
+Adrian12
+Reception123! 
+Christian12
+Dentist123! 
+patient_tz_b
+Patient123!
+admin
+Admin123!
 
