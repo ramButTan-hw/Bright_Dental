@@ -17,6 +17,6 @@
   "dependencies": {
     "dotenv": "^17.2.4",
     "mysql": "^2.18.1",
-    "mysql2": "^3.18.1"
+    "mysql2": "^3.20.0"
   }
 }
