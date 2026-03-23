@@ -22,6 +22,7 @@ import AssignAppointmentPage from './pages/AssignAppointmentPage';
 import PatientDashboardPage from './pages/PatientDashboardPage';
 import MeetOurStaffPage from './pages/MeetOurStaffPage';
 import ContactUsPage from './pages/ContactUsPage';
+import OurMotivePage from './pages/OurMotivePage';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { getAdminPortalSession, getReceptionPortalSession } from './utils/patientPortal';
 import './App.css';
@@ -54,6 +55,7 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/meet-our-staff" element={<MeetOurStaffPage />} />
+        <Route path="/our-motive" element={<OurMotivePage />} />
         <Route path="/contact-us" element={<ContactUsPage />} />
         <Route path="/patient-registration" element={<PatientRegistrationPage />} />
         <Route path="/patient-login" element={<PatientLoginPage />} />
