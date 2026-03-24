@@ -792,8 +792,8 @@ CREATE TABLE IF NOT EXISTS intake_medication_rows (
 DELIMITER $$
 
 -- Trigger 1: Enforce cancel_reason when appointment is cancelled
-DROP TRIGGER IF EXISTS trg_appointments_require_cancel_reason_on_insert $$
-CREATE TRIGGER trg_appointments_require_cancel_reason_on_insert
+DROP TRIGGER IF EXISTS appointments_require_cancel_reason_on_insert $$
+CREATE TRIGGER appointments_require_cancel_reason_on_insert
 BEFORE INSERT ON appointments
 FOR EACH ROW
 BEGIN
@@ -806,8 +806,8 @@ BEGIN
     END IF;
 END $$
 
-DROP TRIGGER IF EXISTS trg_appointments_require_cancel_reason $$
-CREATE TRIGGER trg_appointments_require_cancel_reason
+DROP TRIGGER IF EXISTS appointments_require_cancel_reason $$
+CREATE TRIGGER appointments_require_cancel_reason
 BEFORE UPDATE ON appointments
 FOR EACH ROW
 BEGIN
@@ -821,8 +821,8 @@ BEGIN
 END $$
 
 -- Trigger 2: Auto-update invoice payment_status when payment is inserted
-DROP TRIGGER IF EXISTS trg_payments_update_invoice_status $$
-CREATE TRIGGER trg_payments_update_invoice_status
+DROP TRIGGER IF EXISTS payments_update_invoice_status $$
+CREATE TRIGGER payments_update_invoice_status
 AFTER INSERT ON payments
 FOR EACH ROW
 BEGIN
@@ -851,8 +851,8 @@ BEGIN
 END $$
 
 -- Trigger 3: Auto-update invoice payment_status when payment is updated
-DROP TRIGGER IF EXISTS trg_payments_update_invoice_status_on_update $$
-CREATE TRIGGER trg_payments_update_invoice_status_on_update
+DROP TRIGGER IF EXISTS payments_update_invoice_status_on_update $$
+CREATE TRIGGER payments_update_invoice_status_on_update
 AFTER UPDATE ON payments
 FOR EACH ROW
 BEGIN
@@ -903,8 +903,8 @@ BEGIN
 END $$
 
 -- Trigger 4: Auto-update invoice payment_status when payment is deleted
-DROP TRIGGER IF EXISTS trg_payments_update_invoice_status_on_delete $$
-CREATE TRIGGER trg_payments_update_invoice_status_on_delete
+DROP TRIGGER IF EXISTS payments_update_invoice_status_on_delete $$
+CREATE TRIGGER payments_update_invoice_status_on_delete
 AFTER DELETE ON payments
 FOR EACH ROW
 BEGIN
@@ -933,8 +933,8 @@ BEGIN
 END $$
 
 -- Trigger 5: Enforce one primary insurance policy per patient
-DROP TRIGGER IF EXISTS trg_insurance_single_primary_insert $$
-CREATE TRIGGER trg_insurance_single_primary_insert
+DROP TRIGGER IF EXISTS insurance_single_primary_insert $$
+CREATE TRIGGER insurance_single_primary_insert
 BEFORE INSERT ON insurance
 FOR EACH ROW
 BEGIN
@@ -949,8 +949,8 @@ BEGIN
     END IF;
 END $$
 
-DROP TRIGGER IF EXISTS trg_insurance_single_primary_update $$
-CREATE TRIGGER trg_insurance_single_primary_update
+DROP TRIGGER IF EXISTS insurance_single_primary_update $$
+CREATE TRIGGER insurance_single_primary_update
 BEFORE UPDATE ON insurance
 FOR EACH ROW
 BEGIN
@@ -967,8 +967,8 @@ BEGIN
 END $$
 
 -- Trigger 6: Enforce free text when a checklist item requires it
-DROP TRIGGER IF EXISTS trg_patient_checklist_require_other_text_on_insert $$
-CREATE TRIGGER trg_patient_checklist_require_other_text_on_insert
+DROP TRIGGER IF EXISTS patient_checklist_require_other_text_on_insert $$
+CREATE TRIGGER patient_checklist_require_other_text_on_insert
 BEFORE INSERT ON patient_checklist_responses
 FOR EACH ROW
 BEGIN
@@ -983,8 +983,8 @@ BEGIN
     END IF;
 END $$
 
-DROP TRIGGER IF EXISTS trg_patient_checklist_require_other_text_on_update $$
-CREATE TRIGGER trg_patient_checklist_require_other_text_on_update
+DROP TRIGGER IF EXISTS patient_checklist_require_other_text_on_update $$
+CREATE TRIGGER patient_checklist_require_other_text_on_update
 BEFORE UPDATE ON patient_checklist_responses
 FOR EACH ROW
 BEGIN
@@ -1000,8 +1000,8 @@ BEGIN
 END $$
 
 -- Trigger 7: Ensure appointment details match selected slot
-DROP TRIGGER IF EXISTS trg_appointments_validate_slot_on_insert $$
-CREATE TRIGGER trg_appointments_validate_slot_on_insert
+DROP TRIGGER IF EXISTS appointments_validate_slot_on_insert $$
+CREATE TRIGGER appointments_validate_slot_on_insert
 BEFORE INSERT ON appointments
 FOR EACH ROW
 BEGIN
@@ -1039,8 +1039,8 @@ BEGIN
     END IF;
 END $$
 
-DROP TRIGGER IF EXISTS trg_appointments_validate_slot_on_update $$
-CREATE TRIGGER trg_appointments_validate_slot_on_update
+DROP TRIGGER IF EXISTS appointments_validate_slot_on_update $$
+CREATE TRIGGER appointments_validate_slot_on_update
 BEFORE UPDATE ON appointments
 FOR EACH ROW
 BEGIN
@@ -1080,8 +1080,8 @@ BEGIN
 END $$
 
 -- Trigger 8: Keep appointment slot counters synchronized
-DROP TRIGGER IF EXISTS trg_appointments_sync_slot_on_insert $$
-CREATE TRIGGER trg_appointments_sync_slot_on_insert
+DROP TRIGGER IF EXISTS appointments_sync_slot_on_insert $$
+CREATE TRIGGER appointments_sync_slot_on_insert
 AFTER INSERT ON appointments
 FOR EACH ROW
 BEGIN
@@ -1110,8 +1110,8 @@ BEGIN
     WHERE s.slot_id = NEW.slot_id;
 END $$
 
-DROP TRIGGER IF EXISTS trg_appointments_sync_slot_on_update $$
-CREATE TRIGGER trg_appointments_sync_slot_on_update
+DROP TRIGGER IF EXISTS appointments_sync_slot_on_update $$
+CREATE TRIGGER appointments_sync_slot_on_update
 AFTER UPDATE ON appointments
 FOR EACH ROW
 BEGIN
@@ -1159,8 +1159,8 @@ BEGIN
     END IF;
 END $$
 
-DROP TRIGGER IF EXISTS trg_appointments_sync_slot_on_delete $$
-CREATE TRIGGER trg_appointments_sync_slot_on_delete
+DROP TRIGGER IF EXISTS appointments_sync_slot_on_delete $$
+CREATE TRIGGER appointments_sync_slot_on_delete
 AFTER DELETE ON appointments
 FOR EACH ROW
 BEGIN
