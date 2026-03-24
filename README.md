@@ -64,14 +64,14 @@ node server.js
 ```
 ### Login Credentials
 ```bash
-#MiaBorbon12
+MiaBorbon12
 Dentist123! 
 Adrian12
-Reception123! 
+AdrianPass1
 Christian12
 Dentist123! 
 patient_tz_b
-Patient123!
+Password123!
 admin
 Admin123!
 
