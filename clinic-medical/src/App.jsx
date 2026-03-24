@@ -8,6 +8,7 @@ import PatientInvoicesPage from './pages/PatientInvoicesPage';
 import PatientInvoiceCheckoutPage from './pages/PatientInvoiceCheckoutPage';
 import PatientNewAppointmentPage from './pages/PatientNewAppointmentPage';
 import PatientSettingsPage from './pages/PatientSettingsPage';
+import OurMotive from "./pages/OurMotive";
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import StaffLoginPage from './pages/StaffLoginPage';
 import DentistLoginPage from './pages/DentistLoginPage';
@@ -58,6 +59,7 @@ function App() {
         <Route path="/patient-registration" element={<PatientRegistrationPage />} />
         <Route path="/patient-login" element={<PatientLoginPage />} />
         <Route path="/patient-portal" element={<PatientPortalPage />} />
+        <Route path="/our-motive" element={<OurMotive />} />
         <Route path="/patient-portal/settings" element={<PatientSettingsPage />} />
         <Route path="/patient-portal/new-appointment" element={<PatientNewAppointmentPage />} />
         <Route path="/patient-portal/dashboard" element={<PatientDashboardPage />} />
