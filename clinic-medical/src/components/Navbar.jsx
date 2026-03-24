@@ -177,7 +177,9 @@ function Navbar() {
               </button>
               {aboutDropdown && (
                 <div className="dropdown-menu">
+                  <Link to="/services" className="dropdown-item">Services</Link>
                   <Link to="/meet-our-staff" className="dropdown-item">Meet Our Staff</Link>
+                  <Link to="/testimonies" className="dropdown-item">Testimonies</Link>
                   <a href="#our-motive" className="dropdown-item">Our Motive</a>
                 </div>
               )}

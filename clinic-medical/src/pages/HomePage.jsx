@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import '../styles/HomePage.css';
 
 function HomePage() {
@@ -86,8 +86,13 @@ function HomePage() {
           <h2>Experience the Bright Dental Standard</h2>
           <p>Ready to redefine your dental journey? Our coordinators are waiting to assist you.</p>
           <div className="cta-buttons">
-            <button className="btn-primary">Book Online</button>
-            <button className="btn-secondary">Call (832) 461-3355</button>
+            <a href="/patient-registration" className="btn-primary btn-link">Book Online</a>
+            <a href="tel:8324613355" className="btn-secondary btn-link">Call (832) 461-3355</a>
+          </div>
+
+          {/* Minimal teal FAQ panel */}
+          <div className="mini-faq-panel">
+            <Link to="/faq" className="mini-faq-link">FAQ</Link>
           </div>
         </div>
       </section>
