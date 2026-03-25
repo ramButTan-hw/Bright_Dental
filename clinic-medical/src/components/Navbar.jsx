@@ -6,10 +6,12 @@ import {
   clearDentistPortalSession,
   clearPatientPortalSession,
   clearReceptionPortalSession,
+  clearHygienistPortalSession,
   getAdminPortalSession,
   getDentistPortalSession,
   getPatientPortalSession,
-  getReceptionPortalSession
+  getReceptionPortalSession,
+  getHygienistPortalSession
 } from '../utils/patientPortal';
 import '../styles/Navbar.css';
 
@@ -37,10 +39,12 @@ function Navbar() {
   const navigate = useNavigate();
   const [dentistAvatarUrl, setDentistAvatarUrl] = useState('');
   const [receptionAvatarUrl, setReceptionAvatarUrl] = useState('');
+  const [hygienistAvatarUrl, setHygienistAvatarUrl] = useState('');
   const isLoggedIn = Boolean(getPatientPortalSession()?.patientId);
   const isAdminLoggedIn = Boolean(getAdminPortalSession()?.isAdmin);
   const isDentistLoggedIn = Boolean(getDentistPortalSession()?.doctorId);
   const isReceptionLoggedIn = Boolean(getReceptionPortalSession()?.staffId);
+  const isHygienistLoggedIn = Boolean(getHygienistPortalSession()?.staffId);
 
   useEffect(() => {
     const apiBase = resolveApiBaseUrl();
@@ -62,6 +66,17 @@ function Navbar() {
         .then((data) => {
           if (data.profile_image_base64) {
             setReceptionAvatarUrl(`data:image/jpeg;base64,${data.profile_image_base64}`);
+          }
+        })
+        .catch(() => {});
+    }
+    const hygienistSession = getHygienistPortalSession();
+    if (hygienistSession?.staffId) {
+      fetch(`${apiBase}/api/staff/profile-image?staffId=${hygienistSession.staffId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.profile_image_base64) {
+            setHygienistAvatarUrl(`data:image/jpeg;base64,${data.profile_image_base64}`);
           }
         })
         .catch(() => {});
@@ -131,6 +146,35 @@ function Navbar() {
                 navigate('/staff-login');
               }}
               title="Dentist Log Out"
+            >
+              <LogoutIcon />
+            </button>
+          </div>
+        ) : isHygienistLoggedIn ? (
+          <div className="nav-menu">
+            <Link to="/hygienist-login" className="nav-link">Hygienist Page</Link>
+            <Link to="/contact-us" className="nav-link">Contact Us</Link>
+            <button
+              type="button"
+              className="nav-profile-photo-btn"
+              onClick={() => navigate('/hygienist-profile')}
+              aria-label="Open hygienist profile"
+              title="Open hygienist profile"
+            >
+              {hygienistAvatarUrl ? (
+                <img className="nav-profile-photo" src={hygienistAvatarUrl} alt="Hygienist profile" />
+              ) : (
+                <div className="nav-profile-photo-placeholder">Hy</div>
+              )}
+            </button>
+            <button
+              type="button"
+              className="nav-link login-btn nav-icon-btn"
+              onClick={() => {
+                clearHygienistPortalSession();
+                navigate('/staff-login');
+              }}
+              title="Hygienist Log Out"
             >
               <LogoutIcon />
             </button>

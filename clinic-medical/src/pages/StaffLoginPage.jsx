@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { resolveApiBaseUrl, setAdminPortalSession, setDentistPortalSession, setReceptionPortalSession } from '../utils/patientPortal';
+import { resolveApiBaseUrl, setAdminPortalSession, setDentistPortalSession, setHygienistPortalSession, setReceptionPortalSession } from '../utils/patientPortal';
 import '../styles/PatientLoginPage.css';
 
 function StaffLoginPage() {
@@ -93,6 +93,17 @@ function StaffLoginPage() {
           loggedInAt: new Date().toISOString()
         });
         navigate('/receptionist');
+        return;
+      }
+      if (userRole === 'HYGIENIST') {
+        setHygienistPortalSession({
+          userId: resolvedUserId,
+          staffId: resolvedStaffId,
+          username: payload?.user?.username || username,
+          fullName: payload?.user?.full_name || 'Hygienist',
+          loggedInAt: new Date().toISOString()
+        });
+        navigate('/hygienist-login');
         return;
       }
 

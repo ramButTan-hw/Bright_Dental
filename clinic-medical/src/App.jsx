@@ -14,6 +14,9 @@ import StaffLoginPage from './pages/StaffLoginPage';
 import DentistLoginPage from './pages/DentistLoginPage';
 import DentistProfilePage from './pages/DentistProfilePage';
 import DentistPatientProfilePage from './pages/DentistPatientProfilePage';
+import HygienistLoginPage from './pages/HygienistLoginPage';
+import HygienistProfilePage from './pages/HygienistProfilePage';
+import HygienistPatientProfilePage from './pages/HygienistPatientProfilePage';
 import ReceptionistPage from './pages/ReceptionistPage';
 import ReceptionistProfilePage from './pages/ReceptionistProfilePage';
 import ReceptionistPatientProfilePage from './pages/ReceptionistPatientProfilePage';
@@ -24,7 +27,7 @@ import PatientDashboardPage from './pages/PatientDashboardPage';
 import MeetOurStaffPage from './pages/MeetOurStaffPage';
 import ContactUsPage from './pages/ContactUsPage';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { getAdminPortalSession, getReceptionPortalSession } from './utils/patientPortal';
+import { getAdminPortalSession, getReceptionPortalSession, getHygienistPortalSession } from './utils/patientPortal';
 import './App.css';
 
 function RequireAdmin({ children }) {
@@ -43,10 +46,18 @@ function RequireStaff({ children }) {
   return children;
 }
 
+function RequireHygienist({ children }) {
+  const hygienistSession = getHygienistPortalSession();
+  if (!hygienistSession?.staffId) {
+    return <Navigate to="/staff-login" replace />;
+  }
+  return children;
+}
+
 function App() {
   const location = useLocation();
 
-  const staffRoutes = ['/staff-login', '/dentist-login', '/dentist-profile', '/receptionist', '/receptionist-profile', '/receptionist/patient-profile', '/admin'];
+  const staffRoutes = ['/staff-login', '/dentist-login', '/dentist-profile', '/receptionist', '/receptionist-profile', '/receptionist/patient-profile', '/admin', '/hygienist-login', '/hygienist-profile'];
   const isStaffPage = staffRoutes.some((route) => location.pathname.startsWith(route));
 
   return (
@@ -69,6 +80,20 @@ function App() {
         <Route path="/dentist-login" element={<DentistLoginPage />} />
         <Route path="/dentist-profile" element={<DentistProfilePage />} />
         <Route path="/dentist/patient/:appointmentId" element={<DentistPatientProfilePage />} />
+        <Route path="/hygienist-login" element={<HygienistLoginPage />} />
+        <Route 
+        path="/hygienist-profile" element={
+        <RequireHygienist>
+        <HygienistProfilePage />
+        </RequireHygienist>} />
+        <Route 
+        path="/hygienist/patient/:appointmentId"
+        element={
+        <RequireHygienist>
+        <HygienistPatientProfilePage />
+        </RequireHygienist>} 
+        />
+
         <Route
           path="/receptionist"
           element={

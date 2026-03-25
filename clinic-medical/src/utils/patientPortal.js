@@ -113,6 +113,30 @@ export function clearReceptionPortalSession() {
   localStorage.removeItem('receptionPortalSession');
 }
 
+export function getHygienistPortalSession() {
+  try {
+    const raw = localStorage.getItem('hygienistPortalSession');
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed?.staffId && !parsed?.userId && !parsed?.username) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function setHygienistPortalSession(session) {
+  localStorage.setItem('hygienistPortalSession', JSON.stringify(session));
+}
+
+export function clearHygienistPortalSession() {
+  localStorage.removeItem('hygienistPortalSession');
+}
+
 export function formatDate(value) {
   if (!value) {
     return 'N/A';
