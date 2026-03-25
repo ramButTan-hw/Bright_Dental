@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS users (
         'PATIENT',
         'DOCTOR',
         'RECEPTIONIST'
-        'HYGIENIST',
     ) NOT NULL,
     portal_last_login TIMESTAMP,
     is_deleted TINYINT NOT NULL DEFAULT 0

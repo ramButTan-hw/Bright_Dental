@@ -15,7 +15,6 @@ const { createPatientCoreHandlers } = require('./routes/patientCoreHandlers');
 const { createPatientPortalRoutes } = require('./routes/patientPortalRoutes');
 const { createAppointmentPreferenceHandlers } = require('./routes/appointmentPreferenceHandlers');
 const { createPatientIntakeHandlers } = require('./routes/patientIntakeHandlers');
-const { createHygienistProfileRoutes } = require('./routes/hygienistRoutes');
 const crypto = require('crypto');
 require('dotenv').config();
 
@@ -341,7 +340,6 @@ const patientBillingRoutes = createPatientBillingRoutes({ pool, queries, sendJSO
 const receptionRoutes = createReceptionRoutes({ pool, sendJSON });
 const adminHandlers = createAdminHandlers({ pool, sendJSON, url });
 const adminRoutes = createAdminRoutes({ sendJSON, ...adminHandlers });
-const hygienistProfileRoutes = createHygienistProfileRoutes({ pool, sendJSON });
 const appointmentPreferenceHandlers = createAppointmentPreferenceHandlers({
   pool,
   sendJSON,
@@ -412,7 +410,6 @@ const server = http.createServer((req, res) => {
   const { parts } = parsePath(parsedUrl.pathname);
   const method = req.method;
 
-
   // Static 404 for favicon
   if (parsedUrl.pathname === '/favicon.ico') {
     res.writeHead(404);
@@ -442,11 +439,6 @@ const server = http.createServer((req, res) => {
   if (dentistProfileRoutes.handleDentistProfileRoutes(req, res, method, parts, parseJSON)) {
     return;
   }
-
-  // Hygienist profile routes
-  if (hygienistProfileRoutes.handleHygienistProfileRoutes(req, res, method, parts, parseJSON)) {
-  return;
-}
 
   // Dentist appointment routes
   if (dentistAppointmentRoutes.handleDentistAppointmentRoutes(req, res, method, parts, parseJSON)) {
