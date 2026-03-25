@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
 import {
   clearAdminPortalSession,
@@ -35,6 +35,7 @@ function Navbar() {
   const [aboutDropdown, setAboutDropdown] = useState(false);
   const [loginDropdown, setLoginDropdown] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const [dentistAvatarUrl, setDentistAvatarUrl] = useState('');
   const [receptionAvatarUrl, setReceptionAvatarUrl] = useState('');
   const isLoggedIn = Boolean(getPatientPortalSession()?.patientId);
@@ -66,7 +67,7 @@ function Navbar() {
         })
         .catch(() => {});
     }
-  }, []);
+  }, [location.pathname]);
 
   return (
     <nav className="navbar">
