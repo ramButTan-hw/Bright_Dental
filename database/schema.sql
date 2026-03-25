@@ -139,6 +139,16 @@ CREATE TABLE IF NOT EXISTS departments (
     updated_by VARCHAR(50)
 );
 
+INSERT IGNORE INTO departments (department_name, description, created_by, updated_by) VALUES
+('General Dentistry', 'Routine dental care including exams, cleanings, and fillings', 'SYSTEM', 'SYSTEM'),
+('Orthodontics', 'Teeth alignment and bite correction including braces and aligners', 'SYSTEM', 'SYSTEM'),
+('Periodontics', 'Prevention, diagnosis, and treatment of gum diseases', 'SYSTEM', 'SYSTEM'),
+('Endodontics', 'Root canal therapy and treatments of dental pulp', 'SYSTEM', 'SYSTEM'),
+('Oral Surgery', 'Surgical procedures including extractions and implants', 'SYSTEM', 'SYSTEM'),
+('Pediatric Dentistry', 'Dental care for children and adolescents', 'SYSTEM', 'SYSTEM'),
+('Prosthodontics', 'Crowns, bridges, dentures, and dental prosthetics', 'SYSTEM', 'SYSTEM'),
+('Cosmetic Dentistry', 'Teeth whitening, veneers, and aesthetic procedures', 'SYSTEM', 'SYSTEM');
+
 
 CREATE TABLE IF NOT EXISTS specialties_department (
     doctor_id INT NOT NULL,
