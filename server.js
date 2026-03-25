@@ -144,13 +144,7 @@ ensureDoctorNpiPrimaryKey();
   function onColumnDone() {
     completed++;
     if (completed === totalCols) {
-      // All location columns ready — now add profile_image and seed contact data
-      pool.query(`ALTER TABLE staff ADD COLUMN profile_image LONGBLOB`, (err) => {
-        if (err && err.code !== 'ER_DUP_FIELDNAME') {
-          console.error('Error adding profile_image column:', err.message);
-        }
-      });
-
+      // All location columns ready — seed contact data
       const contactData = [
         { zip: '77004', phone: '(832) 461-3355', email: 'houston@brightdental.com', fax: '(832) 461-3356' },
         { zip: '77479', phone: '(281) 555-0199', email: 'sugarland@brightdental.com', fax: '(281) 555-0200' },
