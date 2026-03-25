@@ -138,38 +138,44 @@ ensureDoctorNpiPrimaryKey();
     { name: 'loc_email', def: "VARCHAR(100) AFTER loc_phone" },
     { name: 'loc_fax', def: "VARCHAR(20) AFTER loc_email" }
   ];
+  let completed = 0;
+  const totalCols = cols.length;
+
+  function onColumnDone() {
+    completed++;
+    if (completed === totalCols) {
+      // All location columns ready — now add profile_image and seed contact data
+      pool.query(`ALTER TABLE staff ADD COLUMN profile_image LONGBLOB`, (err) => {
+        if (err && err.code !== 'ER_DUP_FIELDNAME') {
+          console.error('Error adding profile_image column:', err.message);
+        }
+      });
+
+      const contactData = [
+        { zip: '77004', phone: '(832) 461-3355', email: 'houston@brightdental.com', fax: '(832) 461-3356' },
+        { zip: '77479', phone: '(281) 555-0199', email: 'sugarland@brightdental.com', fax: '(281) 555-0200' },
+        { zip: '77002', phone: '(713) 555-0142', email: 'downtown@brightdental.com', fax: '(713) 555-0143' }
+      ];
+      contactData.forEach(({ zip, phone, email, fax }) => {
+        pool.query(
+          `UPDATE locations SET loc_phone = COALESCE(loc_phone, ?), loc_email = COALESCE(loc_email, ?), loc_fax = COALESCE(loc_fax, ?) WHERE loc_zip_code = ?`,
+          [phone, email, fax, zip],
+          (err) => {
+            if (err) console.error('Error seeding location contact info:', err.message);
+          }
+        );
+      });
+    }
+  }
+
   cols.forEach(({ name, def }) => {
     pool.query(`ALTER TABLE locations ADD COLUMN ${name} ${def}`, (err) => {
       if (err && err.code !== 'ER_DUP_FIELDNAME') {
         console.error(`Error adding ${name} column:`, err.message);
       }
+      onColumnDone();
     });
   });
-
-  // Ensure profile_image column exists on staff
-  pool.query(`ALTER TABLE staff ADD COLUMN profile_image LONGBLOB`, (err) => {
-    if (err && err.code !== 'ER_DUP_FIELDNAME') {
-      console.error('Error adding profile_image column:', err.message);
-    }
-  });
-
-  // Seed contact data for default locations after a short delay to ensure columns exist
-  setTimeout(() => {
-    const contactData = [
-      { zip: '77004', phone: '(832) 461-3355', email: 'houston@brightdental.com', fax: '(832) 461-3356' },
-      { zip: '77479', phone: '(281) 555-0199', email: 'sugarland@brightdental.com', fax: '(281) 555-0200' },
-      { zip: '77002', phone: '(713) 555-0142', email: 'downtown@brightdental.com', fax: '(713) 555-0143' }
-    ];
-    contactData.forEach(({ zip, phone, email, fax }) => {
-      pool.query(
-        `UPDATE locations SET loc_phone = COALESCE(loc_phone, ?), loc_email = COALESCE(loc_email, ?), loc_fax = COALESCE(loc_fax, ?) WHERE loc_zip_code = ?`,
-        [phone, email, fax, zip],
-        (err) => {
-          if (err) console.error('Error seeding location contact info:', err.message);
-        }
-      );
-    });
-  }, 2000);
 })();
 
 pool.query(
