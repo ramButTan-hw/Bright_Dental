@@ -843,7 +843,6 @@ function AdminDashboardPage() {
                     <article className="admin-panel">
                       <h2>Report 1: Financial Follow-Up</h2>
                       <p className="muted">
-                        Per-patient billing summary across all invoices — pulls from patients, appointments, invoices &amp; payments tables.
                         Patients: {financialFollowUpRows.length} | Total Outstanding: {formatMoney(totalOutstandingAmount)}
                         {!financialSearch.trim() && <> | Showing {filteredFinancialRows.length} unpaid</>}
                       </p>
@@ -933,7 +932,7 @@ function AdminDashboardPage() {
 
                   <section className="admin-panel">
                     <h2>Refund Management</h2>
-                    <p className="muted">Process refunds for overpaid invoices and view refund history. Total refunds: {refundHistory.length} | Total refunded: {formatMoney(refundHistory.reduce((s, r) => s + Number(r.refund_amount || 0), 0))}</p>
+                    <p className="muted">Refunds for overpaid invoices and view refund history. Total refunds: {refundHistory.length} | Total refunded: {formatMoney(refundHistory.reduce((s, r) => s + Number(r.refund_amount || 0), 0))}</p>
 
                     <div style={{ margin: '0.75rem 0', padding: '0.75rem', border: '1px solid #d7e7e5', borderRadius: '10px', background: '#f9fcfb' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem' }}>
@@ -1015,7 +1014,7 @@ function AdminDashboardPage() {
                   <section className="admin-panel">
                     <h2>Report 2: Scheduling Confirmation Needed</h2>
                     <p className="muted">
-                      Pending requests where staff must confirm date/time/location — pulls from appointment_preference_requests &amp; patients tables.
+                      
                       Count: {schedulingActionRows.length}
                       {schedulingActionRows.length > schedulingPageSize && (<> | Page {schedulingPage + 1} of {Math.ceil(schedulingActionRows.length / schedulingPageSize)}</>)}
                     </p>
@@ -1210,9 +1209,7 @@ function AdminDashboardPage() {
                 <>
                   <section className="admin-panel">
                     <h2>Report 1: Doctor Workload Summary</h2>
-                    <p className="muted">
-                      Appointment counts per doctor for the selected date range — pulls from doctors, staff, appointments &amp; appointment_statuses tables.
-                    </p>
+                    
                     <div className="table-wrap">
                       <table>
                         <thead>
@@ -1246,7 +1243,7 @@ function AdminDashboardPage() {
                   <section className="admin-panel">
                     <h2>Report 2: Doctor Appointment Schedule</h2>
                     <p className="muted">
-                      Full appointment schedule by doctor for the selected range — pulls from doctors, staff, appointments, patients &amp; locations tables.
+                      
                       Total: {staffReport.schedule.length} appointment(s)
                       {filteredDocSchedule.length !== staffReport.schedule.length && (<> | Showing: {filteredDocSchedule.length}</>)}
                       {filteredDocSchedule.length > docSchedPageSize && (<> | Page {docSchedPage + 1} of {Math.ceil(filteredDocSchedule.length / docSchedPageSize)}</>)}
@@ -1331,9 +1328,7 @@ function AdminDashboardPage() {
 
                   <section className="admin-panel">
                     <h2>Report 3: All Staff Time-Off Summary</h2>
-                    <p className="muted">
-                      All recorded doctor and staff time-off entries — pulls from doctor_time_off, staff_time_off_requests, staff, users &amp; locations tables.
-                    </p>
+                   
                     <div className="table-wrap">
                       <table>
                         <thead>

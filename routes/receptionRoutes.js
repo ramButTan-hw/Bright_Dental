@@ -188,45 +188,6 @@ function createReceptionRoutes({ pool, sendJSON }) {
     });
   }
 
-  function getReceptionMultiPatientReport(req, res) {
-    const parsedUrl = url.parse(req.url, true);
-    const filters = createReportFiltersFromQuery(parsedUrl.query);
-    if (filters.error) {
-      return sendJSON(res, 400, { error: filters.error });
-    }
-
-    fetchTreatmentRowsForReport({ ...filters }, (treatmentErr, treatmentRows) => {
-      if (treatmentErr) {
-        console.error('Error generating reception multi-patient treatment report:', treatmentErr);
-        return sendJSON(res, 500, { error: 'Database error' });
-      }
-
-      fetchFindingRowsForReport({ ...filters }, (findingErr, findingRows) => {
-        if (findingErr) {
-          console.error('Error generating reception multi-patient finding report:', findingErr);
-          return sendJSON(res, 500, { error: 'Database error' });
-        }
-
-        const groupedVisits = buildGroupedReport(treatmentRows, findingRows);
-        const uniquePatients = new Set(groupedVisits.map((visit) => visit.patientId));
-        const totalCost = groupedVisits.reduce((sum, visit) => sum + Number(visit.visitCost || 0), 0);
-
-        return sendJSON(res, 200, {
-          reportType: 'RECEPTION_MULTI_PATIENT_TREATMENT_FINDING',
-          generatedAt: new Date().toISOString(),
-          filters,
-          summary: {
-            totalPatients: uniquePatients.size,
-            totalVisits: groupedVisits.length,
-            totalEntries: treatmentRows.length,
-            totalCost
-          },
-          visits: groupedVisits
-        });
-      });
-    });
-  }
-
   function fetchAppointmentRowsForReport({ patientId = null, fromDate, toDate, status, reason, preferredLocation }, callback) {
     const includeAllPatients = !Number.isInteger(patientId) || patientId <= 0;
     const safeStatus = String(status || '').trim().toUpperCase();
@@ -319,34 +280,6 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
       const report = buildAppointmentReport(rows, 'RECEPTION_SINGLE_PATIENT_APPOINTMENT');
       report.filters = { patientId, fromDate, toDate, status, reason };
-      return sendJSON(res, 200, report);
-    });
-  }
-
-  function getReceptionMultiPatientApptReport(req, res) {
-    const parsedUrl = url.parse(req.url, true);
-
-    const fromDate = normalizeDateParam(parsedUrl.query.fromDate);
-    const toDate = normalizeDateParam(parsedUrl.query.toDate);
-    if (!fromDate || !toDate) {
-      return sendJSON(res, 400, { error: 'fromDate and toDate are required in YYYY-MM-DD format' });
-    }
-    if (new Date(`${fromDate}T00:00:00`).getTime() > new Date(`${toDate}T00:00:00`).getTime()) {
-      return sendJSON(res, 400, { error: 'fromDate must be before or equal to toDate' });
-    }
-
-    const status = normalizeOptionalFilter(parsedUrl.query.status);
-    const reason = normalizeOptionalFilter(parsedUrl.query.reason);
-    const preferredLocation = normalizeOptionalFilter(parsedUrl.query.preferredLocation);
-
-    fetchAppointmentRowsForReport({ fromDate, toDate, status, reason, preferredLocation }, (err, rows) => {
-      if (err) {
-        console.error('Error generating multi-patient appointment report:', err);
-        return sendJSON(res, 500, { error: 'Database error' });
-      }
-
-      const report = buildAppointmentReport(rows, 'RECEPTION_MULTI_PATIENT_APPOINTMENT');
-      report.filters = { fromDate, toDate, status, reason, preferredLocation };
       return sendJSON(res, 200, report);
     });
   }
@@ -1462,18 +1395,8 @@ function createReceptionRoutes({ pool, sendJSON }) {
       return true;
     }
 
-    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'reports' && parts[3] === 'patients') {
-      getReceptionMultiPatientReport(req, res);
-      return true;
-    }
-
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'reports' && parts[3] === 'patient-appointments') {
       getReceptionSinglePatientApptReport(req, res);
-      return true;
-    }
-
-    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'reports' && parts[3] === 'appointments') {
-      getReceptionMultiPatientApptReport(req, res);
       return true;
     }
 
