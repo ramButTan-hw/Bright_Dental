@@ -1256,6 +1256,43 @@ BEGIN
     END IF;
 END $$
 
+-- Trigger: Auto-update invoice payment_status when a payment is recorded
+-- Fixes reports that rely on the stored payment_status column
+DROP TRIGGER IF EXISTS after_payment_insert_update_invoice_status $$
+CREATE TRIGGER after_payment_insert_update_invoice_status
+AFTER INSERT ON payments
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_amount  DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_total_paid      DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_total_refunded  DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_net_paid        DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_new_status      VARCHAR(10);
+
+    SELECT patient_amount INTO v_patient_amount
+    FROM invoices WHERE invoice_id = NEW.invoice_id;
+
+    SELECT COALESCE(SUM(payment_amount), 0) INTO v_total_paid
+    FROM payments WHERE invoice_id = NEW.invoice_id;
+
+    SELECT COALESCE(SUM(refund_amount), 0) INTO v_total_refunded
+    FROM refunds WHERE invoice_id = NEW.invoice_id;
+
+    SET v_net_paid = v_total_paid - v_total_refunded;
+
+    IF v_net_paid >= v_patient_amount THEN
+        SET v_new_status = 'Paid';
+    ELSEIF v_net_paid > 0 THEN
+        SET v_new_status = 'Partial';
+    ELSE
+        SET v_new_status = 'Unpaid';
+    END IF;
+
+    UPDATE invoices
+    SET payment_status = v_new_status, updated_by = 'TRIGGER'
+    WHERE invoice_id = NEW.invoice_id;
+END $$
+
 
 DELIMITER ;
 
