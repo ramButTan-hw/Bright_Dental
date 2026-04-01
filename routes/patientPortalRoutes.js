@@ -27,6 +27,7 @@ function createPatientPortalRoutes(handlers) {
     getInsuranceCompanies,
     updatePatientProfile,
     addPatientInsurance,
+    setPrimaryInsurance,
     removePatientInsurance,
     getLocations,
     changeUserPassword
@@ -269,6 +270,13 @@ function createPatientPortalRoutes(handlers) {
         }
         addPatientInsurance(req, patientId, data, res);
       });
+      return true;
+    }
+
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'insurance' && parts[4] && parts[5] === 'set-primary') {
+      const patientId = parseInt(parts[2], 10);
+      const insuranceId = parseInt(parts[4], 10);
+      setPrimaryInsurance(req, patientId, insuranceId, res);
       return true;
     }
 

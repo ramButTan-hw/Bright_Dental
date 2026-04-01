@@ -409,6 +409,26 @@ function createPatientCoreHandlers(deps) {
     });
   }
 
+  async function setPrimaryInsurance(req, patientId, insuranceId, res) {
+    try {
+      await pool.promise().query(
+        `UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1`,
+        [patientId]
+      );
+      const [result] = await pool.promise().query(
+        `UPDATE insurance SET is_primary = 1, updated_by = 'RECEPTION' WHERE insurance_id = ? AND patient_id = ?`,
+        [insuranceId, patientId]
+      );
+      if (!result.affectedRows) {
+        return sendJSON(res, 404, { error: 'Insurance record not found' });
+      }
+      sendJSON(res, 200, { message: 'Primary insurance updated' });
+    } catch (error) {
+      console.error('Error setting primary insurance:', error);
+      sendJSON(res, 500, { error: 'Database error' });
+    }
+  }
+
   function removePatientInsurance(req, patientId, insuranceId, res) {
     pool.query(
       `DELETE FROM insurance WHERE insurance_id = ? AND patient_id = ?`,
@@ -481,6 +501,7 @@ function createPatientCoreHandlers(deps) {
     getInsuranceCompanies,
     updatePatientProfile,
     addPatientInsurance,
+    setPrimaryInsurance,
     removePatientInsurance,
     changeUserPassword
   };
