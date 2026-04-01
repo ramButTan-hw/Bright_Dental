@@ -464,12 +464,6 @@ function AdminDashboardPage() {
           <h1>Operations Dashboard</h1>
         </div>
         <div className="admin-header-actions">
-          {activeSection === 'scheduling' && (
-            <label className="admin-date-filter">
-              Dashboard Date
-              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
-            </label>
-          )}
         </div>
       </section>
 
@@ -539,7 +533,13 @@ function AdminDashboardPage() {
           {activeSection === 'scheduling' && (
             <section className="admin-grid-two">
               <article className="admin-panel">
-                <h2>Appointments Scheduled</h2>
+                <div className="admin-panel-header">
+                  <h2>Appointments Scheduled</h2>
+                  <label className="admin-date-filter">
+                    Date
+                    <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
+                  </label>
+                </div>
                 <div className="table-wrap">
                   <table>
                     <thead>
@@ -624,7 +624,8 @@ function AdminDashboardPage() {
                         <th>Preferred Date</th>
                         <th>Preferred Time</th>
                         <th>Location</th>
-                        <th>Reason</th>
+                        <th>Appointment Reason</th>
+                        <th>Cancel Notes</th>
                         <th style={{ width: '80px' }}></th>
                       </tr>
                     </thead>
@@ -636,6 +637,7 @@ function AdminDashboardPage() {
                           <td>{formatTime(req.preferred_time)}</td>
                           <td>{req.preferred_location || 'N/A'}</td>
                           <td>{req.appointment_reason || 'N/A'}</td>
+                          <td>{req.receptionist_notes || '—'}</td>
                           <td>
                             <button
                               type="button"
@@ -654,7 +656,7 @@ function AdminDashboardPage() {
                             </button>
                           </td>
                         </tr>
-                      )) : <tr><td colSpan="6">No cancelled requests.</td></tr>}
+                      )) : <tr><td colSpan="7">No cancelled requests.</td></tr>}
                     </tbody>
                   </table>
                 </div>
