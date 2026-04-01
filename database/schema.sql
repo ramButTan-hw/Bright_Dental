@@ -1256,6 +1256,33 @@ BEGIN
     END IF;
 END $$
 
+-- Trigger: Auto-unset existing primary insurance when a new primary is inserted
+DROP TRIGGER IF EXISTS before_insurance_insert_one_primary $$
+CREATE TRIGGER before_insurance_insert_one_primary
+BEFORE INSERT ON insurance
+FOR EACH ROW
+BEGIN
+    IF NEW.is_primary = TRUE THEN
+        UPDATE insurance
+        SET is_primary = FALSE
+        WHERE patient_id = NEW.patient_id AND is_primary = TRUE;
+    END IF;
+END $$
+
+-- Trigger: Auto-unset existing primary insurance when a different one is updated to primary
+DROP TRIGGER IF EXISTS before_insurance_update_one_primary $$
+CREATE TRIGGER before_insurance_update_one_primary
+BEFORE UPDATE ON insurance
+FOR EACH ROW
+BEGIN
+    IF NEW.is_primary = TRUE AND OLD.is_primary = FALSE THEN
+        UPDATE insurance
+        SET is_primary = FALSE
+        WHERE patient_id = NEW.patient_id AND is_primary = TRUE
+          AND insurance_id != OLD.insurance_id;
+    END IF;
+END $$
+
 -- Trigger: Auto-unset existing primary pharmacy when a new primary is inserted
 DROP TRIGGER IF EXISTS before_patient_pharmacy_insert_one_primary $$
 CREATE TRIGGER before_patient_pharmacy_insert_one_primary
