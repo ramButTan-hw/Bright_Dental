@@ -1256,6 +1256,33 @@ BEGIN
     END IF;
 END $$
 
+-- Trigger: Auto-unset existing primary pharmacy when a new primary is inserted
+DROP TRIGGER IF EXISTS before_patient_pharmacy_insert_one_primary $$
+CREATE TRIGGER before_patient_pharmacy_insert_one_primary
+BEFORE INSERT ON patient_pharmacies
+FOR EACH ROW
+BEGIN
+    IF NEW.is_primary = 1 THEN
+        UPDATE patient_pharmacies
+        SET is_primary = 0
+        WHERE patient_id = NEW.patient_id AND is_primary = 1;
+    END IF;
+END $$
+
+-- Trigger: Auto-unset existing primary pharmacy when a different one is updated to primary
+DROP TRIGGER IF EXISTS before_patient_pharmacy_update_one_primary $$
+CREATE TRIGGER before_patient_pharmacy_update_one_primary
+BEFORE UPDATE ON patient_pharmacies
+FOR EACH ROW
+BEGIN
+    IF NEW.is_primary = 1 AND OLD.is_primary = 0 THEN
+        UPDATE patient_pharmacies
+        SET is_primary = 0
+        WHERE patient_id = NEW.patient_id AND is_primary = 1
+          AND patient_pharmacy_id != OLD.patient_pharmacy_id;
+    END IF;
+END $$
+
 -- Trigger: Auto-update invoice payment_status when a payment is recorded
 DROP TRIGGER IF EXISTS after_payment_insert_update_invoice_status $$
 CREATE TRIGGER after_payment_insert_update_invoice_status
