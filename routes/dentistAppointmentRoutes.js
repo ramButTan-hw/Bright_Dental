@@ -188,45 +188,6 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     });
   }
 
-  function getDentistMultiPatientReport(req, res) {
-    const parsedUrl = url.parse(req.url, true);
-    const filters = createReportFiltersFromQuery(parsedUrl.query);
-    if (filters.error) {
-      return sendJSON(res, 400, { error: filters.error });
-    }
-
-    fetchTreatmentRowsForReport({ ...filters }, (treatmentErr, treatmentRows) => {
-      if (treatmentErr) {
-        console.error('Error generating multi-patient treatment report:', treatmentErr);
-        return sendJSON(res, 500, { error: 'Database error' });
-      }
-
-      fetchFindingRowsForReport({ ...filters }, (findingErr, findingRows) => {
-        if (findingErr) {
-          console.error('Error generating multi-patient finding report:', findingErr);
-          return sendJSON(res, 500, { error: 'Database error' });
-        }
-
-        const groupedVisits = buildGroupedReport(treatmentRows, findingRows);
-        const uniquePatients = new Set(groupedVisits.map((visit) => visit.patientId));
-        const totalCost = groupedVisits.reduce((sum, visit) => sum + Number(visit.visitCost || 0), 0);
-
-        return sendJSON(res, 200, {
-          reportType: 'MULTI_PATIENT_TREATMENT_FINDING',
-          generatedAt: new Date().toISOString(),
-          filters,
-          summary: {
-            totalPatients: uniquePatients.size,
-            totalVisits: groupedVisits.length,
-            totalEntries: treatmentRows.length,
-            totalCost
-          },
-          visits: groupedVisits
-        });
-      });
-    });
-  }
-
   function getAdaProcedureCodes(req, res) {
     pool.query(
       `SELECT procedure_code, description, category, default_fees
@@ -1002,11 +963,6 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
   function handleDentistAppointmentRoutes(req, res, method, parts, parseJSON) {
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'reports' && parts[3] === 'patient') {
       getDentistSinglePatientReport(req, res);
-      return true;
-    }
-
-    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'reports' && parts[3] === 'patients') {
-      getDentistMultiPatientReport(req, res);
       return true;
     }
 

@@ -230,6 +230,16 @@ function createPatientBillingRoutes({ pool, queries, sendJSON }) {
     });
   }
 
+  function getPatientSystemCancelledAppointments(req, patientId, res) {
+    pool.query(queries.getPatientSystemCancelledAppointments, [patientId], (err, results) => {
+      if (err) {
+        console.error('Error fetching system-cancelled appointments:', err);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+      sendJSON(res, 200, results || []);
+    });
+  }
+
   function handlePatientBillingRoutes(req, res, method, parts, parseJSON) {
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'billing') {
       const patientId = parseInt(parts[2], 10);
@@ -264,6 +274,12 @@ function createPatientBillingRoutes({ pool, queries, sendJSON }) {
 
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'payment-methods') {
       getPaymentMethods(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'appointments' && parts[4] === 'cancelled-by-system') {
+      const patientId = parseInt(parts[2], 10);
+      getPatientSystemCancelledAppointments(req, patientId, res);
       return true;
     }
 

@@ -47,17 +47,8 @@ function DentistLoginPage() {
     toothNumber: '',
     surface: ''
   });
-  const [multiReportForm, setMultiReportForm] = useState({
-    fromDate: getLocalDateString(),
-    toDate: getLocalDateString(),
-    procedureCode: '',
-    toothNumber: '',
-    surface: ''
-  });
   const [isGeneratingSingleReport, setIsGeneratingSingleReport] = useState(false);
-  const [isGeneratingMultiReport, setIsGeneratingMultiReport] = useState(false);
   const [singleReportFormat, setSingleReportFormat] = useState('PDF');
-  const [multiReportFormat, setMultiReportFormat] = useState('CSV');
   const sessionReady = Boolean(session?.userId || session?.username);
 
   const downloadReportJson = (payload, filename) => {
@@ -511,32 +502,6 @@ function DentistLoginPage() {
     }
   };
 
-  const generateMultiPatientReport = async (event) => {
-    event.preventDefault();
-    setMessage('');
-    setIsGeneratingMultiReport(true);
-    try {
-      const queryString = buildReportQueryString(multiReportForm);
-      const response = await fetch(`${API_BASE_URL}/api/dentist/reports/patients?${queryString}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to generate multi-patient report.');
-      }
-
-      exportReportPayload(
-        payload,
-        multiReportFormat,
-        `dentist-multi-patient-report-${multiReportForm.fromDate}-to-${multiReportForm.toDate}`,
-        'Multi Patient Treatment and Finding Report'
-      );
-      setMessage(`Multi-patient report generated and downloaded as ${multiReportFormat}.`);
-    } catch (err) {
-      setMessage(err.message || 'Failed to generate multi-patient report.');
-    } finally {
-      setIsGeneratingMultiReport(false);
-    }
-  };
-
   if (!sessionReady) {
     return (
       <main className="dentist-page">
@@ -842,73 +807,6 @@ function DentistLoginPage() {
               </button>
             </form>
 
-            <form className="dentist-report-form" onSubmit={generateMultiPatientReport}>
-              <h3>Multi Patient Report</h3>
-              <p className="dentist-subtle">Includes multiple patients for a date range and optional filter combinations (ADA code, tooth number, surface).</p>
-              <div className="dentist-report-date-row">
-                <label>
-                  <span>From Date</span>
-                  <input
-                    type="date"
-                    value={multiReportForm.fromDate}
-                    onChange={(event) => setMultiReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
-                    required
-                  />
-                </label>
-                <label>
-                  <span>To Date</span>
-                  <input
-                    type="date"
-                    value={multiReportForm.toDate}
-                    onChange={(event) => setMultiReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
-                    required
-                  />
-                </label>
-              </div>
-              <label>
-                <span>ADA Code (optional)</span>
-                <input
-                  type="text"
-                  value={multiReportForm.procedureCode}
-                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, procedureCode: event.target.value.toUpperCase() }))}
-                  placeholder="D2740"
-                />
-              </label>
-              <div className="dentist-report-date-row">
-                <label>
-                  <span>Tooth Number (optional)</span>
-                  <input
-                    type="text"
-                    value={multiReportForm.toothNumber}
-                    onChange={(event) => setMultiReportForm((prev) => ({ ...prev, toothNumber: event.target.value }))}
-                    placeholder="30"
-                  />
-                </label>
-                <label>
-                  <span>Surface (optional)</span>
-                  <input
-                    type="text"
-                    value={multiReportForm.surface}
-                    onChange={(event) => setMultiReportForm((prev) => ({ ...prev, surface: event.target.value.toUpperCase() }))}
-                    placeholder="M"
-                  />
-                </label>
-              </div>
-              <label>
-                <span>Export Format</span>
-                <select
-                  value={multiReportFormat}
-                  onChange={(event) => setMultiReportFormat(event.target.value)}
-                >
-                  <option value="CSV">CSV</option>
-                  <option value="PDF">PDF</option>
-                  <option value="JSON">JSON</option>
-                </select>
-              </label>
-              <button type="submit" className="dentist-save-btn" disabled={isGeneratingMultiReport}>
-                {isGeneratingMultiReport ? 'Generating...' : 'Generate Multi Patient Report'}
-              </button>
-            </form>
           </div>
         </article>
       </section>
