@@ -1375,19 +1375,52 @@ function createReceptionRoutes({ pool, sendJSON }) {
     if (!pharmId || pharmId <= 0) {
       return sendJSON(res, 400, { error: 'A valid pharmacy is required' });
     }
-    pool.query(
-      `INSERT INTO patient_pharmacies (patient_id, pharm_id, is_primary)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)`,
-      [patientId, pharmId, isPrimary],
-      (err) => {
-        if (err) {
-          console.error('Error assigning pharmacy:', err);
+
+    pool.getConnection((connErr, conn) => {
+      if (connErr) {
+        console.error('Error getting connection for assign pharmacy:', connErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      conn.beginTransaction(async (txErr) => {
+        if (txErr) {
+          conn.release();
           return sendJSON(res, 500, { error: 'Database error' });
         }
-        sendJSON(res, 200, { message: 'Pharmacy assigned.' });
-      }
-    );
+
+        try {
+          // If setting as primary, unset any existing primary first
+          if (isPrimary) {
+            await conn.promise().query(
+              `UPDATE patient_pharmacies SET is_primary = 0 WHERE patient_id = ? AND is_primary = 1`,
+              [patientId]
+            );
+          }
+
+          await conn.promise().query(
+            `INSERT INTO patient_pharmacies (patient_id, pharm_id, is_primary)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)`,
+            [patientId, pharmId, isPrimary]
+          );
+
+          conn.commit((commitErr) => {
+            conn.release();
+            if (commitErr) {
+              console.error('Error committing assign pharmacy:', commitErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            sendJSON(res, 200, { message: 'Pharmacy assigned.' });
+          });
+        } catch (error) {
+          conn.rollback(() => {
+            conn.release();
+            console.error('Error assigning pharmacy:', error);
+            sendJSON(res, 500, { error: 'Database error' });
+          });
+        }
+      });
+    });
   }
 
   function removePatientPharmacy(req, patientId, pharmId, res) {

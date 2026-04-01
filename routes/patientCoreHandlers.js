@@ -353,6 +353,7 @@ function createPatientCoreHandlers(deps) {
     const companyId = Number(data?.companyId);
     const memberId = String(data?.memberId || '').trim();
     const groupNumber = String(data?.groupNumber || '').trim();
+    const isPrimary = data?.isPrimary ? 1 : 0;
 
     if (!Number.isInteger(companyId) || companyId <= 0) {
       return sendJSON(res, 400, { error: 'A valid insurance company is required' });
@@ -361,19 +362,51 @@ function createPatientCoreHandlers(deps) {
       return sendJSON(res, 400, { error: 'Member ID is required' });
     }
 
-    pool.query(
-      `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, created_by, updated_by)
-       VALUES (?, ?, ?, ?, TRUE, 'PATIENT_PORTAL', 'PATIENT_PORTAL')
-       ON DUPLICATE KEY UPDATE member_id = VALUES(member_id), group_number = VALUES(group_number), updated_by = 'PATIENT_PORTAL'`,
-      [patientId, companyId, memberId, groupNumber || null],
-      (err) => {
-        if (err) {
-          console.error('Error adding patient insurance:', err);
+    pool.getConnection((connErr, conn) => {
+      if (connErr) {
+        console.error('Error getting connection for add insurance:', connErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      conn.beginTransaction(async (txErr) => {
+        if (txErr) {
+          conn.release();
           return sendJSON(res, 500, { error: 'Database error' });
         }
-        sendJSON(res, 200, { message: 'Insurance saved successfully' });
-      }
-    );
+
+        try {
+          // If setting as primary, unset any existing primary first
+          if (isPrimary) {
+            await conn.promise().query(
+              `UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1`,
+              [patientId]
+            );
+          }
+
+          await conn.promise().query(
+            `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, effective_date, created_by, updated_by)
+             VALUES (?, ?, ?, ?, ?, CURDATE(), 'RECEPTION', 'RECEPTION')
+             ON DUPLICATE KEY UPDATE member_id = VALUES(member_id), group_number = VALUES(group_number), is_primary = VALUES(is_primary), updated_by = 'RECEPTION'`,
+            [patientId, companyId, memberId, groupNumber || null, isPrimary]
+          );
+
+          conn.commit((commitErr) => {
+            conn.release();
+            if (commitErr) {
+              console.error('Error committing add insurance:', commitErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            sendJSON(res, 200, { message: 'Insurance saved successfully' });
+          });
+        } catch (error) {
+          conn.rollback(() => {
+            conn.release();
+            console.error('Error adding patient insurance:', error);
+            sendJSON(res, 500, { error: 'Database error' });
+          });
+        }
+      });
+    });
   }
 
   function removePatientInsurance(req, patientId, insuranceId, res) {
