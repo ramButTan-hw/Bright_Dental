@@ -140,7 +140,8 @@ function createPatientBillingRoutes({ pool, queries, sendJSON }) {
           const invoiceRow = invoiceRows[0];
           const patientAmount = Number(invoiceRow.patient_amount || 0);
           const amountPaid = Number(invoiceRow.amount_paid || 0);
-          const amountDue = Math.max(patientAmount - amountPaid, 0);
+          const amountDue = Math.round(Math.max(patientAmount - amountPaid, 0) * 100) / 100;
+          const paymentAmountRounded = Math.round(paymentAmount * 100) / 100;
 
           if (amountDue <= 0) {
             return connection.rollback(() => {
@@ -149,7 +150,7 @@ function createPatientBillingRoutes({ pool, queries, sendJSON }) {
             });
           }
 
-          if (paymentAmount > amountDue) {
+          if (paymentAmountRounded > amountDue) {
             return connection.rollback(() => {
               connection.release();
               sendJSON(res, 400, {
@@ -176,7 +177,7 @@ function createPatientBillingRoutes({ pool, queries, sendJSON }) {
 
             connection.query(
               queries.createPayment,
-              [invoiceId, paymentAmount, new Date(), methodId, referenceNumber, notes],
+              [invoiceId, paymentAmountRounded, new Date(), methodId, referenceNumber, notes],
               (createErr) => {
                 if (createErr) {
                   return connection.rollback(() => {
