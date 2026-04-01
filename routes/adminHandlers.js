@@ -1323,6 +1323,7 @@ function createAdminHandlers(deps) {
         apr.preferred_time,
         apr.preferred_location,
         apr.appointment_reason,
+        apr.receptionist_notes,
         apr.request_status,
         apr.updated_at,
         apr.updated_by,
