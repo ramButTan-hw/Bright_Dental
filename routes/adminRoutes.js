@@ -41,6 +41,7 @@ function createAdminRoutes(handlers) {
     processRefund,
     getRefundHistory,
     getInvoiceLookup,
+    getCancelledAppointments,
     getSystemCancelledAppointments
   } = handlers;
 
@@ -376,6 +377,11 @@ function createAdminRoutes(handlers) {
     // GET /api/admin/refunds — refund history
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'refunds') {
       getRefundHistory(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'cancelled-appointments') {
+      getCancelledAppointments(req, res);
       return true;
     }
 

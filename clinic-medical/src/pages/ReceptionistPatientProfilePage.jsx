@@ -65,6 +65,8 @@ function ReceptionistPatientProfilePage() {
   const [allInsuranceCompanies, setAllInsuranceCompanies] = useState([]);
   const [insuranceForm, setInsuranceForm] = useState({ companyId: '', memberId: '', groupNumber: '', isPrimary: false });
   const [isAddingInsurance, setIsAddingInsurance] = useState(false);
+  const [confirmPrimarySwap, setConfirmPrimarySwap] = useState(false);
+  const [confirmSetPrimaryId, setConfirmSetPrimaryId] = useState(null);
 
   // Prescription state
   const [rxFormOpen, setRxFormOpen] = useState(false);
@@ -276,11 +278,27 @@ function ReceptionistPatientProfilePage() {
       setMessage('Insurance added.');
       setInsuranceFormOpen(false);
       setInsuranceForm({ companyId: '', memberId: '', groupNumber: '', isPrimary: false });
+      setConfirmPrimarySwap(false);
       loadPatientData();
     } catch (err) {
       setError(err.message || 'Failed to add insurance.');
     } finally {
       setIsAddingInsurance(false);
+    }
+  };
+
+  const handleSetPrimaryInsurance = async (insuranceId) => {
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/patients/${patientId}/insurance/${insuranceId}/set-primary`, {
+        method: 'PUT'
+      }).then(safeJson);
+      setMessage('Primary insurance updated.');
+      setConfirmSetPrimaryId(null);
+      loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to update primary insurance.');
     }
   };
 
@@ -698,7 +716,7 @@ function ReceptionistPatientProfilePage() {
           <p><strong>Emergency Contact:</strong> {emergencyContact}</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.8rem', marginBottom: '0.3rem' }}>
             <h3 style={{ margin: 0 }}>Insurance</h3>
-            <button type="button" style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'none', border: '1px solid #2d7a6e', color: '#2d7a6e', borderRadius: '6px', cursor: 'pointer' }} onClick={() => setInsuranceFormOpen(!insuranceFormOpen)}>
+            <button type="button" style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'none', border: '1px solid #2d7a6e', color: '#2d7a6e', borderRadius: '6px', cursor: 'pointer' }} onClick={() => { setInsuranceFormOpen(!insuranceFormOpen); setConfirmPrimarySwap(false); setInsuranceForm({ companyId: '', memberId: '', groupNumber: '', isPrimary: false }); }}>
               {insuranceFormOpen ? 'Cancel' : '+ Add'}
             </button>
           </div>
@@ -720,10 +738,19 @@ function ReceptionistPatientProfilePage() {
                 <input type="text" value={insuranceForm.groupNumber} onChange={(e) => setInsuranceForm((p) => ({ ...p, groupNumber: e.target.value }))} />
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-                <input type="checkbox" checked={insuranceForm.isPrimary} onChange={(e) => setInsuranceForm((p) => ({ ...p, isPrimary: e.target.checked }))} />
+                <input type="checkbox" checked={insuranceForm.isPrimary} onChange={(e) => { setInsuranceForm((p) => ({ ...p, isPrimary: e.target.checked })); setConfirmPrimarySwap(false); }} />
                 Set as primary insurance
               </label>
-              <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isAddingInsurance} style={{ alignSelf: 'flex-start' }}>
+              {insuranceForm.isPrimary && insurance.some((i) => i.is_primary) && (
+                <div style={{ background: '#fff8e1', border: '1px solid #f0c040', borderRadius: '8px', padding: '0.6rem 0.75rem', fontSize: '0.83rem', color: '#7a5a00' }}>
+                  <strong>⚠ {insurance.find((i) => i.is_primary).company_name}</strong> is currently the primary insurance. Saving will replace it.
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.4rem', fontWeight: 600 }}>
+                    <input type="checkbox" checked={confirmPrimarySwap} onChange={(e) => setConfirmPrimarySwap(e.target.checked)} />
+                    I confirm this change
+                  </label>
+                </div>
+              )}
+              <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isAddingInsurance || (insuranceForm.isPrimary && insurance.some((i) => i.is_primary) && !confirmPrimarySwap)} style={{ alignSelf: 'flex-start' }}>
                 {isAddingInsurance ? 'Saving...' : 'Save'}
               </button>
             </form>
@@ -739,7 +766,24 @@ function ReceptionistPatientProfilePage() {
                 {ins.company_website && <p style={{ margin: '0.15rem 0' }}><strong>Website:</strong> {ins.company_website}</p>}
                 {ins.company_contact && <p style={{ margin: '0.15rem 0' }}><strong>Contact:</strong> {ins.company_contact}</p>}
               </div>
-              <button type="button" onClick={() => handleRemoveInsurance(ins.insurance_id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</button>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
+                {!ins.is_primary && (
+                  confirmSetPrimaryId === ins.insurance_id ? (
+                    <div style={{ background: '#fff8e1', border: '1px solid #f0c040', borderRadius: '8px', padding: '0.5rem 0.65rem', fontSize: '0.78rem', color: '#7a5a00', textAlign: 'right' }}>
+                      {insurance.find((i) => i.is_primary) && (
+                        <div>Replaces <strong>{insurance.find((i) => i.is_primary).company_name}</strong> as primary.</div>
+                      )}
+                      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.35rem', justifyContent: 'flex-end' }}>
+                        <button type="button" onClick={() => handleSetPrimaryInsurance(ins.insurance_id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: '#2d7a6e', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Confirm</button>
+                        <button type="button" onClick={() => setConfirmSetPrimaryId(null)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: 'none', border: '1px solid #999', color: '#555', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setConfirmSetPrimaryId(ins.insurance_id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: 'none', border: '1px solid #2d7a6e', color: '#2d7a6e', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Set as primary</button>
+                  )
+                )}
+                <button type="button" onClick={() => handleRemoveInsurance(ins.insurance_id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</button>
+              </div>
             </div>
           )) : (
             <p style={{ color: '#4b6966' }}><em>No insurance on file</em></p>

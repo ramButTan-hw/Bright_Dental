@@ -1446,6 +1446,38 @@ function createAdminHandlers(deps) {
     );
   }
 
+  function getCancelledAppointments(req, res) {
+    pool.query(
+      `SELECT
+         a.appointment_id,
+         a.appointment_date,
+         a.appointment_time,
+         CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+         CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+         l.address AS location,
+         cr.reason_text AS cancel_reason,
+         a.updated_by AS cancelled_by,
+         a.updated_at AS cancelled_at
+       FROM appointments a
+       JOIN patients p ON p.patient_id = a.patient_id
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       JOIN doctors d ON d.doctor_id = a.doctor_id
+       JOIN staff st ON st.staff_id = d.staff_id
+       LEFT JOIN cancel_reasons cr ON cr.reason_id = a.reason_id
+       LEFT JOIN locations l ON l.location_id = a.location_id
+       WHERE ast.status_name = 'CANCELLED'
+       ORDER BY a.updated_at DESC
+       LIMIT 200`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching cancelled appointments:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
   function getSystemCancelledAppointments(req, res) {
     pool.query(
       `SELECT
@@ -1517,6 +1549,7 @@ function createAdminHandlers(deps) {
     processRefund,
     getRefundHistory,
     getInvoiceLookup,
+    getCancelledAppointments,
     getSystemCancelledAppointments
   };
 

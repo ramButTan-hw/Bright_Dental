@@ -144,6 +144,7 @@ function AdminDashboardPage() {
   const [resetPasswordStaffId, setResetPasswordStaffId] = useState(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
   const [cancelledRequests, setCancelledRequests] = useState([]);
+  const [cancelledAppointments, setCancelledAppointments] = useState([]);
   const [refundHistory, setRefundHistory] = useState([]);
   const [refundForm, setRefundForm] = useState({ invoiceId: '', amount: '', reason: '' });
   const [invoiceLookup, setInvoiceLookup] = useState(null);
@@ -183,7 +184,7 @@ function AdminDashboardPage() {
     setError('');
 
     try {
-      const [summaryData, queueData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData, refundData] = await Promise.all([
+      const [summaryData, queueData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData, refundData, cancelledApptData] = await Promise.all([
         fetch(`${API_BASE_URL}/api/admin/dashboard/summary?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/appointments/queue?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson),
@@ -195,7 +196,8 @@ function AdminDashboardPage() {
         fetch(`${API_BASE_URL}/api/admin/schedule-requests`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff-schedules`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff-schedules/gaps`).then(safeJson),
-        fetch(`${API_BASE_URL}/api/admin/refunds`).then(safeJson)
+        fetch(`${API_BASE_URL}/api/admin/refunds`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/cancelled-appointments`).then(safeJson)
       ]);
 
       setSummary(summaryData);
@@ -210,6 +212,7 @@ function AdminDashboardPage() {
       setAllStaffSchedules(Array.isArray(staffSchedData) ? staffSchedData : []);
       setScheduleGaps(Array.isArray(gapsData) ? gapsData : []);
       setRefundHistory(Array.isArray(refundData) ? refundData : []);
+      setCancelledAppointments(Array.isArray(cancelledApptData) ? cancelledApptData : []);
     } catch (err) {
       setError(err.message || 'Unable to load admin data.');
     } finally {
@@ -548,41 +551,23 @@ function AdminDashboardPage() {
                         <th>Patient</th>
                         <th>Dentist</th>
                         <th>Status</th>
-                        <th>Payment</th>
                         <th>Confirmed By</th>
                         <th>Location</th>
                       </tr>
                     </thead>
                     <tbody>
                       {queue.scheduledAppointments?.length ? queue.scheduledAppointments.map((appt) => {
-                        const payStatus = appt.payment_status || '';
-                        const amtDue = Number(appt.amount_due || 0);
                         return (
                           <tr key={appt.appointment_id}>
                             <td>{formatTime(appt.appointment_time)}</td>
                             <td>{appt.patient_name}</td>
                             <td>{appt.doctor_name || 'TBD'}</td>
                             <td>{appt.status_name}</td>
-                            <td>
-                              {payStatus ? (
-                                <span style={{
-                                  display: 'inline-block',
-                                  padding: '0.15rem 0.5rem',
-                                  borderRadius: '999px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  background: payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : '#f8d7da',
-                                  color: payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : '#721c24'
-                                }}>
-                                  {payStatus}{amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
-                                </span>
-                              ) : '—'}
-                            </td>
                             <td>{appt.receptionist_name || 'Unassigned'}</td>
                             <td>{appt.location_address || 'TBD'}</td>
                           </tr>
                         );
-                      }) : <tr><td colSpan="7">No scheduled appointments for this date.</td></tr>}
+                      }) : <tr><td colSpan="6">No scheduled appointments for this date.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -625,7 +610,6 @@ function AdminDashboardPage() {
                         <th>Preferred Time</th>
                         <th>Location</th>
                         <th>Appointment Reason</th>
-                        <th>Cancel Notes</th>
                         <th style={{ width: '80px' }}></th>
                       </tr>
                     </thead>
@@ -637,7 +621,6 @@ function AdminDashboardPage() {
                           <td>{formatTime(req.preferred_time)}</td>
                           <td>{req.preferred_location || 'N/A'}</td>
                           <td>{req.appointment_reason || 'N/A'}</td>
-                          <td>{req.receptionist_notes || '—'}</td>
                           <td>
                             <button
                               type="button"
@@ -656,7 +639,39 @@ function AdminDashboardPage() {
                             </button>
                           </td>
                         </tr>
-                      )) : <tr><td colSpan="7">No cancelled requests.</td></tr>}
+                      )) : <tr><td colSpan="6">No cancelled requests.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article className="admin-panel">
+                <h2>Cancelled Appointments</h2>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Patient</th>
+                        <th>Dentist</th>
+                        <th>Location</th>
+                        <th>Cancel Reason</th>
+                        <th>Cancelled By</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cancelledAppointments.length ? cancelledAppointments.map((appt) => (
+                        <tr key={appt.appointment_id}>
+                          <td>{formatDate(appt.appointment_date)}</td>
+                          <td>{formatTime(appt.appointment_time)}</td>
+                          <td>{appt.patient_name}</td>
+                          <td>{appt.doctor_name}</td>
+                          <td>{appt.location || 'N/A'}</td>
+                          <td>{appt.cancel_reason || '—'}</td>
+                          <td>{appt.cancelled_by || '—'}</td>
+                        </tr>
+                      )) : <tr><td colSpan="7">No cancelled appointments.</td></tr>}
                     </tbody>
                   </table>
                 </div>

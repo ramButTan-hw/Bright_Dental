@@ -555,6 +555,7 @@ const patientPortalRoutes = createPatientPortalRoutes({
   getInsuranceCompanies: patientCoreHandlers.getInsuranceCompanies,
   updatePatientProfile: patientCoreHandlers.updatePatientProfile,
   addPatientInsurance: patientCoreHandlers.addPatientInsurance,
+  setPrimaryInsurance: patientCoreHandlers.setPrimaryInsurance,
   removePatientInsurance: patientCoreHandlers.removePatientInsurance,
   changeUserPassword: patientCoreHandlers.changeUserPassword,
   registerPatient: patientIntakeHandlers.registerPatient,
