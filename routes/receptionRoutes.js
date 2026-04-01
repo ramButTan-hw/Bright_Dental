@@ -206,13 +206,17 @@ function createReceptionRoutes({ pool, sendJSON }) {
         CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
         CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location_address,
         a.notes,
-        a.created_at
+        a.created_at,
+        COALESCE(i.patient_amount, 0) AS amount_billed,
+        i.payment_status,
+        COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS amount_paid
       FROM appointments a
       JOIN patients p ON p.patient_id = a.patient_id
       JOIN appointment_statuses ast ON ast.status_id = a.status_id
       JOIN doctors d ON d.doctor_id = a.doctor_id
       JOIN staff st ON st.staff_id = d.staff_id
       LEFT JOIN locations l ON l.location_id = a.location_id
+      LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
       WHERE (? = TRUE OR a.patient_id = ?)
         AND a.appointment_date BETWEEN ? AND ?
         AND (? = '' OR ast.status_name = ?)
@@ -225,28 +229,52 @@ function createReceptionRoutes({ pool, sendJSON }) {
   }
 
   function buildAppointmentReport(rows, reportType) {
-    const appointments = rows.map((row) => ({
-      appointmentId: row.appointment_id,
-      patientId: row.patient_id,
-      patientName: row.patient_name,
-      appointmentDate: String(row.appointment_date || '').slice(0, 10),
-      appointmentTime: row.appointment_time,
-      status: row.status_name,
-      statusDisplay: row.status_display,
-      doctorName: row.doctor_name,
-      location: row.location_address || '',
-      notes: row.notes || '',
-      createdAt: row.created_at
-    }));
+    const today = new Date().toISOString().slice(0, 10);
+    const appointments = rows.map((row) => {
+      const billed = Number(row.amount_billed || 0);
+      const paid = Number(row.amount_paid || 0);
+      return {
+        appointmentId: row.appointment_id,
+        patientId: row.patient_id,
+        patientName: row.patient_name,
+        appointmentDate: String(row.appointment_date || '').slice(0, 10),
+        appointmentTime: row.appointment_time,
+        status: row.status_name,
+        statusDisplay: row.status_display,
+        doctorName: row.doctor_name,
+        location: row.location_address || '',
+        notes: row.notes || '',
+        createdAt: row.created_at,
+        amountBilled: billed,
+        amountPaid: paid,
+        amountOwed: Math.max(0, billed - paid),
+        paymentStatus: row.payment_status || null
+      };
+    });
 
     const uniquePatients = new Set(appointments.map((a) => a.patientId));
+    const noShows = appointments.filter((a) => a.status === 'NO_SHOW').length;
+    const cancellations = appointments.filter((a) => a.status === 'CANCELLED' || a.status === 'CANCELED').length;
+    const pastAppts = appointments.filter((a) => a.appointmentDate < today && a.status === 'COMPLETED');
+    const upcomingAppts = appointments.filter((a) => a.appointmentDate >= today);
+    const lastVisitDate = pastAppts.length ? pastAppts[0].appointmentDate : null;
+    const nextUpcomingDate = upcomingAppts.length ? upcomingAppts[upcomingAppts.length - 1].appointmentDate : null;
+    const totalBilled = appointments.reduce((sum, a) => sum + a.amountBilled, 0);
+    const totalCollected = appointments.reduce((sum, a) => sum + a.amountPaid, 0);
 
     return {
       reportType,
       generatedAt: new Date().toISOString(),
       summary: {
         totalPatients: uniquePatients.size,
-        totalAppointments: appointments.length
+        totalAppointments: appointments.length,
+        noShows,
+        cancellations,
+        lastVisitDate,
+        nextUpcomingDate,
+        totalBilled,
+        totalCollected,
+        totalOwed: Math.max(0, totalBilled - totalCollected)
       },
       appointments
     };
@@ -1341,6 +1369,44 @@ function createReceptionRoutes({ pool, sendJSON }) {
     );
   }
 
+  function assignPatientPharmacy(req, patientId, data, res) {
+    const pharmId = Number(data?.pharmId);
+    const isPrimary = data?.isPrimary ? 1 : 0;
+    if (!pharmId || pharmId <= 0) {
+      return sendJSON(res, 400, { error: 'A valid pharmacy is required' });
+    }
+    pool.query(
+      `INSERT INTO patient_pharmacies (patient_id, pharm_id, is_primary)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)`,
+      [patientId, pharmId, isPrimary],
+      (err) => {
+        if (err) {
+          console.error('Error assigning pharmacy:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, { message: 'Pharmacy assigned.' });
+      }
+    );
+  }
+
+  function removePatientPharmacy(req, patientId, pharmId, res) {
+    pool.query(
+      `DELETE FROM patient_pharmacies WHERE patient_id = ? AND pharm_id = ?`,
+      [patientId, pharmId],
+      (err, result) => {
+        if (err) {
+          console.error('Error removing pharmacy:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        if (result.affectedRows === 0) {
+          return sendJSON(res, 404, { error: 'Pharmacy assignment not found' });
+        }
+        sendJSON(res, 200, { message: 'Pharmacy removed.' });
+      }
+    );
+  }
+
   function createPrescription(req, patientId, data, res) {
     const medicationName = String(data?.medicationName || '').trim();
     const strength = String(data?.strength || '').trim();
@@ -1502,6 +1568,30 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'pharmacies') {
       getAllPharmacies(req, res);
+      return true;
+    }
+
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'patients' && parts[3] && parts[4] === 'pharmacy') {
+      const patientId = Number(parts[3]);
+      if (!Number.isInteger(patientId) || patientId <= 0) {
+        sendJSON(res, 400, { error: 'A valid patient id is required' });
+        return true;
+      }
+      parseJSON(req, (err, data) => {
+        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        return assignPatientPharmacy(req, patientId, data, res);
+      });
+      return true;
+    }
+
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'patients' && parts[3] && parts[4] === 'pharmacy' && parts[5]) {
+      const patientId = Number(parts[3]);
+      const pharmId = Number(parts[5]);
+      if (!Number.isInteger(patientId) || patientId <= 0 || !Number.isInteger(pharmId) || pharmId <= 0) {
+        sendJSON(res, 400, { error: 'Valid patient and pharmacy ids are required' });
+        return true;
+      }
+      removePatientPharmacy(req, patientId, pharmId, res);
       return true;
     }
 

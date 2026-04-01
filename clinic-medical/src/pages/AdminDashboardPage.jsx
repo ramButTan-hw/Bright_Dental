@@ -464,7 +464,7 @@ function AdminDashboardPage() {
           <h1>Operations Dashboard</h1>
         </div>
         <div className="admin-header-actions">
-          {activeSection !== 'staffing' && activeSection !== 'staff-scheduling' && (
+          {activeSection === 'scheduling' && (
             <label className="admin-date-filter">
               Dashboard Date
               <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
@@ -491,29 +491,33 @@ function AdminDashboardPage() {
             <>
               <section className="admin-metrics-grid">
                 <article className="metric-card">
-                  <h2>Revenue Today</h2>
-                  <p>{formatMoney(summary.metrics?.clinicRevenueToday)}</p>
+                  <h2>Collected</h2>
+                  <p>{formatMoney(summary.metrics?.collectedAllTime)}</p>
                 </article>
                 <article className="metric-card">
-                  <h2>Revenue All-Time</h2>
-                  <p>{formatMoney(summary.metrics?.clinicRevenueAllTime)}</p>
-                </article>
-                <article className="metric-card">
-                  <h2>Scheduled Today</h2>
-                  <p>{summary.metrics?.scheduledToday || 0}</p>
+                  <h2>Outstanding Balance</h2>
+                  <p style={{ color: summary.metrics?.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
+                    {formatMoney(summary.metrics?.totalOutstanding)}
+                  </p>
                 </article>
                 <article className="metric-card">
                   <h2>Waiting Requests</h2>
                   <p>{summary.metrics?.waitingToSchedule || 0}</p>
                 </article>
                 <article className="metric-card">
-                  <h2>Total Patients Today</h2>
-                  <p>{summary.metrics?.patientsScheduledToday || 0}</p>
-                </article>
-                <article className="metric-card">
                   <h2>Dentists on Team</h2>
                   <p>{summary.metrics?.doctorCount || 0}</p>
                   {(summary.metrics?.doctorCount || 0) > 5 && <small>Above your baseline of 5 dentists</small>}
+                </article>
+                <article className="metric-card">
+                  <h2>New Patients This Month</h2>
+                  <p>{summary.metrics?.newPatientsThisMonth || 0}</p>
+                </article>
+                <article className="metric-card">
+                  <h2>Pending Time-Off Requests</h2>
+                  <p style={{ color: summary.metrics?.pendingTimeOffCount > 0 ? '#9d2e2e' : 'inherit' }}>
+                    {summary.metrics?.pendingTimeOffCount || 0}
+                  </p>
                 </article>
               </section>
 
@@ -888,7 +892,7 @@ function AdminDashboardPage() {
               {reportType === 'staff' && (
                 <>
                   <section className="admin-panel">
-                    <h2>Report 1: Doctor Workload Summary</h2>
+                    <h2>Report 1: Dentist Workload Summary</h2>
                     
                     <div className="table-wrap">
                       <table>
@@ -901,10 +905,16 @@ function AdminDashboardPage() {
                             <SortTh sort={sortWorkload} column="upcoming">Upcoming</SortTh>
                             <SortTh sort={sortWorkload} column="canceled">Canceled</SortTh>
                             <SortTh sort={sortWorkload} column="no_show">No-Show</SortTh>
+                            <SortTh sort={sortWorkload} column="total_billed">Total Billed</SortTh>
+                            <SortTh sort={sortWorkload} column="total_collected">Collected</SortTh>
                           </tr>
                         </thead>
                         <tbody>
-                          {staffReport.workload.length ? sortWorkload.sorted(staffReport.workload).map((row) => (
+                          {staffReport.workload.length ? sortWorkload.sorted(staffReport.workload).map((row) => {
+                            const billed = Number(row.total_billed || 0);
+                            const collected = Number(row.total_collected || 0);
+                            const outstanding = billed - collected;
+                            return (
                             <tr key={row.doctor_id}>
                               <td>Dr. {row.doctor_name}</td>
                               <td>{row.phone_number || 'N/A'}</td>
@@ -913,15 +923,25 @@ function AdminDashboardPage() {
                               <td>{row.upcoming}</td>
                               <td>{row.canceled}</td>
                               <td>{row.no_show}</td>
+                              <td>{formatMoney(billed)}</td>
+                              <td>
+                                {formatMoney(collected)}
+                                {outstanding > 0 && (
+                                  <span style={{ marginLeft: '0.4rem', fontSize: '0.75rem', color: '#9d2e2e' }}>
+                                    ({formatMoney(outstanding)} owed)
+                                  </span>
+                                )}
+                              </td>
                             </tr>
-                          )) : <tr><td colSpan="7">No doctor workload data for this range.</td></tr>}
+                            );
+                          }) : <tr><td colSpan="9">No doctor workload data for this range.</td></tr>}
                         </tbody>
                       </table>
                     </div>
                   </section>
 
                   <section className="admin-panel">
-                    <h2>Report 2: Doctor Appointment Schedule</h2>
+                    <h2>Report 2: Dentist Appointment Schedule</h2>
                     <p className="muted">
                       
                       Total: {staffReport.schedule.length} appointment(s)

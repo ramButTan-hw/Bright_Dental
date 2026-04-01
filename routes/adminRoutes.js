@@ -26,6 +26,7 @@ function createAdminRoutes(handlers) {
     getAdminAllStaff,
     generateAdminReport,
     getReportFilterOptions,
+    getNewPatientsReport,
     getCancelledAppointmentRequests,
     restoreAppointmentRequest,
     submitScheduleRequest,
@@ -213,6 +214,12 @@ function createAdminRoutes(handlers) {
     // GET /api/admin/reports/filter-options — dropdown options for report filters
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'filter-options') {
       getReportFilterOptions(req, res);
+      return true;
+    }
+
+    // GET /api/admin/reports/new-patients — new patient registrations by date range
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'new-patients') {
+      getNewPatientsReport(req, res);
       return true;
     }
 
