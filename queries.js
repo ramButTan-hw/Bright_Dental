@@ -406,6 +406,25 @@ const queries = {
     LIMIT 1
   `,
 
+  // Appointments cancelled by the system (doctor time-off) for a patient in the last 30 days
+  getPatientSystemCancelledAppointments: `
+    SELECT
+      a.appointment_id,
+      a.appointment_date,
+      a.appointment_time,
+      CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+      a.updated_at AS cancelled_at
+    FROM appointments a
+    JOIN appointment_statuses ast ON ast.status_id = a.status_id
+    JOIN doctors d ON d.doctor_id = a.doctor_id
+    JOIN staff st ON st.staff_id = d.staff_id
+    WHERE a.patient_id = ?
+      AND ast.status_name = 'CANCELLED'
+      AND a.updated_by = 'SYSTEM_TIME_OFF'
+      AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    ORDER BY a.updated_at DESC
+  `,
+
   // Latest appointment preference request for patient prefill
   getLatestPatientAppointmentPreferenceRequest: `
     SELECT

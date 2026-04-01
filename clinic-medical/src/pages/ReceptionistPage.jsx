@@ -173,6 +173,7 @@ function ReceptionistPage() {
   const [departments, setDepartments] = useState([]);
   const [isSubmittingTimeOff, setIsSubmittingTimeOff] = useState(false);
   const [mySchedule, setMySchedule] = useState([]);
+  const [systemCancelledAppts, setSystemCancelledAppts] = useState([]);
 
   const buildReportQueryString = (formValues) => {
     const params = new URLSearchParams();
@@ -630,6 +631,13 @@ function ReceptionistPage() {
     return () => window.clearTimeout(timeoutId);
   }, [API_BASE_URL, navigate, session?.staffId]);
 
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/admin/system-cancelled-appointments`)
+      .then((res) => res.ok ? res.json() : Promise.resolve([]))
+      .then((data) => setSystemCancelledAppts(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, [API_BASE_URL]);
+
   const checkInPatient = async (appointmentId) => {
     await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/check-in`, {
       method: 'PUT',
@@ -916,6 +924,43 @@ function ReceptionistPage() {
 
         </div>
       </section>
+
+      {systemCancelledAppts.length > 0 && (
+        <section className="reception-section">
+          <h2 style={{ color: '#a53030', marginBottom: '0.75rem' }}>Appointments Cancelled by System — Patients Need to Reschedule</h2>
+          <p style={{ color: '#666', fontSize: '0.88rem', marginBottom: '1rem' }}>
+            The following appointments were automatically cancelled due to doctor time-off approval in the last 30 days. Contact these patients to help them reschedule.
+          </p>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="reception-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Patient</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Email</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Phone</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Cancelled Appt Date</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Time</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Doctor</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Cancelled At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {systemCancelledAppts.map((row) => (
+                  <tr key={row.appointment_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>{row.patient_name}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{row.p_email}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{row.p_phone}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{formatDate(row.appointment_date)}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{formatTime(row.appointment_time)}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{row.doctor_name}</td>
+                    <td style={{ padding: '0.5rem 0.75rem', color: '#888', fontSize: '0.82rem' }}>{formatDate(row.cancelled_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </main>
   );
 }

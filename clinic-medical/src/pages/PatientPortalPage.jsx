@@ -41,6 +41,9 @@ function PatientPortalPage() {
   const [cancelState, setCancelState] = useState({ open: false, reasonId: '', submitting: false });
   const [prescriptions, setPrescriptions] = useState([]);
   const [patientPharmacy, setPatientPharmacy] = useState([]);
+  const [invoicePopupDismissed, setInvoicePopupDismissed] = useState(false);
+  const [cancelledAppts, setCancelledAppts] = useState([]);
+  const [cancelledApptPopupDismissed, setCancelledApptPopupDismissed] = useState(false);
 
   const session = useMemo(() => getPatientPortalSession(), []);
   const API_BASE_URL = resolveApiBaseUrl();
@@ -56,7 +59,7 @@ function PatientPortalPage() {
       setError('');
 
       try {
-        const [patientRes, appointmentsRes, invoicesRes, requestsRes, primaryDentistRes, cancelReasonsRes, rxRes, pharmRes] = await Promise.all([
+        const [patientRes, appointmentsRes, invoicesRes, requestsRes, primaryDentistRes, cancelReasonsRes, rxRes, pharmRes, cancelledBySystemRes] = await Promise.all([
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/appointments`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/invoices`),
@@ -64,14 +67,15 @@ function PatientPortalPage() {
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/primary-dentist`),
           fetchWithTimeout(`${API_BASE_URL}/api/cancel-reasons`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/prescriptions`),
-          fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/pharmacy`)
+          fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/pharmacy`),
+          fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/appointments/cancelled-by-system`)
         ]);
 
         if (!patientRes.ok) {
           throw new Error('Unable to load patient profile.');
         }
 
-        const [patientPayload, appointmentsPayload, invoicesPayload, requestsPayload, primaryDentistPayload, cancelReasonsPayload, rxPayload, pharmPayload] = await Promise.all([
+        const [patientPayload, appointmentsPayload, invoicesPayload, requestsPayload, primaryDentistPayload, cancelReasonsPayload, rxPayload, pharmPayload, cancelledBySystemPayload] = await Promise.all([
           patientRes.json(),
           appointmentsRes.ok ? appointmentsRes.json() : Promise.resolve([]),
           invoicesRes.ok ? invoicesRes.json() : Promise.resolve([]),
@@ -79,7 +83,8 @@ function PatientPortalPage() {
           primaryDentistRes.ok ? primaryDentistRes.json() : Promise.resolve({ assigned: false, dentist: null }),
           cancelReasonsRes.ok ? cancelReasonsRes.json() : Promise.resolve([]),
           rxRes.ok ? rxRes.json() : Promise.resolve([]),
-          pharmRes.ok ? pharmRes.json() : Promise.resolve([])
+          pharmRes.ok ? pharmRes.json() : Promise.resolve([]),
+          cancelledBySystemRes.ok ? cancelledBySystemRes.json() : Promise.resolve([])
         ]);
 
         setPatient(patientPayload);
@@ -90,6 +95,7 @@ function PatientPortalPage() {
         setCancelReasons(Array.isArray(cancelReasonsPayload) ? cancelReasonsPayload : []);
         setPrescriptions(Array.isArray(rxPayload) ? rxPayload : []);
         setPatientPharmacy(Array.isArray(pharmPayload) ? pharmPayload : []);
+        setCancelledAppts(Array.isArray(cancelledBySystemPayload) ? cancelledBySystemPayload : []);
       } catch (fetchError) {
         const isTimeout = fetchError?.name === 'AbortError';
         setError(isTimeout ? 'Portal request timed out. Please refresh and try again.' : (fetchError.message || 'Unable to load portal right now.'));
@@ -196,6 +202,103 @@ function PatientPortalPage() {
       </section>
 
       {error && <p className="portal-error">{error}</p>}
+
+      {cancelledAppts.length > 0 && !cancelledApptPopupDismissed && (
+        <div style={{
+          position: 'fixed',
+          bottom: cancelledAppts.length > 0 && !invoicePopupDismissed && invoices.filter(inv => (inv.payment_status === 'Unpaid' || inv.payment_status === 'Partial') && Number(inv.amount_due) > 0).length > 0 ? '9rem' : '1.5rem',
+          right: '1.5rem',
+          zIndex: 999,
+          width: '320px',
+          background: '#2a1c1c',
+          color: '#fff',
+          borderRadius: '12px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.28)',
+          padding: '1.1rem 1.2rem 1rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.45rem',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', color: '#ff8080', letterSpacing: '0.01em' }}>
+              {cancelledAppts.length === 1 ? 'Appointment Cancelled' : `${cancelledAppts.length} Appointments Cancelled`}
+            </p>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1.1rem', lineHeight: 1, padding: 0, marginLeft: '0.5rem' }}
+              onClick={() => setCancelledApptPopupDismissed(true)}
+            >
+              &times;
+            </button>
+          </div>
+          <p style={{ margin: 0, fontSize: '0.88rem', color: '#f5c0c0', lineHeight: 1.4 }}>
+            {cancelledAppts.length === 1
+              ? `Your appointment on ${new Date(cancelledAppts[0].appointment_date).toLocaleDateString()} with ${cancelledAppts[0].doctor_name} was cancelled due to doctor unavailability. Please reschedule.`
+              : `${cancelledAppts.length} of your appointments were cancelled due to doctor unavailability. Please reschedule.`}
+          </p>
+          <Link
+            to="/patient-portal/new-appointment"
+            style={{ marginTop: '0.3rem', fontSize: '0.85rem', color: '#ff9999', fontWeight: 600, textDecoration: 'none' }}
+            onClick={() => setCancelledApptPopupDismissed(true)}
+          >
+            Reschedule Now &rarr;
+          </Link>
+        </div>
+      )}
+
+      {(() => {
+        const unpaidInvoices = invoices.filter(
+          (inv) => (inv.payment_status === 'Unpaid' || inv.payment_status === 'Partial') && Number(inv.amount_due) > 0
+        );
+        if (!unpaidInvoices.length || invoicePopupDismissed) return null;
+        const multiple = unpaidInvoices.length > 1;
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: '1.5rem',
+              right: '1.5rem',
+              zIndex: 1000,
+              width: '320px',
+              background: '#1c2a28',
+              color: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.28)',
+              padding: '1.1rem 1.2rem 1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.45rem',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', color: '#f0c040', letterSpacing: '0.01em' }}>
+                {multiple ? `${unpaidInvoices.length} Outstanding Invoices` : 'Outstanding Invoice'}
+              </p>
+              <button
+                type="button"
+                aria-label="Dismiss"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1.1rem', lineHeight: 1, padding: 0, marginLeft: '0.5rem' }}
+                onClick={() => setInvoicePopupDismissed(true)}
+              >
+                &times;
+              </button>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.88rem', color: '#d4e8e4', lineHeight: 1.4 }}>
+              {multiple
+                ? `You have ${unpaidInvoices.length} outstanding invoices. Please review and pay your balance.`
+                : 'You have an outstanding invoice. Please review and pay your balance.'}
+            </p>
+            <Link
+              to={multiple ? '/patient-portal/invoices' : `/patient-portal/invoices/${unpaidInvoices[0].invoice_id}/checkout`}
+              style={{ marginTop: '0.3rem', fontSize: '0.85rem', color: '#5dd6b3', fontWeight: 600, textDecoration: 'none' }}
+              onClick={() => setInvoicePopupDismissed(true)}
+            >
+              {multiple ? 'View All Invoices \u2192' : 'View Invoice \u2192'}
+            </Link>
+          </div>
+        );
+      })()}
 
       <section className="portal-grid">
         <article className="portal-card">

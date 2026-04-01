@@ -797,6 +797,7 @@ CREATE TABLE IF NOT EXISTS intake_medication_rows (
 
 
 
+
 -- TRIGGERS
 
 DELIMITER $$
@@ -830,6 +831,33 @@ BEGIN
     END IF;
 END $$
 
+-- Trigger: Enforce valid appointment status transitions (state machine)
+DROP TRIGGER IF EXISTS appointments_enforce_status_transition $$
+CREATE TRIGGER appointments_enforce_status_transition
+BEFORE UPDATE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE old_status VARCHAR(50) DEFAULT NULL;
+    DECLARE new_status VARCHAR(50) DEFAULT NULL;
+
+    IF OLD.status_id <> NEW.status_id THEN
+        SELECT status_name INTO old_status FROM appointment_statuses WHERE status_id = OLD.status_id LIMIT 1;
+        SELECT status_name INTO new_status FROM appointment_statuses WHERE status_id = NEW.status_id LIMIT 1;
+
+        -- Terminal states: no transitions out allowed
+        IF old_status IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Appointment status cannot be changed once it is Completed or Cancelled';
+        END IF;
+
+        -- CHECKED_IN can only move to COMPLETED or CANCELLED
+        IF old_status = 'CHECKED_IN' AND new_status NOT IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'A checked-in appointment can only be marked Completed or Cancelled';
+        END IF;
+    END IF;
+END $$
+
 -- Trigger 2: Auto-update invoice payment_status when payment is inserted
 DROP TRIGGER IF EXISTS payments_update_invoice_status $$
 CREATE TRIGGER payments_update_invoice_status
@@ -857,88 +885,6 @@ BEGIN
             ELSE 'Paid'
         END
         WHERE invoice_id = NEW.invoice_id;
-    END IF;
-END $$
-
--- Trigger 3: Auto-update invoice payment_status when payment is updated
-DROP TRIGGER IF EXISTS payments_update_invoice_status_on_update $$
-CREATE TRIGGER payments_update_invoice_status_on_update
-AFTER UPDATE ON payments
-FOR EACH ROW
-BEGIN
-    DECLARE total_paid_new DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE patient_due_new DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE total_paid_old DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE patient_due_old DECIMAL(10,2) DEFAULT 0.00;
-
-    IF NEW.invoice_id IS NOT NULL THEN
-        SELECT COALESCE(SUM(payment_amount), 0.00)
-        INTO total_paid_new
-        FROM payments
-        WHERE invoice_id = NEW.invoice_id;
-
-        SELECT COALESCE(patient_amount, 0.00)
-        INTO patient_due_new
-        FROM invoices
-        WHERE invoice_id = NEW.invoice_id;
-
-        UPDATE invoices
-        SET payment_status = CASE
-            WHEN total_paid_new <= 0 THEN 'Unpaid'
-            WHEN total_paid_new < patient_due_new THEN 'Partial'
-            ELSE 'Paid'
-        END
-        WHERE invoice_id = NEW.invoice_id;
-    END IF;
-
-    IF OLD.invoice_id IS NOT NULL AND OLD.invoice_id <> NEW.invoice_id THEN
-        SELECT COALESCE(SUM(payment_amount), 0.00)
-        INTO total_paid_old
-        FROM payments
-        WHERE invoice_id = OLD.invoice_id;
-
-        SELECT COALESCE(patient_amount, 0.00)
-        INTO patient_due_old
-        FROM invoices
-        WHERE invoice_id = OLD.invoice_id;
-
-        UPDATE invoices
-        SET payment_status = CASE
-            WHEN total_paid_old <= 0 THEN 'Unpaid'
-            WHEN total_paid_old < patient_due_old THEN 'Partial'
-            ELSE 'Paid'
-        END
-        WHERE invoice_id = OLD.invoice_id;
-    END IF;
-END $$
-
--- Trigger 4: Auto-update invoice payment_status when payment is deleted
-DROP TRIGGER IF EXISTS payments_update_invoice_status_on_delete $$
-CREATE TRIGGER payments_update_invoice_status_on_delete
-AFTER DELETE ON payments
-FOR EACH ROW
-BEGIN
-    DECLARE total_paid DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE patient_due DECIMAL(10,2) DEFAULT 0.00;
-
-    IF OLD.invoice_id IS NOT NULL THEN
-        SELECT COALESCE(SUM(payment_amount), 0.00)
-        INTO total_paid
-        FROM payments
-        WHERE invoice_id = OLD.invoice_id;
-
-        SELECT COALESCE(patient_amount, 0.00)
-        INTO patient_due
-        FROM invoices
-        WHERE invoice_id = OLD.invoice_id;
-
-        UPDATE invoices
-        SET payment_status = CASE
-            WHEN total_paid <= 0 THEN 'Unpaid'
-            WHEN total_paid < patient_due THEN 'Partial'
-            ELSE 'Paid'
-        END
-        WHERE invoice_id = OLD.invoice_id;
     END IF;
 END $$
 
@@ -1161,7 +1107,7 @@ BEGIN
                 (
                     SELECT COUNT(*)
                     FROM appointments a
-                    WHERE a.slot_id = s.slot_id
+                        WHERE a.slot_id = s.slot_id
                       AND a.status_id <> cancelled_status_id
                 ) < s.max_patients
             )
@@ -1169,35 +1115,147 @@ BEGIN
     END IF;
 END $$
 
-DROP TRIGGER IF EXISTS appointments_sync_slot_on_delete $$
-CREATE TRIGGER appointments_sync_slot_on_delete
-AFTER DELETE ON appointments
+
+-- Trigger: Cancel active appointments when doctor time-off is inserted (is_approved defaults TRUE)
+DROP TRIGGER IF EXISTS after_doctor_time_off_insert_cancel_appointments $$
+CREATE TRIGGER after_doctor_time_off_insert_cancel_appointments
+AFTER INSERT ON doctor_time_off
 FOR EACH ROW
 BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
 
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
+    IF NEW.is_approved = TRUE THEN
+        SELECT status_id INTO v_cancelled_status_id
+        FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
 
-    UPDATE appointment_slots s
-    SET s.current_bookings = (
-            SELECT COUNT(*)
-            FROM appointments a
-            WHERE a.slot_id = s.slot_id
-              AND a.status_id <> cancelled_status_id
-        ),
-        s.is_available = (
-            (
-                SELECT COUNT(*)
-                FROM appointments a
-                WHERE a.slot_id = s.slot_id
-                  AND a.status_id <> cancelled_status_id
-            ) < s.max_patients
-        )
-    WHERE s.slot_id = OLD.slot_id;
+        SELECT reason_id INTO v_reason_id
+        FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+
+        IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+            UPDATE appointments
+            SET status_id = v_cancelled_status_id,
+                reason_id = v_reason_id,
+                updated_by = 'SYSTEM_TIME_OFF'
+            WHERE doctor_id = NEW.doctor_id
+              AND status_id NOT IN (
+                  SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+              )
+              AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+        END IF;
+    END IF;
 END $$
+
+-- Trigger: Cancel active appointments when doctor time-off is explicitly approved
+DROP TRIGGER IF EXISTS after_doctor_time_off_update_cancel_appointments $$
+CREATE TRIGGER after_doctor_time_off_update_cancel_appointments
+AFTER UPDATE ON doctor_time_off
+FOR EACH ROW
+BEGIN
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+
+    IF NEW.is_approved = TRUE AND OLD.is_approved = FALSE THEN
+        SELECT status_id INTO v_cancelled_status_id
+        FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+
+        SELECT reason_id INTO v_reason_id
+        FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+
+        IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+            UPDATE appointments
+            SET status_id = v_cancelled_status_id,
+                reason_id = v_reason_id,
+                updated_by = 'SYSTEM_TIME_OFF'
+            WHERE doctor_id = NEW.doctor_id
+              AND status_id NOT IN (
+                  SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+              )
+              AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+        END IF;
+    END IF;
+END $$
+
+-- Trigger: Cancel active appointments when a doctor's staff time-off request is approved
+DROP TRIGGER IF EXISTS after_staff_time_off_approved_cancel_appointments $$
+CREATE TRIGGER after_staff_time_off_approved_cancel_appointments
+AFTER UPDATE ON staff_time_off_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_doctor_id INT DEFAULT NULL;
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+
+    IF NEW.is_approved = TRUE AND OLD.is_approved = FALSE THEN
+        SELECT d.doctor_id INTO v_doctor_id
+        FROM doctors d
+        WHERE d.staff_id = NEW.staff_id
+        LIMIT 1;
+
+        IF v_doctor_id IS NOT NULL THEN
+            SELECT status_id INTO v_cancelled_status_id
+            FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+
+            SELECT reason_id INTO v_reason_id
+            FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+
+            IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+                UPDATE appointments
+                SET status_id = v_cancelled_status_id,
+                    reason_id = v_reason_id,
+                    updated_by = 'SYSTEM_TIME_OFF'
+                WHERE doctor_id = v_doctor_id
+                  AND status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  )
+                  AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+                  AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+            END IF;
+        END IF;
+    END IF;
+END $$
+
+-- Trigger: Cancel future appointments when a doctor's user account is hidden (is_deleted flips 0 → 1)
+DROP TRIGGER IF EXISTS after_staff_hidden_cancel_appointments $$
+CREATE TRIGGER after_staff_hidden_cancel_appointments
+AFTER UPDATE ON users
+FOR EACH ROW
+BEGIN
+    DECLARE v_doctor_id INT DEFAULT NULL;
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+
+    IF OLD.is_deleted = 0 AND NEW.is_deleted = 1 THEN
+        SELECT d.doctor_id INTO v_doctor_id
+        FROM staff st
+        JOIN doctors d ON d.staff_id = st.staff_id
+        WHERE st.user_id = NEW.user_id
+        LIMIT 1;
+
+        IF v_doctor_id IS NOT NULL THEN
+            SELECT status_id INTO v_cancelled_status_id
+            FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+
+            SELECT reason_id INTO v_reason_id
+            FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+
+            IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+                UPDATE appointments
+                SET status_id = v_cancelled_status_id,
+                    reason_id = v_reason_id,
+                    updated_by = 'SYSTEM_DOCTOR_HIDDEN'
+                WHERE doctor_id = v_doctor_id
+                  AND appointment_date >= CURDATE()
+                  AND status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  );
+            END IF;
+        END IF;
+    END IF;
+END $$
+
 
 DELIMITER ;
 

@@ -173,19 +173,182 @@ ensureDoctorNpiPrimaryKey();
 })();
 
 pool.query(
-  `INSERT INTO appointment_statuses (status_name, display_name, created_by)
-   VALUES ('CHECKED_IN', 'Checked In', 'SYSTEM')
+  `INSERT INTO appointment_statuses (status_name, display_name, created_by) VALUES
+   ('SCHEDULED',   'Scheduled',   'SYSTEM'),
+   ('CONFIRMED',   'Confirmed',   'SYSTEM'),
+   ('COMPLETED',   'Completed',   'SYSTEM'),
+   ('CANCELLED',   'Cancelled',   'SYSTEM'),
+   ('RESCHEDULED', 'Rescheduled', 'SYSTEM'),
+   ('CHECKED_IN',  'Checked In',  'SYSTEM')
    ON DUPLICATE KEY UPDATE display_name = VALUES(display_name)`,
   (err) => {
     if (err) {
-      console.error('Error ensuring CHECKED_IN status:', err.message);
+      console.error('Error ensuring appointment statuses:', err.message);
     }
   }
 );
 
+pool.query(
+  `INSERT INTO treatment_statuses (status_name, display_name, created_by) VALUES
+   ('PLANNED',      'Planned',      'SYSTEM'),
+   ('IN_PROGRESS',  'In Progress',  'SYSTEM'),
+   ('COMPLETED',    'Completed',    'SYSTEM'),
+   ('CANCELLED',    'Cancelled',    'SYSTEM')
+   ON DUPLICATE KEY UPDATE display_name = VALUES(display_name)`,
+  (err) => {
+    if (err) {
+      console.error('Error ensuring treatment statuses:', err.message);
+    }
+  }
+);
+
+pool.query(
+  `INSERT INTO cancel_reasons (reason_text, category, created_by)
+   VALUES ('Doctor Unavailable', 'PROVIDER', 'SYSTEM')
+   ON DUPLICATE KEY UPDATE category = VALUES(category)`,
+  (err) => {
+    if (err) console.error('Error ensuring Doctor Unavailable cancel reason:', err.message);
+  }
+);
+
+// Doctor time-off insert trigger: cancel appointments when time-off is created (is_approved defaults TRUE)
+pool.query('DROP TRIGGER IF EXISTS after_doctor_time_off_insert_cancel_appointments', () => {
+  pool.query(`CREATE TRIGGER after_doctor_time_off_insert_cancel_appointments
+AFTER INSERT ON doctor_time_off
+FOR EACH ROW
+BEGIN
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    IF NEW.is_approved = TRUE THEN
+        SELECT status_id INTO v_cancelled_status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+        SELECT reason_id INTO v_reason_id FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+        IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+            UPDATE appointments SET status_id = v_cancelled_status_id, reason_id = v_reason_id, updated_by = 'SYSTEM_TIME_OFF'
+            WHERE doctor_id = NEW.doctor_id
+              AND status_id NOT IN (SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED'))
+              AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('Create after_doctor_time_off_insert trigger error:', err.message); });
+});
+
+// Doctor time-off update trigger: cancel appointments when time-off is explicitly approved
+pool.query('DROP TRIGGER IF EXISTS after_doctor_time_off_update_cancel_appointments', () => {
+  pool.query(`CREATE TRIGGER after_doctor_time_off_update_cancel_appointments
+AFTER UPDATE ON doctor_time_off
+FOR EACH ROW
+BEGIN
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    IF NEW.is_approved = TRUE AND OLD.is_approved = FALSE THEN
+        SELECT status_id INTO v_cancelled_status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+        SELECT reason_id INTO v_reason_id FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+        IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+            UPDATE appointments SET status_id = v_cancelled_status_id, reason_id = v_reason_id, updated_by = 'SYSTEM_TIME_OFF'
+            WHERE doctor_id = NEW.doctor_id
+              AND status_id NOT IN (SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED'))
+              AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('Create after_doctor_time_off_update trigger error:', err.message); });
+});
+
+// Appointment status state machine: block invalid status transitions
+pool.query('DROP TRIGGER IF EXISTS appointments_enforce_status_transition', () => {
+  pool.query(`CREATE TRIGGER appointments_enforce_status_transition
+BEFORE UPDATE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE old_status VARCHAR(50) DEFAULT NULL;
+    DECLARE new_status VARCHAR(50) DEFAULT NULL;
+    IF OLD.status_id <> NEW.status_id THEN
+        SELECT status_name INTO old_status FROM appointment_statuses WHERE status_id = OLD.status_id LIMIT 1;
+        SELECT status_name INTO new_status FROM appointment_statuses WHERE status_id = NEW.status_id LIMIT 1;
+        IF old_status IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Appointment status cannot be changed once it is Completed or Cancelled';
+        END IF;
+        IF old_status = 'CHECKED_IN' AND new_status NOT IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'A checked-in appointment can only be marked Completed or Cancelled';
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('Create appointments_enforce_status_transition trigger error:', err.message); });
+});
+
+// Staff time-off approval trigger: cancel a doctor's appointments when their staff request is approved
+pool.query('DROP TRIGGER IF EXISTS after_staff_time_off_approved_cancel_appointments', () => {
+  pool.query(`CREATE TRIGGER after_staff_time_off_approved_cancel_appointments
+AFTER UPDATE ON staff_time_off_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_doctor_id INT DEFAULT NULL;
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    IF NEW.is_approved = TRUE AND OLD.is_approved = FALSE THEN
+        SELECT d.doctor_id INTO v_doctor_id FROM doctors d WHERE d.staff_id = NEW.staff_id LIMIT 1;
+        IF v_doctor_id IS NOT NULL THEN
+            SELECT status_id INTO v_cancelled_status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+            SELECT reason_id INTO v_reason_id FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+            IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+                UPDATE appointments SET status_id = v_cancelled_status_id, reason_id = v_reason_id, updated_by = 'SYSTEM_TIME_OFF'
+                WHERE doctor_id = v_doctor_id
+                  AND status_id NOT IN (SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED'))
+                  AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+                  AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+            END IF;
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('Create after_staff_time_off_approved trigger error:', err.message); });
+});
+
+// Doctor hidden trigger: cancel future appointments when a doctor's account is deactivated
+pool.query('DROP TRIGGER IF EXISTS after_staff_hidden_cancel_appointments', () => {
+  pool.query(`CREATE TRIGGER after_staff_hidden_cancel_appointments
+AFTER UPDATE ON users
+FOR EACH ROW
+BEGIN
+    DECLARE v_doctor_id INT DEFAULT NULL;
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    IF OLD.is_deleted = 0 AND NEW.is_deleted = 1 THEN
+        SELECT d.doctor_id INTO v_doctor_id
+        FROM staff st
+        JOIN doctors d ON d.staff_id = st.staff_id
+        WHERE st.user_id = NEW.user_id
+        LIMIT 1;
+        IF v_doctor_id IS NOT NULL THEN
+            SELECT status_id INTO v_cancelled_status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+            SELECT reason_id INTO v_reason_id FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+            IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+                UPDATE appointments
+                SET status_id = v_cancelled_status_id,
+                    reason_id = v_reason_id,
+                    updated_by = 'SYSTEM_DOCTOR_HIDDEN'
+                WHERE doctor_id = v_doctor_id
+                  AND appointment_date >= CURDATE()
+                  AND status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  );
+            END IF;
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('Create after_staff_hidden_cancel_appointments trigger error:', err.message); });
+});
+
+
 // Migration: drop unused color_code column from appointment_statuses
 pool.query(`ALTER TABLE appointment_statuses DROP COLUMN color_code`, (err) => {
   if (err && !err.message.includes("check that column/key exists")) { /* column already dropped */ }
+});
+
+// Remove dead triggers — app never updates/deletes payments or hard-deletes appointments
+['payments_update_invoice_status_on_update', 'payments_update_invoice_status_on_delete', 'appointments_sync_slot_on_delete'].forEach((name) => {
+  pool.query(`DROP TRIGGER IF EXISTS ${name}`, (err) => {
+    if (err) console.error(`Error dropping trigger ${name}:`, err.message);
+  });
 });
 
 // Ensure staff time-off request storage exists for non-doctor staff workflows.
@@ -290,7 +453,6 @@ pool.query(`CREATE TABLE IF NOT EXISTS refunds (
 )`, (err) => {
   if (err && !err.message.includes('already exists')) console.error('Create refunds table:', err.message);
 });
-
 
 
 // Parse JSON body

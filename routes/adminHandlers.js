@@ -1,3 +1,5 @@
+const { sendCancellationEmail } = require('../utils/mailer');
+
 function createAdminHandlers(deps) {
   const { pool, sendJSON, url } = deps;
 
@@ -609,19 +611,62 @@ function createAdminHandlers(deps) {
     );
   }
 
+  function getAffectedAppointmentsForEmails(doctorId, startDatetime, endDatetime, callback) {
+    pool.query(
+      `SELECT a.appointment_date, a.appointment_time,
+              p.p_first_name, p.p_last_name, p.p_email,
+              CONCAT(st.first_name, ' ', st.last_name) AS doctor_name
+       FROM appointments a
+       JOIN patients p ON p.patient_id = a.patient_id
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       JOIN doctors d ON d.doctor_id = a.doctor_id
+       JOIN staff st ON st.staff_id = d.staff_id
+       WHERE a.doctor_id = ?
+         AND ast.status_name NOT IN ('CANCELLED', 'COMPLETED')
+         AND TIMESTAMP(a.appointment_date, a.appointment_time) >= ?
+         AND TIMESTAMP(a.appointment_date, a.appointment_time) < ?`,
+      [doctorId, startDatetime, endDatetime],
+      (err, rows) => {
+        if (err) {
+          console.error('Error querying affected appointments for emails:', err);
+          return callback([]);
+        }
+        callback(rows || []);
+      }
+    );
+  }
+
   function approveAdminDoctorTimeOff(req, timeOffId, res) {
     pool.query(
-      `UPDATE doctor_time_off SET is_approved = TRUE, updated_by = 'ADMIN_PORTAL' WHERE time_off_id = ?`,
+      `SELECT doctor_id, start_datetime, end_datetime FROM doctor_time_off WHERE time_off_id = ? LIMIT 1`,
       [timeOffId],
-      (err, result) => {
-        if (err) {
-          console.error('Error approving time off:', err);
-          return sendJSON(res, 500, { error: 'Database error' });
+      (lookupErr, timeOffRows) => {
+        if (lookupErr || !timeOffRows?.length) {
+          return sendJSON(res, lookupErr ? 500 : 404, { error: lookupErr ? 'Database error' : 'Time-off entry not found' });
         }
-        if (result.affectedRows === 0) {
-          return sendJSON(res, 404, { error: 'Time-off entry not found' });
-        }
-        sendJSON(res, 200, { message: 'Time-off approved' });
+        const { doctor_id, start_datetime, end_datetime } = timeOffRows[0];
+
+        getAffectedAppointmentsForEmails(doctor_id, start_datetime, end_datetime, (affected) => {
+          pool.query(
+            `UPDATE doctor_time_off SET is_approved = TRUE, updated_by = 'ADMIN_PORTAL' WHERE time_off_id = ?`,
+            [timeOffId],
+            (err, result) => {
+              if (err) {
+                console.error('Error approving time off:', err);
+                return sendJSON(res, 500, { error: 'Database error' });
+              }
+              if (result.affectedRows === 0) {
+                return sendJSON(res, 404, { error: 'Time-off entry not found' });
+              }
+              affected.forEach((appt) => {
+                sendCancellationEmail(appt).catch((emailErr) => {
+                  console.error('Cancellation email error:', emailErr.message);
+                });
+              });
+              sendJSON(res, 200, { message: 'Time-off approved', cancelledAppointments: affected.length });
+            }
+          );
+        });
       }
     );
   }
@@ -789,20 +834,65 @@ function createAdminHandlers(deps) {
 
   function approveAdminStaffTimeOffRequest(req, requestId, source, res) {
     const isDoctorSource = source === 'DOCTOR_TIME_OFF';
-    const sql = isDoctorSource
-      ? `UPDATE doctor_time_off SET is_approved = TRUE, updated_by = 'ADMIN_PORTAL' WHERE time_off_id = ?`
-      : `UPDATE staff_time_off_requests SET is_approved = TRUE, updated_by = 'ADMIN_PORTAL' WHERE request_id = ?`;
 
-    pool.query(sql, [requestId], (err, result) => {
-      if (err) {
-        console.error('Error approving time off request:', err);
-        return sendJSON(res, 500, { error: 'Database error' });
-      }
-      if (result.affectedRows === 0) {
-        return sendJSON(res, 404, { error: 'Time-off request not found' });
-      }
-      sendJSON(res, 200, { message: 'Time-off request approved' });
-    });
+    if (isDoctorSource) {
+      pool.query(
+        `SELECT doctor_id, start_datetime, end_datetime FROM doctor_time_off WHERE time_off_id = ? LIMIT 1`,
+        [requestId],
+        (lookupErr, timeOffRows) => {
+          if (lookupErr || !timeOffRows?.length) {
+            return sendJSON(res, lookupErr ? 500 : 404, { error: lookupErr ? 'Database error' : 'Time-off request not found' });
+          }
+          const { doctor_id, start_datetime, end_datetime } = timeOffRows[0];
+          getAffectedAppointmentsForEmails(doctor_id, start_datetime, end_datetime, (affected) => {
+            pool.query(
+              `UPDATE doctor_time_off SET is_approved = TRUE, updated_by = 'ADMIN_PORTAL' WHERE time_off_id = ?`,
+              [requestId],
+              (err, result) => {
+                if (err) { console.error('Error approving time off request:', err); return sendJSON(res, 500, { error: 'Database error' }); }
+                if (result.affectedRows === 0) return sendJSON(res, 404, { error: 'Time-off request not found' });
+                affected.forEach((appt) => {
+                  sendCancellationEmail(appt).catch((emailErr) => { console.error('Cancellation email error:', emailErr.message); });
+                });
+                sendJSON(res, 200, { message: 'Time-off request approved', cancelledAppointments: affected.length });
+              }
+            );
+          });
+        }
+      );
+    } else {
+      pool.query(
+        `SELECT str.staff_id, str.start_datetime, str.end_datetime, d.doctor_id
+         FROM staff_time_off_requests str
+         LEFT JOIN doctors d ON d.staff_id = str.staff_id
+         WHERE str.request_id = ? LIMIT 1`,
+        [requestId],
+        (lookupErr, rows) => {
+          if (lookupErr || !rows?.length) {
+            return sendJSON(res, lookupErr ? 500 : 404, { error: lookupErr ? 'Database error' : 'Time-off request not found' });
+          }
+          const { doctor_id, start_datetime, end_datetime } = rows[0];
+          const doEmails = (cb) => {
+            if (!doctor_id) return cb([]);
+            getAffectedAppointmentsForEmails(doctor_id, start_datetime, end_datetime, cb);
+          };
+          doEmails((affected) => {
+            pool.query(
+              `UPDATE staff_time_off_requests SET is_approved = TRUE, updated_by = 'ADMIN_PORTAL' WHERE request_id = ?`,
+              [requestId],
+              (err, result) => {
+                if (err) { console.error('Error approving time off request:', err); return sendJSON(res, 500, { error: 'Database error' }); }
+                if (result.affectedRows === 0) return sendJSON(res, 404, { error: 'Time-off request not found' });
+                affected.forEach((appt) => {
+                  sendCancellationEmail(appt).catch((emailErr) => { console.error('Cancellation email error:', emailErr.message); });
+                });
+                sendJSON(res, 200, { message: 'Time-off request approved', cancelledAppointments: affected.length });
+              }
+            );
+          });
+        }
+      );
+    }
   }
 
   function denyAdminStaffTimeOffRequest(req, requestId, source, res) {
@@ -1385,6 +1475,36 @@ function createAdminHandlers(deps) {
     );
   }
 
+  function getSystemCancelledAppointments(req, res) {
+    pool.query(
+      `SELECT
+         a.appointment_id,
+         a.appointment_date,
+         a.appointment_time,
+         CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+         p.p_email,
+         p.p_phone,
+         CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+         a.updated_at AS cancelled_at
+       FROM appointments a
+       JOIN patients p ON p.patient_id = a.patient_id
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       JOIN doctors d ON d.doctor_id = a.doctor_id
+       JOIN staff st ON st.staff_id = d.staff_id
+       WHERE ast.status_name = 'CANCELLED'
+         AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
+         AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+       ORDER BY a.updated_at DESC`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching system-cancelled appointments:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
   return {
     getAdminDashboardSummary,
     getAdminAppointmentsQueue,
@@ -1424,7 +1544,8 @@ function createAdminHandlers(deps) {
     adminUpdateStaffSchedule,
     processRefund,
     getRefundHistory,
-    getInvoiceLookup
+    getInvoiceLookup,
+    getSystemCancelledAppointments
   };
 
   // ── Staff Schedule Request Handlers ──
