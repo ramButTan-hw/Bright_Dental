@@ -1143,6 +1143,13 @@ BEGIN
               )
               AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
               AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+
+            UPDATE appointment_preference_requests
+            SET request_status = 'CANCELLED', updated_by = 'SYSTEM_TIME_OFF'
+            WHERE assigned_doctor_id = NEW.doctor_id
+              AND request_status = 'ASSIGNED'
+              AND TIMESTAMP(assigned_date, assigned_time) >= NEW.start_datetime
+              AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
         END IF;
     END IF;
 END $$
@@ -1174,6 +1181,13 @@ BEGIN
               )
               AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
               AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+
+            UPDATE appointment_preference_requests
+            SET request_status = 'CANCELLED', updated_by = 'SYSTEM_TIME_OFF'
+            WHERE assigned_doctor_id = NEW.doctor_id
+              AND request_status = 'ASSIGNED'
+              AND TIMESTAMP(assigned_date, assigned_time) >= NEW.start_datetime
+              AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
         END IF;
     END IF;
 END $$
@@ -1212,6 +1226,13 @@ BEGIN
                   )
                   AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
                   AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+
+                UPDATE appointment_preference_requests
+                SET request_status = 'CANCELLED', updated_by = 'SYSTEM_TIME_OFF'
+                WHERE assigned_doctor_id = v_doctor_id
+                  AND request_status = 'ASSIGNED'
+                  AND TIMESTAMP(assigned_date, assigned_time) >= NEW.start_datetime
+                  AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
             END IF;
         END IF;
     END IF;
@@ -1251,6 +1272,12 @@ BEGIN
                   AND status_id NOT IN (
                       SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
                   );
+
+                UPDATE appointment_preference_requests
+                SET request_status = 'CANCELLED', updated_by = 'SYSTEM_DOCTOR_HIDDEN'
+                WHERE assigned_doctor_id = v_doctor_id
+                  AND request_status = 'ASSIGNED'
+                  AND assigned_date >= CURDATE();
             END IF;
         END IF;
     END IF;
