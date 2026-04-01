@@ -131,7 +131,7 @@ function PatientPortalPage() {
 
   const visibleRequests = appointmentRequests.filter((r) => {
     const status = String(r?.request_status || '').toUpperCase();
-    return status !== 'COMPLETED' && status !== 'CANCELLED';
+    return status === 'PREFERRED_PENDING';
   });
 
   const invoiceByAppointmentId = useMemo(() => {
@@ -593,7 +593,7 @@ function PatientPortalPage() {
               </thead>
               <tbody>
                 {visibleRequests.map((request) => {
-                  const canCancel = request.request_status === 'PREFERRED_PENDING' || request.request_status === 'ASSIGNED';
+                  const canCancel = request.request_status === 'PREFERRED_PENDING';
                   return (
                     <tr key={request.preference_request_id}>
                       <td>{formatDate(request.created_at)}</td>
