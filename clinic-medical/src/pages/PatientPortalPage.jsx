@@ -43,7 +43,11 @@ function PatientPortalPage() {
   const [patientPharmacy, setPatientPharmacy] = useState([]);
   const [invoicePopupDismissed, setInvoicePopupDismissed] = useState(false);
   const [cancelledAppts, setCancelledAppts] = useState([]);
-  const [cancelledApptPopupDismissed, setCancelledApptPopupDismissed] = useState(false);
+  const [dismissedCancelledIds, setDismissedCancelledIds] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('dismissedCancelledAppts') || '[]'));
+    } catch { return new Set(); }
+  });
 
   const session = useMemo(() => getPatientPortalSession(), []);
   const API_BASE_URL = resolveApiBaseUrl();
@@ -203,10 +207,10 @@ function PatientPortalPage() {
 
       {error && <p className="portal-error">{error}</p>}
 
-      {cancelledAppts.length > 0 && !cancelledApptPopupDismissed && (
+      {cancelledAppts.filter(a => !dismissedCancelledIds.has(a.appointment_id)).length > 0 && (
         <div style={{
           position: 'fixed',
-          bottom: cancelledAppts.length > 0 && !invoicePopupDismissed && invoices.filter(inv => (inv.payment_status === 'Unpaid' || inv.payment_status === 'Partial') && Number(inv.amount_due) > 0).length > 0 ? '9rem' : '1.5rem',
+          bottom: cancelledAppts.filter(a => !dismissedCancelledIds.has(a.appointment_id)).length > 0 && !invoicePopupDismissed && invoices.filter(inv => (inv.payment_status === 'Unpaid' || inv.payment_status === 'Partial') && Number(inv.amount_due) > 0).length > 0 ? '9rem' : '1.5rem',
           right: '1.5rem',
           zIndex: 999,
           width: '320px',
@@ -219,31 +223,43 @@ function PatientPortalPage() {
           flexDirection: 'column',
           gap: '0.45rem',
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', color: '#ff8080', letterSpacing: '0.01em' }}>
-              {cancelledAppts.length === 1 ? 'Appointment Cancelled' : `${cancelledAppts.length} Appointments Cancelled`}
-            </p>
-            <button
-              type="button"
-              aria-label="Dismiss"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1.1rem', lineHeight: 1, padding: 0, marginLeft: '0.5rem' }}
-              onClick={() => setCancelledApptPopupDismissed(true)}
-            >
-              &times;
-            </button>
-          </div>
-          <p style={{ margin: 0, fontSize: '0.88rem', color: '#f5c0c0', lineHeight: 1.4 }}>
-            {cancelledAppts.length === 1
-              ? `Your appointment on ${new Date(cancelledAppts[0].appointment_date).toLocaleDateString()} with ${cancelledAppts[0].doctor_name} was cancelled due to doctor unavailability. Please reschedule.`
-              : `${cancelledAppts.length} of your appointments were cancelled due to doctor unavailability. Please reschedule.`}
-          </p>
-          <Link
-            to="/patient-portal/new-appointment"
-            style={{ marginTop: '0.3rem', fontSize: '0.85rem', color: '#ff9999', fontWeight: 600, textDecoration: 'none' }}
-            onClick={() => setCancelledApptPopupDismissed(true)}
-          >
-            Reschedule Now &rarr;
-          </Link>
+          {(() => {
+              const visible = cancelledAppts.filter(a => !dismissedCancelledIds.has(a.appointment_id));
+              const dismissAll = () => {
+                const newIds = new Set([...dismissedCancelledIds, ...visible.map(a => a.appointment_id)]);
+                setDismissedCancelledIds(newIds);
+                try { localStorage.setItem('dismissedCancelledAppts', JSON.stringify([...newIds])); } catch {}
+              };
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', color: '#ff8080', letterSpacing: '0.01em' }}>
+                      {visible.length === 1 ? 'Appointment Cancelled' : `${visible.length} Appointments Cancelled`}
+                    </p>
+                    <button
+                      type="button"
+                      aria-label="Dismiss"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1.1rem', lineHeight: 1, padding: 0, marginLeft: '0.5rem' }}
+                      onClick={dismissAll}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.88rem', color: '#f5c0c0', lineHeight: 1.4 }}>
+                    {visible.length === 1
+                      ? `Your appointment on ${new Date(visible[0].appointment_date).toLocaleDateString()} with ${visible[0].doctor_name} was cancelled due to doctor unavailability. Please reschedule.`
+                      : `${visible.length} of your appointments were cancelled due to doctor unavailability. Please reschedule.`}
+                  </p>
+                  <Link
+                    to="/patient-portal/new-appointment"
+                    style={{ marginTop: '0.3rem', fontSize: '0.85rem', color: '#ff9999', fontWeight: 600, textDecoration: 'none' }}
+                    onClick={dismissAll}
+                  >
+                    Reschedule Now &rarr;
+                  </Link>
+                </>
+              );
+            })()}
         </div>
       )}
 

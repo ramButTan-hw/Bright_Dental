@@ -407,6 +407,7 @@ const queries = {
   `,
 
   // Appointments cancelled by the system (doctor time-off) for a patient in the last 30 days
+  // Excludes cancellations already resolved by a newer active request or scheduled appointment
   getPatientSystemCancelledAppointments: `
     SELECT
       a.appointment_id,
@@ -422,6 +423,20 @@ const queries = {
       AND ast.status_name = 'CANCELLED'
       AND a.updated_by = 'SYSTEM_TIME_OFF'
       AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      AND NOT EXISTS (
+        SELECT 1 FROM appointment_preference_requests apr
+        WHERE apr.patient_id = a.patient_id
+          AND apr.request_status IN ('PREFERRED_PENDING', 'ASSIGNED')
+          AND apr.created_at > a.updated_at
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM appointments a2
+        JOIN appointment_statuses ast2 ON ast2.status_id = a2.status_id
+        WHERE a2.patient_id = a.patient_id
+          AND a2.appointment_id != a.appointment_id
+          AND ast2.status_name NOT IN ('CANCELLED')
+          AND a2.created_at > a.updated_at
+      )
     ORDER BY a.updated_at DESC
   `,
 
