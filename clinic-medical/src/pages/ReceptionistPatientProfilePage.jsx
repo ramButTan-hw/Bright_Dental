@@ -60,6 +60,12 @@ function ReceptionistPatientProfilePage() {
   const [pharmAssignPrimary, setPharmAssignPrimary] = useState(false);
   const [isAssigningPharm, setIsAssigningPharm] = useState(false);
 
+  // Insurance state
+  const [insuranceFormOpen, setInsuranceFormOpen] = useState(false);
+  const [allInsuranceCompanies, setAllInsuranceCompanies] = useState([]);
+  const [insuranceForm, setInsuranceForm] = useState({ companyId: '', memberId: '', groupNumber: '', isPrimary: false });
+  const [isAddingInsurance, setIsAddingInsurance] = useState(false);
+
   // Prescription state
   const [rxFormOpen, setRxFormOpen] = useState(false);
   const [allPharmacies, setAllPharmacies] = useState([]);
@@ -157,6 +163,15 @@ function ReceptionistPatientProfilePage() {
     loadDoctors();
   }, [API_BASE_URL, appointmentForm.locationId]);
 
+  // Load insurance companies when insurance form opens
+  useEffect(() => {
+    if (!insuranceFormOpen) return;
+    fetch(`${API_BASE_URL}/api/insurance-companies`)
+      .then(safeJson)
+      .then((data) => setAllInsuranceCompanies(Array.isArray(data) ? data : []))
+      .catch(() => setAllInsuranceCompanies([]));
+  }, [API_BASE_URL, insuranceFormOpen]);
+
   // Load pharmacies when rx form or assign form opens
   useEffect(() => {
     if (!rxFormOpen && !pharmAssignOpen) return;
@@ -239,6 +254,47 @@ function ReceptionistPatientProfilePage() {
       loadPatientData();
     } catch (err) {
       setError(err.message || 'Failed to remove pharmacy.');
+    }
+  };
+
+  const handleAddInsurance = async (e) => {
+    e.preventDefault();
+    setIsAddingInsurance(true);
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/patients/${patientId}/insurance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: Number(insuranceForm.companyId),
+          memberId: insuranceForm.memberId,
+          groupNumber: insuranceForm.groupNumber,
+          isPrimary: insuranceForm.isPrimary
+        })
+      }).then(safeJson);
+      setMessage('Insurance added.');
+      setInsuranceFormOpen(false);
+      setInsuranceForm({ companyId: '', memberId: '', groupNumber: '', isPrimary: false });
+      loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to add insurance.');
+    } finally {
+      setIsAddingInsurance(false);
+    }
+  };
+
+  const handleRemoveInsurance = async (insuranceId) => {
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/patients/${patientId}/insurance/${insuranceId}`, {
+        method: 'DELETE'
+      }).then(safeJson);
+      setMessage('Insurance removed.');
+      loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to remove insurance.');
     }
   };
 
@@ -640,25 +696,53 @@ function ReceptionistPatientProfilePage() {
           <p><strong>Date of Birth:</strong> {patient.p_dob ? formatDate(patient.p_dob) : 'N/A'}</p>
           <p><strong>Address:</strong> {[patient.p_address, patient.p_city, patient.p_state, patient.p_zipcode].filter(Boolean).join(', ') || 'N/A'}</p>
           <p><strong>Emergency Contact:</strong> {emergencyContact}</p>
-          {insurance.length > 0 ? (
-            <>
-              <h3 style={{ marginTop: '0.8rem', marginBottom: '0.3rem' }}>Insurance</h3>
-              {insurance.map((ins) => (
-                <div key={ins.insurance_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.6rem 0.75rem', marginBottom: '0.5rem' }}>
-                  <p style={{ margin: '0 0 0.3rem', fontWeight: 700 }}>{ins.company_name || 'Unknown'}{ins.is_primary ? ' (Primary)' : ''}</p>
-                  <p style={{ margin: '0.15rem 0' }}><strong>Member ID:</strong> {ins.member_id || 'N/A'}{ins.group_number ? ` | Group: ${ins.group_number}` : ''}</p>
-                  {ins.company_phone && <p style={{ margin: '0.15rem 0' }}><strong>Phone:</strong> {ins.company_phone}</p>}
-                  {ins.company_fax && <p style={{ margin: '0.15rem 0' }}><strong>Fax:</strong> {ins.company_fax}</p>}
-                  {(ins.company_address || ins.company_city) && (
-                    <p style={{ margin: '0.15rem 0' }}><strong>Mailing:</strong> {[ins.company_address, ins.company_city, ins.company_state, ins.company_zipcode].filter(Boolean).join(', ')}</p>
-                  )}
-                  {ins.company_website && <p style={{ margin: '0.15rem 0' }}><strong>Website:</strong> {ins.company_website}</p>}
-                  {ins.company_contact && <p style={{ margin: '0.15rem 0' }}><strong>Contact:</strong> {ins.company_contact}</p>}
-                </div>
-              ))}
-            </>
-          ) : (
-            <p style={{ marginTop: '0.8rem', color: '#4b6966' }}><em>No insurance on file</em></p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.8rem', marginBottom: '0.3rem' }}>
+            <h3 style={{ margin: 0 }}>Insurance</h3>
+            <button type="button" style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'none', border: '1px solid #2d7a6e', color: '#2d7a6e', borderRadius: '6px', cursor: 'pointer' }} onClick={() => setInsuranceFormOpen(!insuranceFormOpen)}>
+              {insuranceFormOpen ? 'Cancel' : '+ Add'}
+            </button>
+          </div>
+          {insuranceFormOpen && (
+            <form onSubmit={handleAddInsurance} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.75rem', padding: '0.75rem', border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Insurance Company *</span>
+                <select value={insuranceForm.companyId} onChange={(e) => setInsuranceForm((p) => ({ ...p, companyId: e.target.value }))} required>
+                  <option value="">Select company</option>
+                  {allInsuranceCompanies.map((c) => <option key={c.company_id} value={c.company_id}>{c.company_name}</option>)}
+                </select>
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Member ID *</span>
+                <input type="text" value={insuranceForm.memberId} onChange={(e) => setInsuranceForm((p) => ({ ...p, memberId: e.target.value }))} required />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Group Number</span>
+                <input type="text" value={insuranceForm.groupNumber} onChange={(e) => setInsuranceForm((p) => ({ ...p, groupNumber: e.target.value }))} />
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                <input type="checkbox" checked={insuranceForm.isPrimary} onChange={(e) => setInsuranceForm((p) => ({ ...p, isPrimary: e.target.checked }))} />
+                Set as primary insurance
+              </label>
+              <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isAddingInsurance} style={{ alignSelf: 'flex-start' }}>
+                {isAddingInsurance ? 'Saving...' : 'Save'}
+              </button>
+            </form>
+          )}
+          {insurance.length > 0 ? insurance.map((ins) => (
+            <div key={ins.insurance_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.6rem 0.75rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <p style={{ margin: '0 0 0.3rem', fontWeight: 700 }}>{ins.company_name || 'Unknown'}{ins.is_primary ? ' (Primary)' : ''}</p>
+                <p style={{ margin: '0.15rem 0' }}><strong>Member ID:</strong> {ins.member_id || 'N/A'}{ins.group_number ? ` | Group: ${ins.group_number}` : ''}</p>
+                {ins.company_phone && <p style={{ margin: '0.15rem 0' }}><strong>Phone:</strong> {ins.company_phone}</p>}
+                {ins.company_fax && <p style={{ margin: '0.15rem 0' }}><strong>Fax:</strong> {ins.company_fax}</p>}
+                {(ins.company_address || ins.company_city) && <p style={{ margin: '0.15rem 0' }}><strong>Mailing:</strong> {[ins.company_address, ins.company_city, ins.company_state, ins.company_zipcode].filter(Boolean).join(', ')}</p>}
+                {ins.company_website && <p style={{ margin: '0.15rem 0' }}><strong>Website:</strong> {ins.company_website}</p>}
+                {ins.company_contact && <p style={{ margin: '0.15rem 0' }}><strong>Contact:</strong> {ins.company_contact}</p>}
+              </div>
+              <button type="button" onClick={() => handleRemoveInsurance(ins.insurance_id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</button>
+            </div>
+          )) : (
+            <p style={{ color: '#4b6966' }}><em>No insurance on file</em></p>
           )}
         </article>
 
@@ -979,8 +1063,8 @@ function ReceptionistPatientProfilePage() {
         <article className="reception-panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2>Assigned Pharmacy</h2>
-            <button type="button" className="reception-action-btn reception-action-btn--primary" onClick={() => setPharmAssignOpen(!pharmAssignOpen)}>
-              {pharmAssignOpen ? 'Cancel' : 'Assign Pharmacy'}
+            <button type="button" style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'none', border: '1px solid #2d7a6e', color: '#2d7a6e', borderRadius: '6px', cursor: 'pointer' }} onClick={() => setPharmAssignOpen(!pharmAssignOpen)}>
+              {pharmAssignOpen ? 'Cancel' : '+ Assign'}
             </button>
           </div>
 

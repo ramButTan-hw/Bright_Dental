@@ -376,6 +376,23 @@ function createPatientCoreHandlers(deps) {
     );
   }
 
+  function removePatientInsurance(req, patientId, insuranceId, res) {
+    pool.query(
+      `DELETE FROM insurance WHERE insurance_id = ? AND patient_id = ?`,
+      [insuranceId, patientId],
+      (err, result) => {
+        if (err) {
+          console.error('Error removing insurance:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        if (!result.affectedRows) {
+          return sendJSON(res, 404, { error: 'Insurance record not found' });
+        }
+        sendJSON(res, 200, { message: 'Insurance removed successfully' });
+      }
+    );
+  }
+
   function changeUserPassword(req, userId, data, res) {
     const currentPassword = String(data?.currentPassword || '');
     const newPassword = String(data?.newPassword || '');
@@ -431,6 +448,7 @@ function createPatientCoreHandlers(deps) {
     getInsuranceCompanies,
     updatePatientProfile,
     addPatientInsurance,
+    removePatientInsurance,
     changeUserPassword
   };
 }
