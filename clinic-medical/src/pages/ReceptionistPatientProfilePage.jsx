@@ -54,6 +54,12 @@ function ReceptionistPatientProfilePage() {
   const [confirmingId, setConfirmingId] = useState(null);
   const [slotAvailability, setSlotAvailability] = useState({});
 
+  // Pharmacy assign state
+  const [pharmAssignOpen, setPharmAssignOpen] = useState(false);
+  const [pharmAssignId, setPharmAssignId] = useState('');
+  const [pharmAssignPrimary, setPharmAssignPrimary] = useState(false);
+  const [isAssigningPharm, setIsAssigningPharm] = useState(false);
+
   // Prescription state
   const [rxFormOpen, setRxFormOpen] = useState(false);
   const [allPharmacies, setAllPharmacies] = useState([]);
@@ -151,9 +157,9 @@ function ReceptionistPatientProfilePage() {
     loadDoctors();
   }, [API_BASE_URL, appointmentForm.locationId]);
 
-  // Load pharmacies when rx form opens
+  // Load pharmacies when rx form or assign form opens
   useEffect(() => {
-    if (!rxFormOpen) return;
+    if (!rxFormOpen && !pharmAssignOpen) return;
     const loadPharmacies = async () => {
       try {
         const data = await fetch(`${API_BASE_URL}/api/pharmacies`).then(safeJson);
@@ -163,7 +169,7 @@ function ReceptionistPatientProfilePage() {
       }
     };
     loadPharmacies();
-  }, [API_BASE_URL, rxFormOpen]);
+  }, [API_BASE_URL, rxFormOpen, pharmAssignOpen]);
 
   const handleCreatePrescription = async (e) => {
     e.preventDefault();
@@ -196,6 +202,43 @@ function ReceptionistPatientProfilePage() {
       setError(err.message || 'Failed to create prescription.');
     } finally {
       setIsCreatingRx(false);
+    }
+  };
+
+  const handleAssignPharmacy = async (e) => {
+    e.preventDefault();
+    setIsAssigningPharm(true);
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/reception/patients/${patientId}/pharmacy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pharmId: Number(pharmAssignId), isPrimary: pharmAssignPrimary })
+      }).then(safeJson);
+      setMessage('Pharmacy assigned.');
+      setPharmAssignOpen(false);
+      setPharmAssignId('');
+      setPharmAssignPrimary(false);
+      loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to assign pharmacy.');
+    } finally {
+      setIsAssigningPharm(false);
+    }
+  };
+
+  const handleRemovePharmacy = async (pharmId) => {
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/reception/patients/${patientId}/pharmacy/${pharmId}`, {
+        method: 'DELETE'
+      }).then(safeJson);
+      setMessage('Pharmacy removed.');
+      loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to remove pharmacy.');
     }
   };
 
@@ -934,16 +977,50 @@ function ReceptionistPatientProfilePage() {
       {/* Pharmacy & Prescriptions */}
       <section className="reception-profile-grid-two">
         <article className="reception-panel">
-          <h2>Assigned Pharmacy</h2>
-          {patientPharmacies.length > 0 ? patientPharmacies.map((ph) => (
-            <div key={ph.pharm_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.6rem 0.75rem', marginBottom: '0.5rem' }}>
-              <p style={{ margin: '0 0 0.15rem', fontWeight: 700 }}>{ph.pharm_name}{ph.is_primary ? ' (Primary)' : ''}</p>
-              <p style={{ margin: '0.1rem 0' }}><strong>Phone:</strong> {ph.pharm_phone || 'N/A'}</p>
-              <p style={{ margin: '0.1rem 0' }}><strong>Address:</strong> {[ph.ph_address_1, ph.ph_city, ph.ph_state, ph.ph_zipcode].filter(Boolean).join(', ')}</p>
-            </div>
-          )) : (
-            <p style={{ color: '#4b6966' }}><em>No pharmacy assigned</em></p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2>Assigned Pharmacy</h2>
+            <button type="button" className="reception-action-btn reception-action-btn--primary" onClick={() => setPharmAssignOpen(!pharmAssignOpen)}>
+              {pharmAssignOpen ? 'Cancel' : 'Assign Pharmacy'}
+            </button>
+          </div>
+
+          {pharmAssignOpen && (
+            <form onSubmit={handleAssignPharmacy} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem', padding: '0.75rem', border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Pharmacy *</span>
+                <select value={pharmAssignId} onChange={(e) => setPharmAssignId(e.target.value)} required>
+                  <option value="">Select pharmacy</option>
+                  {allPharmacies.map((ph) => (
+                    <option key={ph.pharm_id} value={ph.pharm_id}>{ph.pharm_name} — {ph.ph_city}, {ph.ph_state}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                <input type="checkbox" checked={pharmAssignPrimary} onChange={(e) => setPharmAssignPrimary(e.target.checked)} />
+                Set as primary pharmacy
+              </label>
+              <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isAssigningPharm} style={{ alignSelf: 'flex-start' }}>
+                {isAssigningPharm ? 'Saving...' : 'Save'}
+              </button>
+            </form>
           )}
+
+          <div style={{ marginTop: pharmAssignOpen ? '0.75rem' : '0' }}>
+            {patientPharmacies.length > 0 ? patientPharmacies.map((ph) => (
+              <div key={ph.pharm_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.6rem 0.75rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ margin: '0 0 0.15rem', fontWeight: 700 }}>{ph.pharm_name}{ph.is_primary ? ' (Primary)' : ''}</p>
+                  <p style={{ margin: '0.1rem 0' }}><strong>Phone:</strong> {ph.pharm_phone || 'N/A'}</p>
+                  <p style={{ margin: '0.1rem 0' }}><strong>Address:</strong> {[ph.ph_address_1, ph.ph_city, ph.ph_state, ph.ph_zipcode].filter(Boolean).join(', ')}</p>
+                </div>
+                <button type="button" onClick={() => handleRemovePharmacy(ph.pharm_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9d2e2e', fontSize: '0.8rem', whiteSpace: 'nowrap', padding: '0.1rem 0.3rem' }}>
+                  Remove
+                </button>
+              </div>
+            )) : (
+              <p style={{ color: '#4b6966' }}><em>No pharmacy assigned</em></p>
+            )}
+          </div>
         </article>
 
         <article className="reception-panel">

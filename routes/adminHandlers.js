@@ -26,11 +26,13 @@ function createAdminHandlers(deps) {
     (async () => {
       const db = pool.promise();
 
-      const [[revenueToday]] = await db.query(
-        'SELECT COALESCE(SUM(payment_amount), 0) AS value FROM payments WHERE DATE(payment_date) = ?',
-        [date]
+      const [[collectedAllTime]] = await db.query('SELECT COALESCE(SUM(payment_amount), 0) AS value FROM payments');
+      const [[totalOutstanding]] = await db.query(
+        `SELECT COALESCE(SUM(i.patient_amount) - COALESCE(SUM(p.paid), 0), 0) AS value
+         FROM invoices i
+         LEFT JOIN (SELECT invoice_id, SUM(payment_amount) AS paid FROM payments GROUP BY invoice_id) p ON p.invoice_id = i.invoice_id
+         WHERE i.payment_status IN ('Unpaid', 'Partial')`
       );
-      const [[revenueAllTime]] = await db.query('SELECT COALESCE(SUM(payment_amount), 0) AS value FROM payments');
       const [[scheduledCount]] = await db.query(
         `SELECT COUNT(*) AS value
          FROM appointments a
@@ -53,6 +55,13 @@ function createAdminHandlers(deps) {
         [date]
       );
       const [[doctorCount]] = await db.query('SELECT COUNT(*) AS value FROM doctors');
+      const [[newPatientsThisMonth]] = await db.query(
+        `SELECT COUNT(*) AS value FROM patients
+         WHERE YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())`
+      );
+      const [[pendingTimeOffCount]] = await db.query(
+        `SELECT COUNT(*) AS value FROM staff_time_off_requests WHERE is_approved IS NULL OR is_approved = 0`
+      );
 
       const notifications = [];
       if (Number(pendingPreferenceCount?.value || 0) > 0) {
@@ -65,12 +74,14 @@ function createAdminHandlers(deps) {
       sendJSON(res, 200, {
         date,
         metrics: {
-          clinicRevenueToday: Number(revenueToday?.value || 0),
-          clinicRevenueAllTime: Number(revenueAllTime?.value || 0),
+          collectedAllTime: Number(collectedAllTime?.value || 0),
+          totalOutstanding: Number(totalOutstanding?.value || 0),
           scheduledToday: Number(scheduledCount?.value || 0),
           waitingToSchedule: Number(pendingPreferenceCount?.value || 0),
           patientsScheduledToday: Number(totalPatientsToday?.value || 0),
-          doctorCount: Number(doctorCount?.value || 0)
+          doctorCount: Number(doctorCount?.value || 0),
+          newPatientsThisMonth: Number(newPatientsThisMonth?.value || 0),
+          pendingTimeOffCount: Number(pendingTimeOffCount?.value || 0)
         },
         notifications
       });
@@ -993,12 +1004,17 @@ function createAdminHandlers(deps) {
           SUM(CASE WHEN s.status_name = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,
           SUM(CASE WHEN s.status_name IN ('SCHEDULED','CONFIRMED','RESCHEDULED') THEN 1 ELSE 0 END) AS upcoming,
           SUM(CASE WHEN s.status_name = 'CANCELED' THEN 1 ELSE 0 END) AS canceled,
-          SUM(CASE WHEN s.status_name = 'NO_SHOW' THEN 1 ELSE 0 END) AS no_show
+          SUM(CASE WHEN s.status_name = 'NO_SHOW' THEN 1 ELSE 0 END) AS no_show,
+          COALESCE(SUM(i.patient_amount), 0) AS total_billed,
+          COALESCE(SUM(
+            (SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id)
+          ), 0) AS total_collected
         FROM doctors d
         JOIN staff st ON st.staff_id = d.staff_id
         LEFT JOIN appointments a ON a.doctor_id = d.doctor_id
           AND a.appointment_date BETWEEN ? AND ?
         LEFT JOIN appointment_statuses s ON s.status_id = a.status_id
+        LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
         GROUP BY d.doctor_id, st.first_name, st.last_name, st.phone_number
         ORDER BY total_appointments DESC`,
         [resolvedFrom, resolvedTo]
@@ -1382,6 +1398,53 @@ function createAdminHandlers(deps) {
     );
   }
 
+  function getNewPatientsReport(req, res) {
+    const parsedUrl = url.parse(req.url, true);
+    const dateFrom = String(parsedUrl.query.dateFrom || '').trim();
+    const dateTo = String(parsedUrl.query.dateTo || '').trim();
+
+    if (!dateFrom || !dateTo) {
+      return sendJSON(res, 400, { error: 'dateFrom and dateTo are required' });
+    }
+
+    pool.query(
+      `SELECT
+        p.patient_id,
+        p.p_first_name,
+        p.p_last_name,
+        p.p_dob,
+        p.p_gender,
+        p.p_phone,
+        p.p_email,
+        p.p_city,
+        p.p_state,
+        p.p_zipcode,
+        DATE(p.created_at) AS registered_date,
+        COUNT(DISTINCT a.appointment_id) AS total_appointments,
+        MAX(a.appointment_date) AS last_appointment_date
+      FROM patients p
+      LEFT JOIN appointments a ON a.patient_id = p.patient_id
+      WHERE DATE(p.created_at) BETWEEN ? AND ?
+      GROUP BY p.patient_id, p.p_first_name, p.p_last_name, p.p_dob, p.p_gender,
+               p.p_phone, p.p_email, p.p_city, p.p_state, p.p_zipcode, p.created_at
+      ORDER BY p.created_at ASC`,
+      [dateFrom, dateTo],
+      (err, rows) => {
+        if (err) {
+          console.error('Error generating new patients report:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, {
+          dateFrom,
+          dateTo,
+          totalNewPatients: (rows || []).length,
+          generatedAt: new Date().toISOString(),
+          rows: rows || []
+        });
+      }
+    );
+  }
+
   function getSystemCancelledAppointments(req, res) {
     pool.query(
       `SELECT
@@ -1438,6 +1501,7 @@ function createAdminHandlers(deps) {
     getAdminAllStaff,
     generateAdminReport,
     getReportFilterOptions,
+    getNewPatientsReport,
     getCancelledAppointmentRequests,
     restoreAppointmentRequest,
     submitScheduleRequest,

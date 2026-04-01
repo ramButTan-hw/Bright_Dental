@@ -399,13 +399,17 @@ function ReceptionistPage() {
       status: a.statusDisplay || a.status || '',
       doctorName: a.doctorName || '',
       location: a.location || '',
-      notes: a.notes || ''
+      notes: a.notes || '',
+      amountBilled: a.amountBilled ?? '',
+      amountPaid: a.amountPaid ?? '',
+      amountOwed: a.amountOwed ?? '',
+      paymentStatus: a.paymentStatus || ''
     }));
   };
 
   const downloadApptReportCsv = (payload, filename) => {
     const rows = flattenApptReportRows(payload);
-    const header = ['Appt ID', 'Patient ID', 'Patient Name', 'Date', 'Time', 'Status', 'Doctor', 'Location', 'Notes'];
+    const header = ['Appt ID', 'Patient ID', 'Patient Name', 'Date', 'Time', 'Status', 'Doctor', 'Location', 'Billed', 'Paid', 'Owed', 'Payment Status', 'Notes'];
     const csvLines = [header.join(',')];
     rows.forEach((row) => {
       csvLines.push([
@@ -417,6 +421,10 @@ function ReceptionistPage() {
         row.status,
         row.doctorName,
         row.location,
+        row.amountBilled,
+        row.amountPaid,
+        row.amountOwed,
+        row.paymentStatus,
         row.notes
       ].map(escapeCsvValue).join(','));
     });
@@ -427,26 +435,30 @@ function ReceptionistPage() {
     const doc = new jsPDF({ orientation: 'landscape' });
     const rows = flattenApptReportRows(payload);
     const summary = payload?.summary || {};
+    const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
 
     doc.setFontSize(14);
     doc.text(title, 14, 14);
     doc.setFontSize(10);
-    doc.text(`Generated: ${String(payload?.generatedAt || '').slice(0, 19).replace('T', ' ')}`, 14, 20);
-    doc.text(`Patients: ${summary.totalPatients ?? 0}  Appointments: ${summary.totalAppointments ?? 0}`, 14, 26);
+    doc.text(`Generated: ${String(payload?.generatedAt || '').slice(0, 19).replace('T', ' ')}`, 14, 21);
+    doc.text(`Total Appointments: ${summary.totalAppointments ?? 0}  |  No-Shows: ${summary.noShows ?? 0}  |  Cancellations: ${summary.cancellations ?? 0}`, 14, 27);
+    doc.text(`Last Visit: ${summary.lastVisitDate || 'N/A'}  |  Next Upcoming: ${summary.nextUpcomingDate || 'N/A'}`, 14, 33);
+    doc.text(`Total Billed: ${fmt(summary.totalBilled)}  |  Collected: ${fmt(summary.totalCollected)}  |  Outstanding: ${fmt(summary.totalOwed)}`, 14, 39);
 
     autoTable(doc, {
-      startY: 30,
+      startY: 44,
       styles: { fontSize: 8 },
-      head: [['Appt ID', 'Patient ID', 'Patient', 'Date', 'Time', 'Status', 'Doctor', 'Location', 'Notes']],
+      head: [['Appt ID', 'Date', 'Time', 'Status', 'Doctor', 'Location', 'Billed', 'Paid', 'Owed', 'Notes']],
       body: rows.map((row) => [
         String(row.appointmentId || ''),
-        String(row.patientId || ''),
-        row.patientName,
         row.appointmentDate,
         row.appointmentTime,
         row.status,
         row.doctorName,
         row.location,
+        row.amountBilled !== '' ? fmt(row.amountBilled) : '—',
+        row.amountPaid !== '' ? fmt(row.amountPaid) : '—',
+        row.amountOwed !== '' ? fmt(row.amountOwed) : '—',
         row.notes
       ])
     });
