@@ -137,6 +137,7 @@ const queries = {
       i.insurance_covered_amount,
       i.patient_amount,
       COALESCE(SUM(pay.payment_amount), 0) AS amount_paid,
+      COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS amount_refunded,
       GREATEST(i.patient_amount - COALESCE(SUM(pay.payment_amount), 0), 0) AS amount_due,
       i.payment_status,
       i.created_at,

@@ -85,6 +85,7 @@ function PatientInvoicesPage() {
                 <th>Insurance</th>
                 <th>Patient Amount</th>
                 <th>Paid</th>
+                <th>Refunded</th>
                 <th>Due</th>
                 <th>Status</th>
                 <th>Action</th>
@@ -93,16 +94,18 @@ function PatientInvoicesPage() {
             <tbody>
               {invoices.length === 0 ? (
                 <tr>
-                  <td colSpan="10">No invoices found.</td>
+                  <td colSpan="11">No invoices found.</td>
                 </tr>
               ) : invoices.map((invoice) => {
+                const status = invoice.payment_status || 'Unpaid';
+                const isRefunded = status === 'Refunded';
                 const amountDue = Number(invoice.amount_due || 0);
-                const isPaid = amountDue <= 0;
+                const isSettled = isRefunded || amountDue <= 0;
 
                 return (
                   <tr key={invoice.invoice_id}>
                     <td>
-                      {isPaid ? (
+                      {isSettled ? (
                         <span>{invoice.invoice_id}</span>
                       ) : (
                         <Link
@@ -119,17 +122,20 @@ function PatientInvoicesPage() {
                     <td>{formatMoney(invoice.insurance_covered_amount)}</td>
                     <td>{formatMoney(invoice.patient_amount)}</td>
                     <td>{formatMoney(invoice.amount_paid)}</td>
-                    <td>{formatMoney(invoice.amount_due)}</td>
+                    <td>{Number(invoice.amount_refunded) > 0 ? <span style={{ color: '#9d2e2e' }}>-{formatMoney(invoice.amount_refunded)}</span> : '—'}</td>
+                    <td>{isRefunded ? '—' : formatMoney(amountDue)}</td>
                     <td>
-                      {isPaid ? (
+                      {isRefunded ? (
+                        <span className="portal-status-badge" style={{ background: '#fde8d8', color: '#7a3b00' }}>Refunded</span>
+                      ) : amountDue <= 0 ? (
                         <span className="portal-status-badge portal-status-paid">Paid</span>
                       ) : (
-                        <span className="portal-status-badge portal-status-open">{invoice.payment_status}</span>
+                        <span className="portal-status-badge portal-status-open">{status}</span>
                       )}
                     </td>
                     <td>
-                      {isPaid ? (
-                        <span className="portal-link-btn portal-link-btn-disabled" aria-disabled="true">Paid</span>
+                      {isSettled ? (
+                        <span className="portal-link-btn portal-link-btn-disabled" aria-disabled="true">{isRefunded ? 'Refunded' : 'Paid'}</span>
                       ) : (
                         <Link to={`/patient-portal/invoices/${invoice.invoice_id}/checkout`} className="portal-link-btn">
                           Checkout

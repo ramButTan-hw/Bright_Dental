@@ -538,6 +538,8 @@ function PatientPortalPage() {
                   const inv = invoiceByAppointmentId.get(Number(item.appointment_id || 0));
                   const payStatus = inv?.payment_status || '';
                   const amtDue = Number(inv?.amount_due ?? (Number(inv?.patient_amount || 0) - Number(inv?.amount_paid || 0)));
+                  const badgeBg = payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : payStatus === 'Refunded' ? '#fde8d8' : '#f8d7da';
+                  const badgeColor = payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : payStatus === 'Refunded' ? '#7a3b00' : '#721c24';
                   return (
                     <tr key={item.appointment_id}>
                       <td>{formatDate(item.appointment_date)}</td>
@@ -552,10 +554,10 @@ function PatientPortalPage() {
                             borderRadius: '999px',
                             fontSize: '0.78rem',
                             fontWeight: 700,
-                            background: payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : '#f8d7da',
-                            color: payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : '#721c24'
+                            background: badgeBg,
+                            color: badgeColor
                           }}>
-                            {payStatus}{amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
+                            {payStatus}{payStatus !== 'Refunded' && amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
                           </span>
                         ) : '—'}
                       </td>

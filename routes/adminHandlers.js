@@ -1845,7 +1845,8 @@ function createAdminHandlers(deps) {
             const patientAmount = Number(inv.patient_amount);
             const newStatus = patientAmount <= 0 ? 'Paid'
               : newNetPaid >= patientAmount ? 'Paid'
-              : newNetPaid > 0 ? 'Partial' : 'Unpaid';
+              : newNetPaid > 0 ? 'Partial'
+              : newNetPaid <= 0 ? 'Refunded' : 'Unpaid';
 
             pool.query(
               `UPDATE invoices SET payment_status = ?, updated_by = 'ADMIN_REFUND' WHERE invoice_id = ?`,

@@ -473,7 +473,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     amount DECIMAL(10,2) NOT NULL,
     insurance_covered_amount DECIMAL(10,2) NOT NULL,
     patient_amount DECIMAL(10,2) NOT NULL,
-    payment_status ENUM('Unpaid', 'Partial', 'Paid') NOT NULL DEFAULT 'Unpaid',
+    payment_status ENUM('Unpaid', 'Partial', 'Paid', 'Refunded') NOT NULL DEFAULT 'Unpaid',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1284,7 +1284,6 @@ BEGIN
 END $$
 
 -- Trigger: Auto-update invoice payment_status when a payment is recorded
--- Fixes reports that rely on the stored payment_status column
 DROP TRIGGER IF EXISTS after_payment_insert_update_invoice_status $$
 CREATE TRIGGER after_payment_insert_update_invoice_status
 AFTER INSERT ON payments
@@ -1323,6 +1322,8 @@ END $$
 
 DELIMITER ;
 
+-- Add 'Refunded' to payment_status ENUM for existing databases
+ALTER TABLE invoices MODIFY COLUMN payment_status ENUM('Unpaid', 'Partial', 'Paid', 'Refunded') NOT NULL DEFAULT 'Unpaid';
 
 
 
