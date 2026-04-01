@@ -87,7 +87,7 @@ function AdminDashboardPage() {
   const [activeSection, setActiveSection] = useState('overview');
   const [reportStatus, setReportStatus] = useState('ALL');
   const [reportType, setReportType] = useState('patients');
-  const [staffReport, setStaffReport] = useState({ workload: [], schedule: [], timeOff: [] });
+  const [staffReport, setStaffReport] = useState({ workload: [], schedule: [] });
   const [reportDateFrom, setReportDateFrom] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
@@ -148,8 +148,6 @@ function AdminDashboardPage() {
   const [refundForm, setRefundForm] = useState({ invoiceId: '', amount: '', reason: '' });
   const [invoiceLookup, setInvoiceLookup] = useState(null);
   const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
-  const [schedulingPage, setSchedulingPage] = useState(0);
-  const schedulingPageSize = 15;
   const [docSchedPage, setDocSchedPage] = useState(0);
   const docSchedPageSize = 20;
   const [docSchedSearch, setDocSchedSearch] = useState('');
@@ -160,25 +158,9 @@ function AdminDashboardPage() {
   }, [staffReport.schedule, docSchedSearch]);
 
   const sortFinancial = useSortState();
-  const sortScheduling = useSortState();
   const sortWorkload = useSortState();
   const sortDoctorSchedule = useSortState();
-  const sortTimeOff = useSortState();
-  const sortGenReport = useSortState();
   const sortRefund = useSortState();
-
-  // Generate Report state
-  const [genReportDateFrom, setGenReportDateFrom] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  });
-  const [genReportDateTo, setGenReportDateTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [genReportFilters, setGenReportFilters] = useState({
-    zipCode: '', locationId: '', patientCity: '', patientState: '', treatmentCode: '', departmentId: '', doctorId: ''
-  });
-  const [genReportData, setGenReportData] = useState(null);
-  const [genReportLoading, setGenReportLoading] = useState(false);
-  const [filterOptions, setFilterOptions] = useState({ locations: [], departments: [], doctors: [], treatments: [] });
 
   const [locationForm, setLocationForm] = useState({
     city: '',
@@ -287,8 +269,7 @@ function AdminDashboardPage() {
       ).then(safeJson);
       setStaffReport({
         workload: Array.isArray(data.workload) ? data.workload : [],
-        schedule: Array.isArray(data.schedule) ? data.schedule : [],
-        timeOff: Array.isArray(data.timeOff) ? data.timeOff : []
+        schedule: Array.isArray(data.schedule) ? data.schedule : []
       });
     } catch (err) {
       setError(err.message || 'Unable to load staff report.');
@@ -441,104 +422,6 @@ function AdminDashboardPage() {
     }
   };
 
-  const loadFilterOptions = async () => {
-    try {
-      const data = await fetch(`${API_BASE_URL}/api/admin/reports/filter-options`).then(safeJson);
-      setFilterOptions(data);
-    } catch (err) {
-      console.error('Failed to load filter options:', err);
-    }
-  };
-
-  const handleGenerateReport = async () => {
-    setGenReportLoading(true);
-    setGenReportData(null);
-    setError('');
-    try {
-      const params = new URLSearchParams({ dateFrom: genReportDateFrom, dateTo: genReportDateTo });
-      if (genReportFilters.zipCode) params.set('zipCode', genReportFilters.zipCode);
-      if (genReportFilters.locationId) params.set('locationId', genReportFilters.locationId);
-      if (genReportFilters.patientCity) params.set('patientCity', genReportFilters.patientCity);
-      if (genReportFilters.patientState) params.set('patientState', genReportFilters.patientState);
-      if (genReportFilters.treatmentCode) params.set('treatmentCode', genReportFilters.treatmentCode);
-      if (genReportFilters.departmentId) params.set('departmentId', genReportFilters.departmentId);
-      if (genReportFilters.doctorId) params.set('doctorId', genReportFilters.doctorId);
-      const data = await fetch(`${API_BASE_URL}/api/admin/reports/generate?${params.toString()}`).then(safeJson);
-      setGenReportData(data);
-    } catch (err) {
-      setError(err.message || 'Failed to generate report.');
-    } finally {
-      setGenReportLoading(false);
-    }
-  };
-
-  const exportReportCSV = () => {
-    if (!genReportData?.rows?.length) return;
-    const headers = ['Date', 'Time', 'Patient', 'Patient City', 'Patient State', 'Patient Zip', 'Doctor', 'Clinic Location', 'Clinic City', 'Clinic State', 'Clinic Zip', 'Treatment', 'Department', 'Payment Status', 'Invoice Total', 'Patient Amount'];
-    const csvRows = [headers.join(',')];
-    genReportData.rows.forEach((r) => {
-      csvRows.push([
-        r.appointment_date, r.appointment_time,
-        `"${(r.patient_name || '').replace(/"/g, '""')}"`,
-        `"${r.patient_city || ''}"`, r.patient_state || '', r.patient_zip || '',
-        `"${(r.doctor_name || '').replace(/"/g, '""')}"`,
-        `"${(r.clinic_location || '').replace(/"/g, '""')}"`,
-        r.clinic_city || '', r.clinic_state || '', r.clinic_zip || '',
-        `"${(r.treatment_name || 'N/A').replace(/"/g, '""')}"`,
-        `"${(r.department_name || 'N/A').replace(/"/g, '""')}"`,
-        r.payment_status, r.invoice_total, r.patient_amount
-      ].join(','));
-    });
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `clinic_report_${genReportDateFrom}_to_${genReportDateTo}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const exportReportJSON = () => {
-    if (!genReportData) return;
-    const blob = new Blob([JSON.stringify(genReportData, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `clinic_report_${genReportDateFrom}_to_${genReportDateTo}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const exportReportPDF = () => {
-    if (!genReportData?.rows?.length) return;
-    const printWin = window.open('', '_blank');
-    const rows = genReportData.rows;
-    const tableRows = rows.map((r) => `<tr>
-      <td>${r.appointment_date || ''}</td>
-      <td>${r.appointment_time || ''}</td>
-      <td>${r.patient_name || ''}</td>
-      <td>${r.patient_city || ''}${r.patient_state ? ', ' + r.patient_state : ''} ${r.patient_zip || ''}</td>
-      <td>${r.doctor_name || ''}</td>
-      <td>${r.clinic_location || ''}</td>
-      <td>${r.treatment_name || 'N/A'}</td>
-      <td>${r.department_name || 'N/A'}</td>
-      <td>${r.payment_status || ''}</td>
-    </tr>`).join('');
-    printWin.document.write(`<!DOCTYPE html><html><head><title>Clinic Report</title>
-      <style>body{font-family:Arial,sans-serif;margin:20px}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}th{background:#f0f0f0}h1{font-size:18px}p{font-size:12px;color:#555}</style>
-    </head><body>
-      <h1>Patient General Report</h1>
-      <p>Date Range: ${genReportDateFrom} to ${genReportDateTo} | Total Records: ${rows.length} | Generated: ${genReportData.generatedAt}</p>
-      <table><thead><tr><th>Date</th><th>Time</th><th>Patient</th><th>Patient Location</th><th>Doctor</th><th>Clinic Location</th><th>Treatment</th><th>Department</th><th>Payment</th></tr></thead><tbody>${tableRows}</tbody></table>
-      <script>window.onload=function(){window.print()}<\/script>
-    </body></html>`);
-    printWin.document.close();
-  };
-
-  useEffect(() => {
-    if (reportType === 'generate') {
-      loadFilterOptions();
-    }
-  }, [reportType]);
-
   const reportRows = Array.isArray(patientReport.rows) ? patientReport.rows : [];
   const financialFollowUpRows = Array.isArray(patientReport.financialFollowUp) ? patientReport.financialFollowUp : [];
   const [financialSearch, setFinancialSearch] = useState('');
@@ -572,12 +455,6 @@ function AdminDashboardPage() {
 
   const combinedNotifications = pendingStaffOffDayNotifications;
 
-  const schedulingActionRows = (queue.pendingRequests || []).map((row) => ({
-    ...row,
-    needsDateConfirmation: !String(row.preferred_date || '').trim(),
-    needsTimeConfirmation: !String(row.preferred_time || '').trim(),
-    needsLocationConfirmation: !String(row.preferred_location || '').trim()
-  }));
 
   return (
     <main className="admin-page">
@@ -801,13 +678,6 @@ function AdminDashboardPage() {
                     >
                       Staff Reports
                     </button>
-                    <button
-                      type="button"
-                      className={reportType === 'generate' ? 'report-type-btn is-active' : 'report-type-btn'}
-                      onClick={() => setReportType('generate')}
-                    >
-                      Patient General Report
-                    </button>
                   </div>
 
                   {reportType === 'patients' && (
@@ -1011,196 +881,6 @@ function AdminDashboardPage() {
                     )}
                   </section>
 
-                  <section className="admin-panel">
-                    <h2>Report 2: Scheduling Confirmation Needed</h2>
-                    <p className="muted">
-                      
-                      Count: {schedulingActionRows.length}
-                      {schedulingActionRows.length > schedulingPageSize && (<> | Page {schedulingPage + 1} of {Math.ceil(schedulingActionRows.length / schedulingPageSize)}</>)}
-                    </p>
-                    <div className="table-wrap" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                      <table>
-                        <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                          <tr>
-                            <SortTh sort={sortScheduling} column="patient_name">Patient</SortTh>
-                            <SortTh sort={sortScheduling} column="preferred_date">Preferred Date</SortTh>
-                            <SortTh sort={sortScheduling} column="preferred_time">Preferred Time</SortTh>
-                            <SortTh sort={sortScheduling} column="preferred_location">Preferred Location</SortTh>
-                            <th>Action Needed</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {schedulingActionRows.length ? sortScheduling.sorted(schedulingActionRows).slice(schedulingPage * schedulingPageSize, (schedulingPage + 1) * schedulingPageSize).map((row) => (
-                            <tr key={row.preference_request_id}>
-                              <td>{row.patient_name}</td>
-                              <td>{row.preferred_date ? formatDate(row.preferred_date) : 'Missing'}</td>
-                              <td>{row.preferred_time ? formatTime(row.preferred_time) : 'Missing'}</td>
-                              <td>{row.preferred_location || 'Missing'}</td>
-                              <td>
-                                {[
-                                  row.needsDateConfirmation ? 'Confirm date' : null,
-                                  row.needsTimeConfirmation ? 'Confirm time' : null,
-                                  row.needsLocationConfirmation ? 'Confirm location' : null
-                                ].filter(Boolean).join(', ') || 'Confirm final assignment'}
-                              </td>
-                            </tr>
-                          )) : <tr><td colSpan="5">No pending scheduling confirmations.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                    {schedulingActionRows.length > schedulingPageSize && (
-                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
-                        <button type="button" disabled={schedulingPage === 0} onClick={() => setSchedulingPage((p) => p - 1)}
-                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: schedulingPage === 0 ? '#eee' : '#fff', cursor: schedulingPage === 0 ? 'default' : 'pointer', fontSize: '0.85rem' }}>
-                          Previous
-                        </button>
-                        <button type="button" disabled={(schedulingPage + 1) * schedulingPageSize >= schedulingActionRows.length} onClick={() => setSchedulingPage((p) => p + 1)}
-                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: (schedulingPage + 1) * schedulingPageSize >= schedulingActionRows.length ? '#eee' : '#fff', cursor: (schedulingPage + 1) * schedulingPageSize >= schedulingActionRows.length ? 'default' : 'pointer', fontSize: '0.85rem' }}>
-                          Next
-                        </button>
-                      </div>
-                    )}
-                  </section>
-                </>
-              )}
-
-              {/* ── GENERATE REPORT ── */}
-              {reportType === 'generate' && (
-                <>
-                  <section className="admin-panel">
-                    <h2>Patient General Report</h2>
-                    <p className="muted">View completed appointments. Select a date range and optional filters, then export as PDF, CSV, or JSON.</p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end', marginBottom: '1rem' }}>
-                      <label className="admin-inline-filter">
-                        From
-                        <input type="date" value={genReportDateFrom} onChange={(e) => setGenReportDateFrom(e.target.value)} required />
-                      </label>
-                      <label className="admin-inline-filter">
-                        To
-                        <input type="date" value={genReportDateTo} onChange={(e) => setGenReportDateTo(e.target.value)} required />
-                      </label>
-                      <label className="admin-inline-filter">
-                        Zip Code
-                        <input type="text" placeholder="e.g. 77004" maxLength={5} value={genReportFilters.zipCode} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, zipCode: e.target.value.replace(/\D/g, '').slice(0, 5) }))} />
-                      </label>
-                      <label className="admin-inline-filter">
-                        Clinic Location
-                        <select value={genReportFilters.locationId} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, locationId: e.target.value }))}>
-                          <option value="">All Locations</option>
-                          {filterOptions.locations.map((loc) => (
-                            <option key={loc.location_id} value={loc.location_id}>{loc.full_address}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="admin-inline-filter">
-                        Patient City
-                        <input type="text" placeholder="e.g. Houston" value={genReportFilters.patientCity} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, patientCity: e.target.value }))} />
-                      </label>
-                      <label className="admin-inline-filter">
-                        Patient State
-                        <input type="text" placeholder="e.g. TX" maxLength={2} value={genReportFilters.patientState} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, patientState: e.target.value.toUpperCase().slice(0, 2) }))} />
-                      </label>
-                      <label className="admin-inline-filter">
-                        Treatment
-                        <select value={genReportFilters.treatmentCode} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, treatmentCode: e.target.value }))}>
-                          <option value="">All Treatments</option>
-                          {filterOptions.treatments.map((t) => (
-                            <option key={t.procedure_code} value={t.procedure_code}>{t.procedure_code} - {t.description}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="admin-inline-filter">
-                        Department
-                        <select value={genReportFilters.departmentId} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, departmentId: e.target.value }))}>
-                          <option value="">All Departments</option>
-                          {filterOptions.departments.map((dep) => (
-                            <option key={dep.department_id} value={dep.department_id}>{dep.department_name}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="admin-inline-filter">
-                        Doctor
-                        <select value={genReportFilters.doctorId} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, doctorId: e.target.value }))}>
-                          <option value="">All Doctors</option>
-                          {filterOptions.doctors.map((doc) => (
-                            <option key={doc.doctor_id} value={doc.doctor_id}>Dr. {doc.doctor_name}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <button type="button" className="report-type-btn is-active" onClick={handleGenerateReport} disabled={genReportLoading}>
-                        {genReportLoading ? 'Generating...' : 'Generate Report'}
-                      </button>
-                      {genReportData?.rows?.length > 0 && (
-                        <>
-                          <button type="button" className="report-type-btn" onClick={exportReportPDF}>Export PDF</button>
-                          <button type="button" className="report-type-btn" onClick={exportReportCSV}>Export CSV</button>
-                          <button type="button" className="report-type-btn" onClick={exportReportJSON}>Export JSON</button>
-                        </>
-                      )}
-                    </div>
-                  </section>
-
-                  {genReportData && (
-                    <section className="admin-panel">
-                      <h2>Report Results</h2>
-                      <p className="muted">
-                        Date Range: {genReportData.dateFrom} to {genReportData.dateTo} | Total Records: {genReportData.totalRows} | Generated: {new Date(genReportData.generatedAt).toLocaleString()}
-                      </p>
-                      {genReportData.rows.length > 0 ? (
-                        <div className="table-wrap">
-                          <table>
-                            <thead>
-                              <tr>
-                                <SortTh sort={sortGenReport} column="appointment_date">Date</SortTh>
-                                <SortTh sort={sortGenReport} column="appointment_time">Time</SortTh>
-                                <SortTh sort={sortGenReport} column="patient_name">Patient</SortTh>
-                                <SortTh sort={sortGenReport} column="patient_city">Patient Location</SortTh>
-                                <SortTh sort={sortGenReport} column="doctor_name">Doctor</SortTh>
-                                <SortTh sort={sortGenReport} column="clinic_location">Clinic Location</SortTh>
-                                <SortTh sort={sortGenReport} column="treatment_name">Treatment</SortTh>
-                                <SortTh sort={sortGenReport} column="department_name">Department</SortTh>
-                                <SortTh sort={sortGenReport} column="payment_status">Payment</SortTh>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {sortGenReport.sorted(genReportData.rows).slice(0, 100).map((row, idx) => (
-                                <tr key={idx}>
-                                  <td>{formatDate(row.appointment_date)}</td>
-                                  <td>{formatTime(row.appointment_time)}</td>
-                                  <td>{row.patient_name}</td>
-                                  <td>{row.patient_city || ''}{row.patient_state ? ', ' + row.patient_state : ''} {row.patient_zip || ''}</td>
-                                  <td>Dr. {row.doctor_name}</td>
-                                  <td>{row.clinic_location || 'N/A'}</td>
-                                  <td>{row.treatment_name || 'N/A'}</td>
-                                  <td>{row.department_name || 'N/A'}</td>
-                                  <td>
-                                    <span style={{
-                                      display: 'inline-block',
-                                      padding: '0.15rem 0.5rem',
-                                      borderRadius: '999px',
-                                      fontSize: '0.75rem',
-                                      fontWeight: 700,
-                                      background: row.payment_status === 'Paid' ? '#d4edda' : row.payment_status === 'Partial' ? '#fff3cd' : '#f8d7da',
-                                      color: row.payment_status === 'Paid' ? '#155724' : row.payment_status === 'Partial' ? '#856404' : '#721c24'
-                                    }}>
-                                      {row.payment_status}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {genReportData.rows.length > 100 && (
-                            <p className="muted" style={{ marginTop: '0.5rem' }}>Showing first 100 of {genReportData.rows.length} rows. Export for full data.</p>
-                          )}
-                        </div>
-                      ) : (
-                        <p>No records found matching your criteria.</p>
-                      )}
-                    </section>
-                  )}
                 </>
               )}
 
@@ -1326,40 +1006,6 @@ function AdminDashboardPage() {
                     )}
                   </section>
 
-                  <section className="admin-panel">
-                    <h2>Report 3: All Staff Time-Off Summary</h2>
-                   
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <SortTh sort={sortTimeOff} column="requester_name">Staff Member</SortTh>
-                            <SortTh sort={sortTimeOff} column="requester_role">Role</SortTh>
-                            <SortTh sort={sortTimeOff} column="request_source">Source</SortTh>
-                            <SortTh sort={sortTimeOff} column="start_datetime">Start</SortTh>
-                            <SortTh sort={sortTimeOff} column="end_datetime">End</SortTh>
-                            <SortTh sort={sortTimeOff} column="location_address">Location</SortTh>
-                            <SortTh sort={sortTimeOff} column="reason">Reason</SortTh>
-                            <SortTh sort={sortTimeOff} column="is_approved">Approved</SortTh>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {staffReport.timeOff.length ? sortTimeOff.sorted(staffReport.timeOff).map((row) => (
-                            <tr key={row.request_key}>
-                              <td>{row.requester_name || 'Unknown staff'}</td>
-                              <td>{String(row.requester_role || 'STAFF').replaceAll('_', ' ')}</td>
-                              <td>{String(row.request_source || '').replaceAll('_', ' ') || 'TIME OFF'}</td>
-                              <td>{new Date(row.start_datetime).toLocaleString()}</td>
-                              <td>{new Date(row.end_datetime).toLocaleString()}</td>
-                              <td>{row.location_address}</td>
-                              <td>{row.reason || 'N/A'}</td>
-                              <td>{row.is_approved ? 'Yes' : 'Pending'}</td>
-                            </tr>
-                          )) : <tr><td colSpan="8">No time-off records found.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
                 </>
               )}
             </>
