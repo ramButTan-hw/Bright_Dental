@@ -603,6 +603,7 @@ function ReceptionistPage() {
   const visibleNotifications = notifications.filter((notification) => !dismissedNotificationIds.has(notification.notification_id));
   const unreadNotificationCount = visibleNotifications.length;
   const latestNotification = visibleNotifications[0] || null;
+  const doctorTimeOffNotification = visibleNotifications.find((notification) => notification.notification_type === 'DOCTOR_TIME_OFF') || null;
 
   const requestAlerts = [
     ...(insuranceChangeRequests.length > 0 ? [{
@@ -886,6 +887,68 @@ function ReceptionistPage() {
       </section>
 
       {message && <p className="reception-message">{message}</p>}
+
+      {doctorTimeOffNotification && (
+        <section
+          className="reception-panel"
+          aria-live="polite"
+          style={{
+            background: 'linear-gradient(135deg, #1f2d2a 0%, #17221f 100%)',
+            color: '#eef8f5',
+            borderColor: '#4ca38a',
+            boxShadow: '0 18px 42px rgba(0, 0, 0, 0.18)',
+            marginBottom: '1rem'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ color: '#f7c948', fontSize: '0.82rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>
+                Doctor Time Off
+              </div>
+              <h2 style={{ margin: 0, color: '#f4f8f7', fontSize: '1.6rem' }}>Doctor time off affected patient schedules</h2>
+            </div>
+            <button
+              type="button"
+              aria-label="Dismiss doctor time off notification"
+              onClick={() => dismissNotification(doctorTimeOffNotification.notification_id)}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: '#b8c6c2',
+                cursor: 'pointer',
+                fontSize: '1.25rem',
+                lineHeight: 1,
+                padding: 0
+              }}
+            >
+              &times;
+            </button>
+          </div>
+          <p style={{ margin: '0.9rem 0 1rem', fontSize: '1rem', lineHeight: 1.6, color: '#dbe9e4' }}>
+            {doctorTimeOffNotification.message}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              const target = document.getElementById('system-cancelled-appointments');
+              if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            }}
+            style={{
+              border: 'none',
+              borderRadius: '999px',
+              padding: '0.8rem 1.15rem',
+              background: '#56d1b1',
+              color: '#0f1917',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            Review Cancellations &rarr;
+          </button>
+        </section>
+      )}
 
       {mySchedule.length > 0 && (
         <section className="reception-panel" style={{ marginBottom: '1rem' }}>
@@ -1567,7 +1630,7 @@ function ReceptionistPage() {
       </section>
 
       {systemCancelledAppts.length > 0 && (
-        <section className="reception-section">
+        <section className="reception-section" id="system-cancelled-appointments">
           <h2 style={{ color: '#a53030', marginBottom: '0.75rem' }}>Appointments Cancelled by System — Patients Need to Reschedule</h2>
           <p style={{ color: '#666', fontSize: '0.88rem', marginBottom: '1rem' }}>
             The following appointments were automatically cancelled due to doctor time-off approval in the last 30 days. Contact these patients to help them reschedule.
