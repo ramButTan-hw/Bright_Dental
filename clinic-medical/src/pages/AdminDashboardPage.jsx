@@ -110,6 +110,30 @@ function AdminDashboardPage() {
   });
   const [clinicPerformanceLoading, setClinicPerformanceLoading] = useState(false);
   const [clinicPerformanceError, setClinicPerformanceError] = useState('');
+  const [clinicProcedureCategories, setClinicProcedureCategories] = useState([]);
+  const [clinicFilters, setClinicFilters] = useState({
+    locationId: 'ALL',
+    doctorId: 'ALL',
+    statusGroup: 'ALL',
+    paymentStatus: 'ALL',
+    patientState: 'ALL',
+    procedureCategory: 'ALL'
+  });
+  const [recallReportAsOfDate, setRecallReportAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [recallReportWindowDays, setRecallReportWindowDays] = useState(90);
+  const [recallReport, setRecallReport] = useState({
+    summary: null,
+    items: [],
+    generatedAt: null,
+    asOfDate: null,
+    windowDays: 90
+  });
+  const [recallReportLoading, setRecallReportLoading] = useState(false);
+  const [recallReportError, setRecallReportError] = useState('');
+  const [recallDueFilter, setRecallDueFilter] = useState('ALL');
+  const [recallContactFilter, setRecallContactFilter] = useState('ALL');
+  const [recallScheduledFilter, setRecallScheduledFilter] = useState('ALL');
+  const [recallSearch, setRecallSearch] = useState('');
 
   const [summary, setSummary] = useState(null);
   const [queue, setQueue] = useState({ scheduledAppointments: [], pendingRequests: [], notificationCount: 0 });
@@ -168,8 +192,13 @@ function AdminDashboardPage() {
   const [refundForm, setRefundForm] = useState({ invoiceId: '', amount: '', reason: '' });
   const [invoiceLookup, setInvoiceLookup] = useState(null);
   const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
+  const [monthlyTrendsPage, setMonthlyTrendsPage] = useState(0);
+  const [providerPerformancePage, setProviderPerformancePage] = useState(0);
+  const [newPatientsPage, setNewPatientsPage] = useState(0);
+  const [outstandingAccountsPage, setOutstandingAccountsPage] = useState(0);
   const [docSchedPage, setDocSchedPage] = useState(0);
   const docSchedPageSize = 20;
+  const reportPageSize = 8;
   const [docSchedSearch, setDocSchedSearch] = useState('');
   const filteredDocSchedule = useMemo(() => {
     const q = docSchedSearch.trim().toLowerCase();
@@ -181,6 +210,53 @@ function AdminDashboardPage() {
   const sortWorkload = useSortState();
   const sortDoctorSchedule = useSortState();
   const sortRefund = useSortState();
+
+  useEffect(() => {
+    setMonthlyTrendsPage(0);
+    setProviderPerformancePage(0);
+    setNewPatientsPage(0);
+    setOutstandingAccountsPage(0);
+  }, [clinicPerformanceReport.generatedAt]);
+
+  const paginateRows = (rows, page) => rows.slice(page * reportPageSize, (page + 1) * reportPageSize);
+
+  const pagedMonthlyTrends = useMemo(
+    () => paginateRows(clinicPerformanceReport.monthlyTrends, monthlyTrendsPage),
+    [clinicPerformanceReport.monthlyTrends, monthlyTrendsPage]
+  );
+  const pagedProviderPerformance = useMemo(
+    () => paginateRows(clinicPerformanceReport.providerPerformance, providerPerformancePage),
+    [clinicPerformanceReport.providerPerformance, providerPerformancePage]
+  );
+  const pagedNewPatientsTrend = useMemo(
+    () => paginateRows(clinicPerformanceReport.newPatientsTrend, newPatientsPage),
+    [clinicPerformanceReport.newPatientsTrend, newPatientsPage]
+  );
+  const pagedOutstandingPatients = useMemo(
+    () => paginateRows(clinicPerformanceReport.outstandingPatients, outstandingAccountsPage),
+    [clinicPerformanceReport.outstandingPatients, outstandingAccountsPage]
+  );
+
+  const renderTablePager = (totalRows, page, setPage) => {
+    if (totalRows <= reportPageSize) return null;
+    const totalPages = Math.ceil(totalRows / reportPageSize);
+    return (
+      <div className="report-table-pager" role="navigation" aria-label="Table pagination">
+        <button type="button" className="admin-ghost-button" onClick={() => setPage((p) => Math.max(p - 1, 0))} disabled={page <= 0}>
+          {'< Prev'}
+        </button>
+        <span>Page {page + 1} of {totalPages}</span>
+        <button
+          type="button"
+          className="admin-ghost-button"
+          onClick={() => setPage((p) => Math.min(p + 1, totalPages - 1))}
+          disabled={page >= totalPages - 1}
+        >
+          {'Next >'}
+        </button>
+      </div>
+    );
+  };
 
   const [locationForm, setLocationForm] = useState({
     city: '',
@@ -308,8 +384,20 @@ function AdminDashboardPage() {
     setClinicPerformanceError('');
 
     try {
+      const params = new URLSearchParams({
+        dateFrom: clinicReportDateFrom,
+        dateTo: clinicReportDateTo
+      });
+
+      if (clinicFilters.locationId !== 'ALL') params.set('locationId', clinicFilters.locationId);
+      if (clinicFilters.doctorId !== 'ALL') params.set('doctorId', clinicFilters.doctorId);
+      if (clinicFilters.statusGroup !== 'ALL') params.set('statusGroup', clinicFilters.statusGroup);
+      if (clinicFilters.paymentStatus !== 'ALL') params.set('paymentStatus', clinicFilters.paymentStatus);
+      if (clinicFilters.patientState !== 'ALL') params.set('patientState', clinicFilters.patientState);
+      if (clinicFilters.procedureCategory !== 'ALL') params.set('procedureCategory', clinicFilters.procedureCategory);
+
       const data = await fetch(
-        `${API_BASE_URL}/api/admin/reports/performance?dateFrom=${clinicReportDateFrom}&dateTo=${clinicReportDateTo}`
+        `${API_BASE_URL}/api/admin/reports/performance?${params.toString()}`
       ).then(safeJson);
 
       setClinicPerformanceReport({
@@ -318,12 +406,54 @@ function AdminDashboardPage() {
         providerPerformance: Array.isArray(data.providerPerformance) ? data.providerPerformance : [],
         newPatientsTrend: Array.isArray(data.newPatientsTrend) ? data.newPatientsTrend : [],
         outstandingPatients: Array.isArray(data.outstandingPatients) ? data.outstandingPatients : [],
-        generatedAt: data.generatedAt || null
+        generatedAt: data.generatedAt || null,
+        filters: data.filters || null
       });
     } catch (err) {
       setClinicPerformanceError(err.message || 'Unable to load clinic performance report.');
     } finally {
       setClinicPerformanceLoading(false);
+    }
+  };
+
+  const loadClinicFilterOptions = async () => {
+    try {
+      const data = await fetch(`${API_BASE_URL}/api/admin/reports/filter-options`).then(safeJson);
+      const categories = Array.from(new Set(
+        (Array.isArray(data.treatments) ? data.treatments : [])
+          .map((item) => String(item.category || '').trim())
+          .filter(Boolean)
+      )).sort((a, b) => a.localeCompare(b));
+      setClinicProcedureCategories(categories);
+    } catch {
+      setClinicProcedureCategories([]);
+    }
+  };
+
+  const loadRecallReport = async () => {
+    setRecallReportLoading(true);
+    setRecallReportError('');
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/admin/reports/recall?asOfDate=${recallReportAsOfDate}&windowDays=${recallReportWindowDays}`
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to load recall report.');
+      }
+
+      setRecallReport({
+        summary: data.summary || null,
+        items: Array.isArray(data.items) ? data.items : [],
+        generatedAt: data.generatedAt || null,
+        asOfDate: data.asOfDate || recallReportAsOfDate,
+        windowDays: Number(data.windowDays || recallReportWindowDays)
+      });
+    } catch (err) {
+      setRecallReportError(err.message || 'Unable to load recall report.');
+    } finally {
+      setRecallReportLoading(false);
     }
   };
 
@@ -340,8 +470,17 @@ function AdminDashboardPage() {
   useEffect(() => {
     if (activeSection === 'reports') {
       loadClinicPerformanceReport();
+      if (!clinicProcedureCategories.length) {
+        loadClinicFilterOptions();
+      }
     }
   }, [activeSection, clinicReportDateFrom, clinicReportDateTo]);
+
+  useEffect(() => {
+    if (activeSection === 'reports' || activeSection === 'recall') {
+      loadRecallReport();
+    }
+  }, [activeSection, recallReportAsOfDate, recallReportWindowDays]);
 
   const handleDoctorSubmit = async (e) => {
     e.preventDefault();
@@ -511,6 +650,100 @@ function AdminDashboardPage() {
 
   const combinedNotifications = pendingStaffOffDayNotifications;
 
+  const filteredRecallItems = useMemo(() => {
+    const items = Array.isArray(recallReport.items) ? recallReport.items : [];
+    const searchQuery = recallSearch.trim().toLowerCase();
+    const searchDigits = recallSearch.replace(/\D/g, '');
+
+    return items.filter((item) => {
+      const matchesDue = recallDueFilter === 'ALL' || item.dueState === recallDueFilter;
+      const matchesContact = recallContactFilter === 'ALL' || item.contactState === recallContactFilter;
+      const matchesScheduled = recallScheduledFilter === 'ALL'
+        || (recallScheduledFilter === 'SCHEDULED' && item.isScheduled)
+        || (recallScheduledFilter === 'UNSCHEDULED' && !item.isScheduled);
+
+      const matchesSearch = !searchQuery
+        || (item.patientName || '').toLowerCase().includes(searchQuery)
+        || (item.email || '').toLowerCase().includes(searchQuery)
+        || (searchDigits.length > 0 && String(item.phone || '').replace(/\D/g, '').includes(searchDigits));
+
+      return matchesDue && matchesContact && matchesScheduled && matchesSearch;
+    });
+  }, [recallReport.items, recallDueFilter, recallContactFilter, recallScheduledFilter, recallSearch]);
+
+  const filteredRecallSummary = useMemo(() => {
+    return filteredRecallItems.reduce((acc, item) => {
+      acc.totalPatientsDue += 1;
+      acc.pendingFollowUpItems += Number(item.pendingFollowUpItems || 0);
+      if (item.dueState === 'OVERDUE') acc.overdue += 1;
+      if (item.dueState === 'DUE_TODAY') acc.dueToday += 1;
+      if (item.dueState === 'DUE_30') acc.due30 += 1;
+      if (item.dueState === 'DUE_60') acc.due60 += 1;
+      if (item.dueState === 'DUE_90_PLUS') acc.due90Plus += 1;
+      if (item.isScheduled) acc.scheduled += 1;
+      else acc.unscheduled += 1;
+      if (item.contactState === 'CONTACTED') acc.contacted += 1;
+      else acc.uncontacted += 1;
+      return acc;
+    }, {
+      totalPatientsDue: 0,
+      pendingFollowUpItems: 0,
+      overdue: 0,
+      dueToday: 0,
+      due30: 0,
+      due60: 0,
+      due90Plus: 0,
+      scheduled: 0,
+      unscheduled: 0,
+      contacted: 0,
+      uncontacted: 0
+    });
+  }, [filteredRecallItems]);
+
+  const clinicProviderOptions = useMemo(() => {
+    return (Array.isArray(doctors) ? doctors : []).map((doctor) => {
+      const fullName = `${doctor.first_name || ''} ${doctor.last_name || ''}`.trim();
+      return {
+        id: String(doctor.doctor_id),
+        name: fullName || doctor.doctor_name || `Doctor #${doctor.doctor_id}`
+      };
+    });
+  }, [doctors]);
+
+  const clinicLocationOptions = useMemo(() => {
+    return (Array.isArray(locations) ? locations : []).map((location) => ({
+      id: String(location.location_id),
+      label: location.full_address || `${location.location_city || ''}, ${location.location_state || ''}`.trim()
+    }));
+  }, [locations]);
+
+  const clinicActiveFilterChips = useMemo(() => {
+    const chips = [];
+
+    if (clinicFilters.locationId !== 'ALL') {
+      const location = clinicLocationOptions.find((item) => item.id === clinicFilters.locationId);
+      chips.push(`Location: ${location ? location.label : clinicFilters.locationId}`);
+    }
+    if (clinicFilters.doctorId !== 'ALL') {
+      const provider = clinicProviderOptions.find((item) => item.id === clinicFilters.doctorId);
+      chips.push(`Provider: ${provider ? provider.name : clinicFilters.doctorId}`);
+    }
+    if (clinicFilters.statusGroup !== 'ALL') {
+      chips.push(`Visit Status: ${clinicFilters.statusGroup}`);
+    }
+    if (clinicFilters.paymentStatus !== 'ALL') {
+      chips.push(`Payment: ${clinicFilters.paymentStatus}`);
+    }
+    if (clinicFilters.patientState !== 'ALL') {
+      chips.push(`State: ${clinicFilters.patientState}`);
+    }
+    if (clinicFilters.procedureCategory !== 'ALL') {
+      chips.push(`Procedure: ${clinicFilters.procedureCategory}`);
+    }
+
+    return chips;
+  }, [clinicFilters, clinicLocationOptions, clinicProviderOptions]);
+
 
   return (
     <main className="admin-page">
@@ -527,6 +760,8 @@ function AdminDashboardPage() {
         <button type="button" className={activeSection === 'overview' ? 'is-active' : ''} onClick={() => setActiveSection('overview')}>Overview</button>
         <button type="button" className={activeSection === 'scheduling' ? 'is-active' : ''} onClick={() => setActiveSection('scheduling')}>Scheduling</button>
         <button type="button" className={activeSection === 'reports' ? 'is-active' : ''} onClick={() => setActiveSection('reports')}>Reports</button>
+        <button type="button" className={activeSection === 'refunds' ? 'is-active' : ''} onClick={() => setActiveSection('refunds')}>Refunds</button>
+        <button type="button" className={activeSection === 'recall' ? 'is-active' : ''} onClick={() => setActiveSection('recall')}>Recall / Recare</button>
         <button type="button" className={activeSection === 'staff-scheduling' ? 'is-active' : ''} onClick={() => setActiveSection('staff-scheduling')}>Staff Scheduling</button>
         <button type="button" className={activeSection === 'staffing' ? 'is-active' : ''} onClick={() => setActiveSection('staffing')}>Staffing & Locations</button>
       </nav>
@@ -540,10 +775,6 @@ function AdminDashboardPage() {
           {activeSection === 'overview' && (
             <>
               <section className="admin-metrics-grid">
-                <article className="metric-card">
-                  <h2>Collected</h2>
-                  <p>{formatMoney(summary.metrics?.collectedAllTime)}</p>
-                </article>
                 <article className="metric-card">
                   <h2>Outstanding Balance</h2>
                   <p style={{ color: summary.metrics?.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
@@ -795,8 +1026,214 @@ function AdminDashboardPage() {
             </section>
           )}
 
+          {activeSection === 'recall' && (
+            <>
+              <section className="admin-panel">
+                <div className="admin-panel-header-row recall-header-row">
+                  <div className="recall-header-copy">
+                    <p className="admin-label" style={{ marginBottom: '0.25rem' }}>Recall / Recare</p>
+                    <h2 style={{ margin: 0 }}>Who still needs to come back</h2>
+                    <p className="muted">Follow-up patients due now or within the selected window, with contact status and next scheduled appointment.</p>
+                  </div>
+                  <div className="report-date-range recall-primary-controls">
+                    <label className="admin-inline-filter">
+                      As of
+                      <input type="date" value={recallReportAsOfDate} onChange={(e) => setRecallReportAsOfDate(e.target.value)} />
+                    </label>
+                    <label className="admin-inline-filter">
+                      Window (days)
+                      <input
+                        type="number"
+                        min="30"
+                        max="365"
+                        value={recallReportWindowDays}
+                        onChange={(e) => setRecallReportWindowDays(Number(e.target.value || 90))}
+                        style={{ width: '90px' }}
+                      />
+                    </label>
+                    <button type="button" className="admin-btn" onClick={loadRecallReport} disabled={recallReportLoading}>
+                      {recallReportLoading ? 'Loading...' : 'Refresh'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="recall-filter-grid">
+                  <label className="admin-inline-filter">
+                    Due Status
+                    <select value={recallDueFilter} onChange={(e) => setRecallDueFilter(e.target.value)}>
+                      <option value="ALL">All</option>
+                      <option value="OVERDUE">Overdue</option>
+                      <option value="DUE_TODAY">Due Today</option>
+                      <option value="DUE_30">Due in 1-30 Days</option>
+                      <option value="DUE_60">Due in 31-60 Days</option>
+                      <option value="DUE_90_PLUS">Due in 61+ Days</option>
+                    </select>
+                  </label>
+                  <label className="admin-inline-filter">
+                    Contact
+                    <select value={recallContactFilter} onChange={(e) => setRecallContactFilter(e.target.value)}>
+                      <option value="ALL">All</option>
+                      <option value="CONTACTED">Contacted</option>
+                      <option value="UNCONTACTED">Not Contacted</option>
+                    </select>
+                  </label>
+                  <label className="admin-inline-filter">
+                    Scheduling
+                    <select value={recallScheduledFilter} onChange={(e) => setRecallScheduledFilter(e.target.value)}>
+                      <option value="ALL">All</option>
+                      <option value="SCHEDULED">Scheduled</option>
+                      <option value="UNSCHEDULED">Unscheduled</option>
+                    </select>
+                  </label>
+                  <label className="admin-inline-filter recall-search-field">
+                    Patient Search
+                    <input
+                      type="text"
+                      value={recallSearch}
+                      onChange={(e) => setRecallSearch(e.target.value)}
+                      placeholder="Name, email, or phone"
+                    />
+                  </label>
+                </div>
+
+                {recallReportError && <p className="admin-error">{recallReportError}</p>}
+                {recallReport.generatedAt && (
+                  <p className="muted recall-generated-at">Generated {new Date(recallReport.generatedAt).toLocaleString()}</p>
+                )}
+              </section>
+
+              {recallReportLoading && <p className="admin-loading">Loading recall report...</p>}
+
+              {!recallReportLoading && (
+                <section className="admin-metrics-grid">
+                  <article className="metric-card">
+                    <h2>Due Patients</h2>
+                    <p>{filteredRecallSummary.totalPatientsDue}</p>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Overdue</h2>
+                    <p style={{ color: filteredRecallSummary.overdue > 0 ? '#9d2e2e' : 'inherit' }}>{filteredRecallSummary.overdue}</p>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Due Today</h2>
+                    <p>{filteredRecallSummary.dueToday}</p>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Due in 30 Days</h2>
+                    <p>{filteredRecallSummary.due30}</p>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Due in 60 Days</h2>
+                    <p>{filteredRecallSummary.due60}</p>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Due in 90+ Days</h2>
+                    <p>{filteredRecallSummary.due90Plus}</p>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Scheduled</h2>
+                    <p>{filteredRecallSummary.scheduled}</p>
+                    <small>Recall patients with a future appointment</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Unscheduled</h2>
+                    <p>{filteredRecallSummary.unscheduled}</p>
+                    <small>Need follow-up outreach</small>
+                  </article>
+                </section>
+              )}
+
+              {!recallReportLoading && filteredRecallItems.length > 0 && (
+                <section className="admin-panel">
+                  <h2>Recall Queue Detail</h2>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Patient</th>
+                          <th>Phone</th>
+                          <th>Follow-Up Due</th>
+                          <th>Status</th>
+                          <th>Pending Items</th>
+                          <th>Contact</th>
+                          <th>Next Appointment</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredRecallItems.map((item) => (
+                          <tr key={item.patientId}>
+                            <td>
+                              <strong>{item.patientName}</strong>
+                              <div className="muted" style={{ fontSize: '0.8rem' }}>{item.email || 'No email on file'}</div>
+                            </td>
+                            <td>{item.phone || 'N/A'}</td>
+                            <td>{item.followUpDate ? formatDate(item.followUpDate) : 'N/A'}</td>
+                            <td>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '0.15rem 0.45rem',
+                                borderRadius: '999px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                background: item.dueState === 'OVERDUE' ? '#f8d7da' : item.dueState === 'DUE_TODAY' ? '#fff3cd' : '#e7f1ff',
+                                color: item.dueState === 'OVERDUE' ? '#721c24' : item.dueState === 'DUE_TODAY' ? '#856404' : '#1f4d7a'
+                              }}>
+                                {item.dueState === 'OVERDUE'
+                                  ? `Overdue (${Math.abs(Number(item.daysUntilDue || 0))}d)`
+                                  : item.dueState === 'DUE_TODAY'
+                                    ? 'Due Today'
+                                    : item.dueState === 'DUE_30'
+                                      ? `Due in ${Number(item.daysUntilDue || 0)}d`
+                                      : item.dueState === 'DUE_60'
+                                        ? `Due in ${Number(item.daysUntilDue || 0)}d`
+                                        : item.dueState === 'DUE_90_PLUS'
+                                          ? `Due in ${Number(item.daysUntilDue || 0)}d`
+                                          : 'Unknown'}
+                              </span>
+                            </td>
+                            <td>{item.pendingFollowUpItems}</td>
+                            <td>
+                              {item.lastContactedAt ? (
+                                <div style={{ display: 'grid', gap: '0.2rem' }}>
+                                  <span style={{ color: '#155724', fontWeight: 700, fontSize: '0.8rem' }}>
+                                    Contacted{item.lastContactedBy ? ` by ${item.lastContactedBy}` : ''}
+                                  </span>
+                                  <span className="muted" style={{ fontSize: '0.75rem' }}>{new Date(item.lastContactedAt).toLocaleString()}</span>
+                                  <span className="muted" style={{ fontSize: '0.75rem' }}>{item.lastContactNote || 'No note'}</span>
+                                </div>
+                              ) : (
+                                <span style={{ color: '#856404', fontSize: '0.8rem' }}>Not contacted</span>
+                              )}
+                            </td>
+                            <td>
+                              {item.nextAppointmentDate ? (
+                                <div style={{ display: 'grid', gap: '0.2rem' }}>
+                                  <span>{formatDate(item.nextAppointmentDate)}</span>
+                                  <span className="muted" style={{ fontSize: '0.75rem' }}>{item.nextAppointmentStatus || 'Scheduled'}</span>
+                                </div>
+                              ) : (
+                                <span style={{ color: '#9d2e2e', fontWeight: 700 }}>Not scheduled</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {!recallReportLoading && !filteredRecallItems.length && (
+                <section className="admin-panel">
+                  <p>No recall patients match the current filters.</p>
+                </section>
+              )}
+            </>
+          )}
+
           {activeSection === 'reports' && (
             <>
+
               <section className="admin-panel">
                 <div className="admin-panel-header-row">
                   <div>
@@ -819,6 +1256,114 @@ function AdminDashboardPage() {
                   </div>
                 </div>
 
+                <div className="clinic-filter-grid">
+                  <label className="admin-inline-filter">
+                    Location
+                    <select
+                      value={clinicFilters.locationId}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, locationId: e.target.value }))}
+                    >
+                      <option value="ALL">All locations</option>
+                      {clinicLocationOptions.map((location) => (
+                        <option key={location.id} value={location.id}>{location.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="admin-inline-filter">
+                    Provider
+                    <select
+                      value={clinicFilters.doctorId}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, doctorId: e.target.value }))}
+                    >
+                      <option value="ALL">All providers</option>
+                      {clinicProviderOptions.map((provider) => (
+                        <option key={provider.id} value={provider.id}>{provider.name}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="admin-inline-filter">
+                    Visit Status
+                    <select
+                      value={clinicFilters.statusGroup}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, statusGroup: e.target.value }))}
+                    >
+                      <option value="ALL">All statuses</option>
+                      <option value="COMPLETED">Completed only</option>
+                      <option value="SCHEDULED">Scheduled pipeline</option>
+                      <option value="CANCELLED">Cancelled only</option>
+                      <option value="NO_SHOW">No-show only</option>
+                      <option value="MISSED">Missed visits (cancelled + no-show)</option>
+                    </select>
+                  </label>
+
+                  <label className="admin-inline-filter">
+                    Payment
+                    <select
+                      value={clinicFilters.paymentStatus}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, paymentStatus: e.target.value }))}
+                    >
+                      <option value="ALL">All payment states</option>
+                      <option value="PAID">Paid</option>
+                      <option value="PARTIAL">Partial</option>
+                      <option value="UNPAID">Unpaid</option>
+                      <option value="REFUNDED">Refunded</option>
+                    </select>
+                  </label>
+
+                  <label className="admin-inline-filter">
+                    Patient State
+                    <input
+                      type="text"
+                      value={clinicFilters.patientState === 'ALL' ? '' : clinicFilters.patientState}
+                      placeholder="e.g. NY"
+                      maxLength={2}
+                      onChange={(e) => {
+                        const value = String(e.target.value || '').trim().toUpperCase();
+                        setClinicFilters((prev) => ({ ...prev, patientState: value || 'ALL' }));
+                      }}
+                    />
+                  </label>
+
+                  <label className="admin-inline-filter">
+                    Procedure Category
+                    <select
+                      value={clinicFilters.procedureCategory}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, procedureCategory: e.target.value }))}
+                    >
+                      <option value="ALL">All categories</option>
+                      {clinicProcedureCategories.map((category) => (
+                        <option key={category} value={String(category).toUpperCase()}>{category}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="clinic-filter-actions">
+                  <button
+                    type="button"
+                    className="admin-ghost-button"
+                    onClick={() => setClinicFilters({
+                      locationId: 'ALL',
+                      doctorId: 'ALL',
+                      statusGroup: 'ALL',
+                      paymentStatus: 'ALL',
+                      patientState: 'ALL',
+                      procedureCategory: 'ALL'
+                    })}
+                  >
+                    Clear Filters
+                  </button>
+                  {clinicActiveFilterChips.length > 0 && (
+                    <div className="clinic-filter-chips">
+                      {clinicActiveFilterChips.map((chip) => (
+                        <span key={chip} className="clinic-filter-chip">{chip}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {clinicPerformanceError && <p className="admin-error">{clinicPerformanceError}</p>}
                 {clinicPerformanceReport.generatedAt && (
                   <p className="muted">Generated {new Date(clinicPerformanceReport.generatedAt).toLocaleString()}</p>
@@ -839,6 +1384,16 @@ function AdminDashboardPage() {
                       <h2>Collected</h2>
                       <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
                       <small>After refunds</small>
+                    </article>
+                    <article className="metric-card">
+                      <h2>Patient Collections</h2>
+                      <p>{formatMoney(summary.metrics?.patientCollected)}</p>
+                      <small>All-time from patients</small>
+                    </article>
+                    <article className="metric-card">
+                      <h2>Insurance Collections</h2>
+                      <p>{formatMoney(summary.metrics?.insuranceCollected)}</p>
+                      <small>All-time from other sources</small>
                     </article>
                     <article className="metric-card">
                       <h2>Collection Rate</h2>
@@ -876,7 +1431,7 @@ function AdminDashboardPage() {
                   <section className="admin-grid-two">
                     <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
                       <h2>Production & Collections by Month</h2>
-                      <div className="table-wrap">
+                      <div className="table-wrap report-table-wrap">
                         <table>
                           <thead>
                             <tr>
@@ -886,12 +1441,14 @@ function AdminDashboardPage() {
                               <th>Cancelled</th>
                               <th>No-Show</th>
                               <th>Production</th>
+                              <th>Patient Collected</th>
+                              <th>Insurance Collected</th>
                               <th>Collected</th>
                               <th>Outstanding</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {clinicPerformanceReport.monthlyTrends.length ? clinicPerformanceReport.monthlyTrends.map((row) => (
+                            {clinicPerformanceReport.monthlyTrends.length ? pagedMonthlyTrends.map((row) => (
                               <tr key={row.period_key}>
                                 <td>{row.period_label}</td>
                                 <td>{row.total_appointments}</td>
@@ -899,18 +1456,21 @@ function AdminDashboardPage() {
                                 <td>{row.cancelled_appointments}</td>
                                 <td>{row.no_show_appointments}</td>
                                 <td>{formatMoney(row.total_production)}</td>
+                                <td>{formatMoney(row.patient_collected)}</td>
+                                <td>{formatMoney(row.insurance_collected)}</td>
                                 <td>{formatMoney(row.total_collected)}</td>
                                 <td>{formatMoney(row.total_outstanding)}</td>
                               </tr>
-                            )) : <tr><td colSpan="8">No monthly trend data for this range.</td></tr>}
+                            )) : <tr><td colSpan="10">No monthly trend data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>
+                      {renderTablePager(clinicPerformanceReport.monthlyTrends.length, monthlyTrendsPage, setMonthlyTrendsPage)}
                     </article>
 
                     <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
                       <h2>Provider Productivity</h2>
-                      <div className="table-wrap">
+                      <div className="table-wrap report-table-wrap">
                         <table>
                           <thead>
                             <tr>
@@ -920,13 +1480,15 @@ function AdminDashboardPage() {
                               <th>Cancelled</th>
                               <th>No-Show</th>
                               <th>Production</th>
+                              <th>Patient Collected</th>
+                              <th>Insurance Collected</th>
                               <th>Collected</th>
                               <th>Collection Rate</th>
                               <th>Outstanding</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {clinicPerformanceReport.providerPerformance.length ? clinicPerformanceReport.providerPerformance.map((row) => {
+                            {clinicPerformanceReport.providerPerformance.length ? pagedProviderPerformance.map((row) => {
                               const collectionRate = Number(row.total_production || 0) > 0
                                 ? (Number(row.total_collected || 0) / Number(row.total_production || 0)) * 100
                                 : 0;
@@ -938,20 +1500,23 @@ function AdminDashboardPage() {
                                   <td>{row.cancelled_appointments}</td>
                                   <td>{row.no_show_appointments}</td>
                                   <td>{formatMoney(row.total_production)}</td>
+                                  <td>{formatMoney(row.patient_collected)}</td>
+                                  <td>{formatMoney(row.insurance_collected)}</td>
                                   <td>{formatMoney(row.total_collected)}</td>
                                   <td>{formatPercent(collectionRate)}</td>
                                   <td>{formatMoney(row.total_outstanding)}</td>
                                 </tr>
                               );
-                            }) : <tr><td colSpan="9">No provider productivity data for this range.</td></tr>}
+                            }) : <tr><td colSpan="11">No provider productivity data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>
+                      {renderTablePager(clinicPerformanceReport.providerPerformance.length, providerPerformancePage, setProviderPerformancePage)}
                     </article>
 
                     <article className="admin-panel">
                       <h2>Patient Growth</h2>
-                      <div className="table-wrap">
+                      <div className="table-wrap report-table-wrap">
                         <table>
                           <thead>
                             <tr>
@@ -960,7 +1525,7 @@ function AdminDashboardPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {clinicPerformanceReport.newPatientsTrend.length ? clinicPerformanceReport.newPatientsTrend.map((row) => (
+                            {clinicPerformanceReport.newPatientsTrend.length ? pagedNewPatientsTrend.map((row) => (
                               <tr key={row.period_key}>
                                 <td>{row.period_label}</td>
                                 <td>{row.new_patients}</td>
@@ -969,11 +1534,12 @@ function AdminDashboardPage() {
                           </tbody>
                         </table>
                       </div>
+                      {renderTablePager(clinicPerformanceReport.newPatientsTrend.length, newPatientsPage, setNewPatientsPage)}
                     </article>
 
                     <article className="admin-panel">
                       <h2>Outstanding Accounts</h2>
-                      <div className="table-wrap">
+                      <div className="table-wrap report-table-wrap">
                         <table>
                           <thead>
                             <tr>
@@ -988,7 +1554,7 @@ function AdminDashboardPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {clinicPerformanceReport.outstandingPatients.length ? clinicPerformanceReport.outstandingPatients.map((row) => (
+                            {clinicPerformanceReport.outstandingPatients.length ? pagedOutstandingPatients.map((row) => (
                               <tr key={row.patient_id}>
                                 <td>{row.patient_name}</td>
                                 <td>{row.p_phone || 'N/A'}</td>
@@ -1003,10 +1569,166 @@ function AdminDashboardPage() {
                           </tbody>
                         </table>
                       </div>
+                      {renderTablePager(clinicPerformanceReport.outstandingPatients.length, outstandingAccountsPage, setOutstandingAccountsPage)}
                     </article>
                   </section>
                 </>
               )}
+            </>
+          )}
+
+          {activeSection === 'refunds' && (
+            <>
+              <section className="admin-panel">
+                <div className="admin-panel-header">
+                  <h2>Process Refund</h2>
+                  <p className="muted">Enter an invoice ID to look up details and process a refund.</p>
+                </div>
+                <form
+                  className="admin-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const invoiceId = Number(refundForm.invoiceId);
+                    if (!invoiceId) {
+                      setError('Invoice ID is required');
+                      return;
+                    }
+                    try {
+                      const invResponse = await fetch(`${API_BASE_URL}/api/admin/invoices/${invoiceId}`);
+                      const invData = await invResponse.json();
+                      if (!invResponse.ok) throw new Error(invData.error || 'Invoice not found');
+                      setRefundForm((prev) => ({ ...prev, invoiceData: invData }));
+                    } catch (err) {
+                      setError(err.message || 'Failed to look up invoice');
+                    }
+                  }}
+                >
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem', alignItems: 'end' }}>
+                    <input
+                      type="number"
+                      placeholder="Invoice ID"
+                      value={refundForm.invoiceId}
+                      onChange={(e) => setRefundForm((prev) => ({ ...prev, invoiceId: e.target.value }))}
+                      required
+                    />
+                    <button type="submit">Look Up Invoice</button>
+                  </div>
+                </form>
+
+                {refundForm.invoiceData && (
+                  <div className="refund-invoice-details" style={{ marginTop: '1.5rem', padding: '1rem', background: '#f9f9f9', borderRadius: '4px', border: '1px solid #ddd' }}>
+                    <h3>Invoice Details</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                      <div>
+                        <p className="muted">Patient</p>
+                        <p className="bold">{refundForm.invoiceData.patient_name}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Appointment Date</p>
+                        <p className="bold">{formatDate(refundForm.invoiceData.appointment_date)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Invoice Total</p>
+                        <p className="bold">{formatMoney(refundForm.invoiceData.invoice_total)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Patient Share</p>
+                        <p className="bold">{formatMoney(refundForm.invoiceData.patient_amount)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Total Paid</p>
+                        <p className="bold">{formatMoney(refundForm.invoiceData.total_paid)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Total Refunded</p>
+                        <p className="bold" style={{ color: '#9d2e2e' }}>-{formatMoney(refundForm.invoiceData.total_refunded)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Net Paid</p>
+                        <p className="bold" style={{ color: refundForm.invoiceData.net_paid > refundForm.invoiceData.patient_amount ? '#27ae60' : 'inherit' }}>
+                          {formatMoney(refundForm.invoiceData.net_paid)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="muted">Max Refundable</p>
+                        <p className="bold">{formatMoney(refundForm.invoiceData.max_refundable)}</p>
+                      </div>
+                    </div>
+
+                    <form
+                      className="admin-form"
+                      onSubmit={processRefund}
+                      style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #ddd' }}
+                    >
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Refund Amount"
+                          value={refundForm.amount}
+                          onChange={(e) => setRefundForm((prev) => ({ ...prev, amount: e.target.value }))}
+                          min="0"
+                          max={refundForm.invoiceData.max_refundable}
+                          required
+                        />
+                        <input
+                          type="text"
+                          placeholder="Reason (optional)"
+                          value={refundForm.reason}
+                          onChange={(e) => setRefundForm((prev) => ({ ...prev, reason: e.target.value }))}
+                        />
+                      </div>
+                      <button type="submit" style={{ marginTop: '1rem' }}>Process Refund</button>
+                      <button
+                        type="button"
+                        onClick={() => setRefundForm({ invoiceId: '', amount: '', reason: '' })}
+                        style={{ marginTop: '1rem', marginLeft: '0.5rem', background: '#95a5a6' }}
+                      >
+                        Clear
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </section>
+
+              <section className="admin-panel">
+                <div className="admin-panel-header">
+                  <h2>Refund History</h2>
+                  <p className="muted">All refunds processed by administrators.</p>
+                </div>
+                {refundHistory.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Patient</th>
+                          <th>Invoice ID</th>
+                          <th>Refund Amount</th>
+                          <th>Invoice Total</th>
+                          <th>Reason</th>
+                          <th>Processed By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {refundHistory.map((refund) => (
+                          <tr key={refund.refund_id}>
+                            <td>{formatDate(refund.created_at)}</td>
+                            <td>{refund.patient_name}</td>
+                            <td>{refund.invoice_id}</td>
+                            <td style={{ color: '#9d2e2e' }}>-{formatMoney(refund.refund_amount)}</td>
+                            <td>{formatMoney(refund.invoice_total)}</td>
+                            <td>{refund.reason || '—'}</td>
+                            <td>{refund.refunded_by}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p>No refunds have been processed yet.</p>
+                )}
+              </section>
             </>
           )}
 
