@@ -889,28 +889,28 @@ function ReceptionistPage() {
       {message && <p className="reception-message">{message}</p>}
 
       {doctorTimeOffNotification && (
-        <aside className="reception-toast-stack" aria-live="polite" aria-label="Doctor time off notification" style={{ bottom: '7.2rem', zIndex: 1300 }}>
-          <article className="reception-toast-card" style={{ background: 'linear-gradient(180deg, #1d2f2b 0%, #10211f 100%)', borderColor: 'rgba(120, 202, 190, 0.4)' }}>
-            <div className="reception-toast-card__top">
+        <aside className="reception-request-alert-stack reception-request-alert-stack--timeoff" aria-live="polite" aria-label="Doctor time off notification">
+          <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
+            <div className="reception-request-alert-card__top">
               <div>
-                <p className="reception-toast-card__eyebrow">Doctor Time Off</p>
+                <p className="reception-request-alert-card__eyebrow">Doctor Time Off</p>
                 <h3>Doctor time off affected patient schedules</h3>
               </div>
               <button
                 type="button"
-                className="reception-toast-card__close"
+                className="reception-request-alert-card__close"
                 aria-label="Dismiss doctor time off notification"
                 onClick={() => dismissNotification(doctorTimeOffNotification.notification_id)}
               >
                 &times;
               </button>
             </div>
-            <p className="reception-toast-card__message">
+            <p className="reception-request-alert-card__message">
               {doctorTimeOffNotification.message}
             </p>
             <button
               type="button"
-              className="reception-toast-card__action"
+              className="reception-request-alert-card__action"
               onClick={() => {
                 const target = document.getElementById('system-cancelled-appointments');
                 if (target) {
