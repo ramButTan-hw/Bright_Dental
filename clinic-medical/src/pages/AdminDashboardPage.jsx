@@ -81,6 +81,8 @@ function SortTh({ sort, column, children, style }) {
   );
 }
 
+const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
+
 function AdminDashboardPage() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -93,6 +95,21 @@ function AdminDashboardPage() {
     return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
   });
   const [reportDateTo, setReportDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [clinicReportDateFrom, setClinicReportDateFrom] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().slice(0, 10);
+  });
+  const [clinicReportDateTo, setClinicReportDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [clinicPerformanceReport, setClinicPerformanceReport] = useState({
+    summary: null,
+    monthlyTrends: [],
+    providerPerformance: [],
+    newPatientsTrend: [],
+    outstandingPatients: [],
+    generatedAt: null
+  });
+  const [clinicPerformanceLoading, setClinicPerformanceLoading] = useState(false);
+  const [clinicPerformanceError, setClinicPerformanceError] = useState('');
 
   const [summary, setSummary] = useState(null);
   const [queue, setQueue] = useState({ scheduledAppointments: [], pendingRequests: [], notificationCount: 0 });
@@ -286,6 +303,30 @@ function AdminDashboardPage() {
     }
   };
 
+  const loadClinicPerformanceReport = async () => {
+    setClinicPerformanceLoading(true);
+    setClinicPerformanceError('');
+
+    try {
+      const data = await fetch(
+        `${API_BASE_URL}/api/admin/reports/performance?dateFrom=${clinicReportDateFrom}&dateTo=${clinicReportDateTo}`
+      ).then(safeJson);
+
+      setClinicPerformanceReport({
+        summary: data.summary || null,
+        monthlyTrends: Array.isArray(data.monthlyTrends) ? data.monthlyTrends : [],
+        providerPerformance: Array.isArray(data.providerPerformance) ? data.providerPerformance : [],
+        newPatientsTrend: Array.isArray(data.newPatientsTrend) ? data.newPatientsTrend : [],
+        outstandingPatients: Array.isArray(data.outstandingPatients) ? data.outstandingPatients : [],
+        generatedAt: data.generatedAt || null
+      });
+    } catch (err) {
+      setClinicPerformanceError(err.message || 'Unable to load clinic performance report.');
+    } finally {
+      setClinicPerformanceLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadAdminData();
   }, [selectedDate, reportStatus, includeScheduledFollowUps]);
@@ -295,6 +336,12 @@ function AdminDashboardPage() {
       loadStaffReport();
     }
   }, [reportType, reportDateFrom, reportDateTo]);
+
+  useEffect(() => {
+    if (activeSection === 'reports') {
+      loadClinicPerformanceReport();
+    }
+  }, [activeSection, clinicReportDateFrom, clinicReportDateTo]);
 
   const handleDoctorSubmit = async (e) => {
     e.preventDefault();
@@ -444,7 +491,6 @@ function AdminDashboardPage() {
         (row.patient_name || '').toLowerCase().includes(query) ||
         (queryDigits.length > 0 && (row.p_phone || '').replace(/\D/g, '').includes(queryDigits)) ||
         (row.p_phone || '').toLowerCase().includes(query);
-      // Show all when searching, only unpaid when not searching
       if (hasSearch) return matchesSearch;
       return Number(row.total_outstanding || 0) > 0;
     });
@@ -751,368 +797,214 @@ function AdminDashboardPage() {
 
           {activeSection === 'reports' && (
             <>
-              {/* Report Type Selector */}
               <section className="admin-panel">
                 <div className="admin-panel-header-row">
-                  <div className="report-type-toggle">
-                    <button
-                      type="button"
-                      className={reportType === 'patients' ? 'report-type-btn is-active' : 'report-type-btn'}
-                      onClick={() => setReportType('patients')}
-                    >
-                      Patient Reports
-                    </button>
-                    <button
-                      type="button"
-                      className={reportType === 'staff' ? 'report-type-btn is-active' : 'report-type-btn'}
-                      onClick={() => setReportType('staff')}
-                    >
-                      Staff Reports
+                  <div>
+                    <p className="admin-label" style={{ marginBottom: '0.25rem' }}>Clinic Performance</p>
+                    <h2 style={{ margin: 0 }}>How the practice is doing</h2>
+                    <p className="muted">Production, collections, provider output, patient growth, and outstanding balances for the selected range.</p>
+                  </div>
+                  <div className="report-date-range">
+                    <label className="admin-inline-filter">
+                      From
+                      <input type="date" value={clinicReportDateFrom} onChange={(e) => setClinicReportDateFrom(e.target.value)} />
+                    </label>
+                    <label className="admin-inline-filter">
+                      To
+                      <input type="date" value={clinicReportDateTo} onChange={(e) => setClinicReportDateTo(e.target.value)} />
+                    </label>
+                    <button type="button" className="admin-btn" onClick={loadClinicPerformanceReport} disabled={clinicPerformanceLoading}>
+                      {clinicPerformanceLoading ? 'Loading...' : 'Refresh'}
                     </button>
                   </div>
-
-                  {reportType === 'patients' && (
-                    <label className="admin-inline-filter">
-                      Status Filter
-                      <select value={reportStatus} onChange={(e) => setReportStatus(e.target.value)}>
-                        {reportStatusOptions.map((status) => (
-                          <option key={status} value={status}>{status.replace('_', ' ')}</option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-
-                  {reportType === 'staff' && (
-                    <div className="report-date-range">
-                      <label className="admin-inline-filter">
-                        From
-                        <input type="date" value={reportDateFrom} onChange={(e) => setReportDateFrom(e.target.value)} />
-                      </label>
-                      <label className="admin-inline-filter">
-                        To
-                        <input type="date" value={reportDateTo} onChange={(e) => setReportDateTo(e.target.value)} />
-                      </label>
-                    </div>
-                  )}
                 </div>
+
+                {clinicPerformanceError && <p className="admin-error">{clinicPerformanceError}</p>}
+                {clinicPerformanceReport.generatedAt && (
+                  <p className="muted">Generated {new Date(clinicPerformanceReport.generatedAt).toLocaleString()}</p>
+                )}
               </section>
 
-              {/* ── PATIENT REPORTS ── */}
-              {reportType === 'patients' && (
+              {clinicPerformanceLoading && <p className="admin-loading">Loading clinic performance report...</p>}
+
+              {!clinicPerformanceLoading && clinicPerformanceReport.summary && (
                 <>
-                  <section>
-                    <article className="admin-panel">
-                      <h2>Report 1: Financial Follow-Up</h2>
-                      <p className="muted">
-                        Patients: {financialFollowUpRows.length} | Total Outstanding: {formatMoney(totalOutstandingAmount)}
-                        {!financialSearch.trim() && <> | Showing {filteredFinancialRows.length} unpaid</>}
+                  <section className="admin-metrics-grid">
+                    <article className="metric-card">
+                      <h2>Production</h2>
+                      <p>{formatMoney(clinicPerformanceReport.summary.totalProduction)}</p>
+                      <small>Gross charges in range</small>
+                    </article>
+                    <article className="metric-card">
+                      <h2>Collected</h2>
+                      <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
+                      <small>After refunds</small>
+                    </article>
+                    <article className="metric-card">
+                      <h2>Collection Rate</h2>
+                      <p>{formatPercent(clinicPerformanceReport.summary.collectionRate)}</p>
+                      <small>Collected vs patient responsibility</small>
+                    </article>
+                    <article className="metric-card">
+                      <h2>Outstanding A/R</h2>
+                      <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
+                        {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
                       </p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.75rem 0' }}>
-                        <input
-                          type="text"
-                          placeholder="Search by patient name or phone..."
-                          value={financialSearch}
-                          onChange={(e) => setFinancialSearch(e.target.value)}
-                          style={{ flex: 1, maxWidth: '360px', padding: '0.45rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem' }}
-                        />
-                        {financialSearch.trim() && (
-                          <button type="button" onClick={() => setFinancialSearch('')} style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', background: '#f5f5f5', cursor: 'pointer', fontSize: '0.85rem' }}>
-                            Clear
-                          </button>
-                        )}
-                        <span className="muted" style={{ fontSize: '0.8rem' }}>
-                          {financialSearch.trim() ? `${filteredFinancialRows.length} result${filteredFinancialRows.length !== 1 ? 's' : ''} (all statuses)` : 'Only unpaid shown — search to see all'}
-                        </span>
-                      </div>
-                      <div className="table-wrap" style={{ maxHeight: '480px', overflowY: 'auto' }}>
+                    </article>
+                    <article className="metric-card">
+                      <h2>Completed Visits</h2>
+                      <p>{clinicPerformanceReport.summary.completedAppointments}</p>
+                      <small>{formatPercent(clinicPerformanceReport.summary.completionRate)} completion rate</small>
+                    </article>
+                    <article className="metric-card">
+                      <h2>No-Shows</h2>
+                      <p>{clinicPerformanceReport.summary.noShowAppointments}</p>
+                      <small>{formatPercent(clinicPerformanceReport.summary.noShowRate)} no-show rate</small>
+                    </article>
+                    <article className="metric-card">
+                      <h2>New Patients</h2>
+                      <p>{clinicPerformanceReport.summary.newPatients}</p>
+                      <small>Registered in range</small>
+                    </article>
+                    <article className="metric-card">
+                      <h2>Active Patients</h2>
+                      <p>{clinicPerformanceReport.summary.activePatients}</p>
+                      <small>Seen in range</small>
+                    </article>
+                  </section>
+
+                  <section className="admin-grid-two">
+                    <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
+                      <h2>Production & Collections by Month</h2>
+                      <div className="table-wrap">
                         <table>
-                          <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                          <thead>
                             <tr>
-                              <SortTh sort={sortFinancial} column="patient_name">Patient</SortTh>
-                              <SortTh sort={sortFinancial} column="p_phone">Phone</SortTh>
-                              <SortTh sort={sortFinancial} column="total_invoices">Invoices</SortTh>
-                              <SortTh sort={sortFinancial} column="unpaid_invoices">Unpaid</SortTh>
-                              <SortTh sort={sortFinancial} column="total_charged">Total Charged</SortTh>
-                              <SortTh sort={sortFinancial} column="total_insurance_covered">Insurance Covered</SortTh>
-                              <SortTh sort={sortFinancial} column="total_patient_responsibility">Patient Owes</SortTh>
-                              <SortTh sort={sortFinancial} column="total_paid">Paid</SortTh>
-                              <SortTh sort={sortFinancial} column="total_outstanding">Outstanding</SortTh>
+                              <th>Month</th>
+                              <th>Appointments</th>
+                              <th>Completed</th>
+                              <th>Cancelled</th>
+                              <th>No-Show</th>
+                              <th>Production</th>
+                              <th>Collected</th>
+                              <th>Outstanding</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredFinancialRows.length ? sortFinancial.sorted(filteredFinancialRows).map((row) => {
-                              const outstanding = Number(row.total_outstanding || 0);
-                              return (
-                                <tr key={row.patient_id}>
-                                  <td>{row.patient_name}</td>
-                                  <td>{row.p_phone || 'N/A'}</td>
-                                  <td>{row.total_invoices}</td>
-                                  <td>
-                                    {Number(row.unpaid_invoices || 0) > 0 ? (
-                                      <span style={{
-                                        display: 'inline-block',
-                                        padding: '0.1rem 0.45rem',
-                                        borderRadius: '999px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 700,
-                                        background: '#f8d7da',
-                                        color: '#721c24'
-                                      }}>
-                                        {row.unpaid_invoices}
-                                      </span>
-                                    ) : (
-                                      <span style={{
-                                        display: 'inline-block',
-                                        padding: '0.1rem 0.45rem',
-                                        borderRadius: '999px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 700,
-                                        background: '#d4edda',
-                                        color: '#155724'
-                                      }}>
-                                        0
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td>{formatMoney(row.total_charged)}</td>
-                                  <td>{formatMoney(row.total_insurance_covered)}</td>
-                                  <td>{formatMoney(row.total_patient_responsibility)}</td>
-                                  <td>{formatMoney(row.total_paid)}</td>
-                                  <td style={{ fontWeight: outstanding > 0 ? 700 : 400, color: outstanding > 0 ? '#9d2e2e' : '#155724' }}>
-                                    {formatMoney(outstanding)}
-                                  </td>
-                                </tr>
-                              );
-                            }) : <tr><td colSpan="9">{financialSearch.trim() ? 'No matching patients found.' : 'No unpaid invoices.'}</td></tr>}
+                            {clinicPerformanceReport.monthlyTrends.length ? clinicPerformanceReport.monthlyTrends.map((row) => (
+                              <tr key={row.period_key}>
+                                <td>{row.period_label}</td>
+                                <td>{row.total_appointments}</td>
+                                <td>{row.completed_appointments}</td>
+                                <td>{row.cancelled_appointments}</td>
+                                <td>{row.no_show_appointments}</td>
+                                <td>{formatMoney(row.total_production)}</td>
+                                <td>{formatMoney(row.total_collected)}</td>
+                                <td>{formatMoney(row.total_outstanding)}</td>
+                              </tr>
+                            )) : <tr><td colSpan="8">No monthly trend data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>
                     </article>
 
-                  </section>
-
-                  <section className="admin-panel">
-                    <h2>Refund Management</h2>
-                    <p className="muted">Refunds for overpaid invoices and view refund history. Total refunds: {refundHistory.length} | Total refunded: {formatMoney(refundHistory.reduce((s, r) => s + Number(r.refund_amount || 0), 0))}</p>
-
-                    <div style={{ margin: '0.75rem 0', padding: '0.75rem', border: '1px solid #d7e7e5', borderRadius: '10px', background: '#f9fcfb' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem' }}>
-                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Invoice ID
-                          <input type="number" placeholder="e.g. 5" value={refundForm.invoiceId} onChange={(e) => { setRefundForm((p) => ({ ...p, invoiceId: e.target.value })); lookupInvoice(e.target.value); }} style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
-                        </label>
-                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Refund Amount
-                          <input type="number" step="0.01" placeholder="0.00" value={refundForm.amount} onChange={(e) => setRefundForm((p) => ({ ...p, amount: e.target.value }))} style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
-                        </label>
-                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Reason
-                          <input type="text" placeholder="Treatment cost adjusted" value={refundForm.reason} onChange={(e) => setRefundForm((p) => ({ ...p, reason: e.target.value }))} style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
-                        </label>
-                        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                          <button type="button" onClick={processRefund} style={{ padding: '0.45rem 1rem', borderRadius: '6px', border: 'none', background: '#9d2e2e', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem', width: '100%' }}>
-                            Process Refund
-                          </button>
-                        </div>
-                      </div>
-                      {invoiceLookupLoading && <p className="muted" style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>Looking up invoice...</p>}
-                      {invoiceLookup && Number(refundForm.invoiceId) === invoiceLookup.invoice_id && (
-                        <div style={{ marginTop: '0.6rem', padding: '0.6rem', background: '#eef5f4', borderRadius: '8px', fontSize: '0.83rem' }}>
-                          <p style={{ margin: 0 }}><strong>{invoiceLookup.patient_name}</strong> — Invoice #{invoiceLookup.invoice_id} | Appt: {formatDate(invoiceLookup.appointment_date)}</p>
-                          <p style={{ margin: '0.2rem 0' }}>
-                            Charged: {formatMoney(invoiceLookup.amount)} | Patient responsibility: {formatMoney(invoiceLookup.patient_amount)} | Paid: {formatMoney(invoiceLookup.net_paid)} | Outstanding: {formatMoney(Math.max(Number(invoiceLookup.patient_amount) - invoiceLookup.net_paid, 0))} | Status: {invoiceLookup.payment_status}
-                          </p>
-                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
-                            {invoiceLookup.overpayment > 0 && (
-                              <button type="button" onClick={() => setRefundForm((p) => ({ ...p, amount: String(invoiceLookup.overpayment), reason: p.reason || 'Overpayment — treatment cost reduced' }))}
-                                style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', border: '1px solid #2a7d6e', background: '#d4edda', color: '#155724', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
-                                Difference: {formatMoney(invoiceLookup.overpayment)}
-                              </button>
-                            )}
-                            {invoiceLookup.max_refundable > 0 && (
-                              <button type="button" onClick={() => setRefundForm((p) => ({ ...p, amount: String(invoiceLookup.max_refundable), reason: p.reason || 'Full refund' }))}
-                                style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', border: '1px solid #9d2e2e', background: '#f8d7da', color: '#721c24', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
-                                Full Refund: {formatMoney(invoiceLookup.max_refundable)}
-                              </button>
-                            )}
-                            {invoiceLookup.max_refundable <= 0 && invoiceLookup.overpayment <= 0 && (
-                              <span style={{ color: '#6c757d', fontSize: '0.8rem' }}>No payments to refund.</span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {refundHistory.length > 0 && (
-                      <div className="table-wrap" style={{ maxHeight: '360px', overflowY: 'auto', marginTop: '0.5rem' }}>
+                    <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
+                      <h2>Provider Productivity</h2>
+                      <div className="table-wrap">
                         <table>
-                          <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                          <thead>
                             <tr>
-                              <SortTh sort={sortRefund} column="refund_id">ID</SortTh>
-                              <SortTh sort={sortRefund} column="patient_name">Patient</SortTh>
-                              <SortTh sort={sortRefund} column="invoice_id">Invoice</SortTh>
-                              <SortTh sort={sortRefund} column="refund_amount">Amount</SortTh>
-                              <SortTh sort={sortRefund} column="reason">Reason</SortTh>
-                              <SortTh sort={sortRefund} column="appointment_date">Appt Date</SortTh>
-                              <SortTh sort={sortRefund} column="created_at">Refunded On</SortTh>
+                              <th>Provider</th>
+                              <th>Appointments</th>
+                              <th>Completed</th>
+                              <th>Cancelled</th>
+                              <th>No-Show</th>
+                              <th>Production</th>
+                              <th>Collected</th>
+                              <th>Collection Rate</th>
+                              <th>Outstanding</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {sortRefund.sorted(refundHistory).map((r) => (
-                              <tr key={r.refund_id}>
-                                <td>{r.refund_id}</td>
-                                <td>{r.patient_name}</td>
-                                <td>#{r.invoice_id}</td>
-                                <td style={{ fontWeight: 700, color: '#9d2e2e' }}>-{formatMoney(r.refund_amount)}</td>
-                                <td>{r.reason || 'N/A'}</td>
-                                <td>{formatDate(r.appointment_date)}</td>
-                                <td>{new Date(r.created_at).toLocaleDateString()}</td>
-                              </tr>
-                            ))}
+                            {clinicPerformanceReport.providerPerformance.length ? clinicPerformanceReport.providerPerformance.map((row) => {
+                              const collectionRate = Number(row.total_production || 0) > 0
+                                ? (Number(row.total_collected || 0) / Number(row.total_production || 0)) * 100
+                                : 0;
+                              return (
+                                <tr key={row.doctor_id}>
+                                  <td>Dr. {row.doctor_name}</td>
+                                  <td>{row.total_appointments}</td>
+                                  <td>{row.completed_appointments}</td>
+                                  <td>{row.cancelled_appointments}</td>
+                                  <td>{row.no_show_appointments}</td>
+                                  <td>{formatMoney(row.total_production)}</td>
+                                  <td>{formatMoney(row.total_collected)}</td>
+                                  <td>{formatPercent(collectionRate)}</td>
+                                  <td>{formatMoney(row.total_outstanding)}</td>
+                                </tr>
+                              );
+                            }) : <tr><td colSpan="9">No provider productivity data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>
-                    )}
-                  </section>
+                    </article>
 
-                </>
-              )}
-
-              {/* ── STAFF REPORTS ── */}
-              {reportType === 'staff' && (
-                <>
-                  <section className="admin-panel">
-                    <h2>Report 1: Dentist Workload Summary</h2>
-                    
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <SortTh sort={sortWorkload} column="doctor_name">Doctor</SortTh>
-                            <SortTh sort={sortWorkload} column="phone_number">Phone</SortTh>
-                            <SortTh sort={sortWorkload} column="total_appointments">Total Appts</SortTh>
-                            <SortTh sort={sortWorkload} column="completed">Completed</SortTh>
-                            <SortTh sort={sortWorkload} column="upcoming">Upcoming</SortTh>
-                            <SortTh sort={sortWorkload} column="canceled">Canceled</SortTh>
-                            <SortTh sort={sortWorkload} column="no_show">No-Show</SortTh>
-                            <SortTh sort={sortWorkload} column="total_billed">Total Billed</SortTh>
-                            <SortTh sort={sortWorkload} column="total_collected">Collected</SortTh>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {staffReport.workload.length ? sortWorkload.sorted(staffReport.workload).map((row) => {
-                            const billed = Number(row.total_billed || 0);
-                            const collected = Number(row.total_collected || 0);
-                            const outstanding = billed - collected;
-                            return (
-                            <tr key={row.doctor_id}>
-                              <td>Dr. {row.doctor_name}</td>
-                              <td>{row.phone_number || 'N/A'}</td>
-                              <td>{row.total_appointments}</td>
-                              <td>{row.completed}</td>
-                              <td>{row.upcoming}</td>
-                              <td>{row.canceled}</td>
-                              <td>{row.no_show}</td>
-                              <td>{formatMoney(billed)}</td>
-                              <td>
-                                {formatMoney(collected)}
-                                {outstanding > 0 && (
-                                  <span style={{ marginLeft: '0.4rem', fontSize: '0.75rem', color: '#9d2e2e' }}>
-                                    ({formatMoney(outstanding)} owed)
-                                  </span>
-                                )}
-                              </td>
+                    <article className="admin-panel">
+                      <h2>Patient Growth</h2>
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Month</th>
+                              <th>New Patients</th>
                             </tr>
-                            );
-                          }) : <tr><td colSpan="9">No doctor workload data for this range.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-
-                  <section className="admin-panel">
-                    <h2>Report 2: Dentist Appointment Schedule</h2>
-                    <p className="muted">
-                      
-                      Total: {staffReport.schedule.length} appointment(s)
-                      {filteredDocSchedule.length !== staffReport.schedule.length && (<> | Showing: {filteredDocSchedule.length}</>)}
-                      {filteredDocSchedule.length > docSchedPageSize && (<> | Page {docSchedPage + 1} of {Math.ceil(filteredDocSchedule.length / docSchedPageSize)}</>)}
-                    </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.75rem 0' }}>
-                      <input
-                        type="text"
-                        placeholder="Search by doctor name..."
-                        value={docSchedSearch}
-                        onChange={(e) => { setDocSchedSearch(e.target.value); setDocSchedPage(0); }}
-                        style={{ flex: 1, maxWidth: '320px', padding: '0.45rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem' }}
-                      />
-                      {docSchedSearch.trim() && (
-                        <button type="button" onClick={() => { setDocSchedSearch(''); setDocSchedPage(0); }} style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', background: '#f5f5f5', cursor: 'pointer', fontSize: '0.85rem' }}>
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <div className="table-wrap" style={{ maxHeight: '480px', overflowY: 'auto' }}>
-                      <table>
-                        <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                          <tr>
-                            <SortTh sort={sortDoctorSchedule} column="doctor_name">Doctor</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="appointment_date">Date</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="appointment_time">Time</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="patient_name">Patient</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="patient_phone">Patient Phone</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="status_name">Status</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="payment_status">Payment</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="receptionist_name">Confirmed By</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="location_address">Location</SortTh>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredDocSchedule.length ? sortDoctorSchedule.sorted(filteredDocSchedule).slice(docSchedPage * docSchedPageSize, (docSchedPage + 1) * docSchedPageSize).map((row, idx) => {
-                            const payStatus = row.payment_status || '';
-                            const amtDue = Number(row.amount_due || 0);
-                            return (
-                              <tr key={idx}>
-                                <td>Dr. {row.doctor_name}</td>
-                                <td>{formatDate(row.appointment_date)}</td>
-                                <td>{formatTime(row.appointment_time)}</td>
-                                <td>{row.patient_name}</td>
-                                <td>{row.patient_phone || 'N/A'}</td>
-                                <td>{row.status_name}</td>
-                                <td>
-                                  {payStatus ? (
-                                    <span style={{
-                                      display: 'inline-block',
-                                      padding: '0.15rem 0.5rem',
-                                      borderRadius: '999px',
-                                      fontSize: '0.75rem',
-                                      fontWeight: 700,
-                                      background: payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : '#f8d7da',
-                                      color: payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : '#721c24'
-                                    }}>
-                                      {payStatus}{amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
-                                    </span>
-                                  ) : '—'}
-                                </td>
-                                <td>{row.receptionist_name || 'Unassigned'}</td>
-                                <td>{row.location_address || 'TBD'}</td>
+                          </thead>
+                          <tbody>
+                            {clinicPerformanceReport.newPatientsTrend.length ? clinicPerformanceReport.newPatientsTrend.map((row) => (
+                              <tr key={row.period_key}>
+                                <td>{row.period_label}</td>
+                                <td>{row.new_patients}</td>
                               </tr>
-                            );
-                          }) : <tr><td colSpan="9">No scheduled appointments for this range.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                    {filteredDocSchedule.length > docSchedPageSize && (
-                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
-                        <button type="button" disabled={docSchedPage === 0} onClick={() => setDocSchedPage((p) => p - 1)}
-                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: docSchedPage === 0 ? '#eee' : '#fff', cursor: docSchedPage === 0 ? 'default' : 'pointer', fontSize: '0.85rem' }}>
-                          Previous
-                        </button>
-                        <button type="button" disabled={(docSchedPage + 1) * docSchedPageSize >= filteredDocSchedule.length} onClick={() => setDocSchedPage((p) => p + 1)}
-                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: (docSchedPage + 1) * docSchedPageSize >= filteredDocSchedule.length ? '#eee' : '#fff', cursor: (docSchedPage + 1) * docSchedPageSize >= filteredDocSchedule.length ? 'default' : 'pointer', fontSize: '0.85rem' }}>
-                          Next
-                        </button>
+                            )) : <tr><td colSpan="2">No patient growth data for this range.</td></tr>}
+                          </tbody>
+                        </table>
                       </div>
-                    )}
-                  </section>
+                    </article>
 
+                    <article className="admin-panel">
+                      <h2>Outstanding Accounts</h2>
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Patient</th>
+                              <th>Phone</th>
+                              <th>Invoices</th>
+                              <th>Charged</th>
+                              <th>Insurance</th>
+                              <th>Patient Owes</th>
+                              <th>Paid</th>
+                              <th>Due</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {clinicPerformanceReport.outstandingPatients.length ? clinicPerformanceReport.outstandingPatients.map((row) => (
+                              <tr key={row.patient_id}>
+                                <td>{row.patient_name}</td>
+                                <td>{row.p_phone || 'N/A'}</td>
+                                <td>{row.total_invoices}</td>
+                                <td>{formatMoney(row.total_charged)}</td>
+                                <td>{formatMoney(row.insurance_covered)}</td>
+                                <td>{formatMoney(row.patient_responsibility)}</td>
+                                <td>{formatMoney(row.patient_paid)}</td>
+                                <td style={{ color: '#9d2e2e', fontWeight: 700 }}>{formatMoney(row.patient_due)}</td>
+                              </tr>
+                            )) : <tr><td colSpan="8">No outstanding balances to show.</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                    </article>
+                  </section>
                 </>
               )}
             </>
