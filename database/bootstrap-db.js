@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 const pool = require('./db');
+const { runSqlScript } = require('./sql-script-runner');
 
 async function ensureMigrationLogTable(db) {
   await db.query(`
@@ -27,7 +28,7 @@ async function importSchemaIfDatabaseIsEmpty(db) {
 
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-  await db.query(schemaSql);
+  await runSqlScript(db, schemaSql);
   console.log('Imported base schema from database/schema.sql.');
 }
 
@@ -60,7 +61,7 @@ async function runPendingMigrations(db) {
       continue;
     }
 
-    await db.query(migrationSql);
+    await runSqlScript(db, migrationSql);
     await db.query('INSERT INTO schema_migrations (migration_name) VALUES (?)', [fileName]);
     console.log(`Applied migration ${fileName}`);
   }
