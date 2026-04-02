@@ -1,6 +1,20 @@
 const url = require('url');
 
 function createReceptionRoutes({ pool, sendJSON }) {
+  function normalizeTenDigitPhone(value) {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+    if (!digits) return null;
+    if (digits.length !== 10) return '';
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  function normalizeFiveDigitZip(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return null;
+    if (digits.length !== 5) return '';
+    return digits;
+  }
+
   function normalizeDateParam(value) {
     const raw = String(value || '').trim();
     return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
@@ -1097,18 +1111,15 @@ function createReceptionRoutes({ pool, sendJSON }) {
     const firstName = String(data?.firstName || '').trim();
     const lastName = String(data?.lastName || '').trim();
     const email = String(data?.email || '').trim();
-    const phone = String(data?.phone || '').replace(/\D/g, '');
+    const phone = normalizeTenDigitPhone(data?.phone);
     const dateOfBirth = String(data?.dateOfBirth || '').trim();
     const address = String(data?.address || '').trim();
     const city = String(data?.city || '').trim();
     const state = String(data?.state || '').trim().toUpperCase();
-    const zipcode = String(data?.zipcode || '').trim();
+    const zipcode = normalizeFiveDigitZip(data?.zipcode);
     const country = String(data?.country || '').trim();
     const emergencyContactName = String(data?.emergencyContactName || '').trim();
-    const emergencyContactPhone = String(data?.emergencyContactPhone || '').replace(/\D/g, '');
-    const formattedEmergencyContactPhone = emergencyContactPhone
-      ? `${emergencyContactPhone.slice(0, 3)}-${emergencyContactPhone.slice(3, 6)}-${emergencyContactPhone.slice(6, 10)}`
-      : '';
+    const emergencyContactPhone = normalizeTenDigitPhone(data?.emergencyContactPhone);
 
     if (!firstName || !lastName || !email) {
       return sendJSON(res, 400, { error: 'First name, last name, and email are required' });
@@ -1118,7 +1129,15 @@ function createReceptionRoutes({ pool, sendJSON }) {
       return sendJSON(res, 400, { error: 'dateOfBirth must use YYYY-MM-DD format' });
     }
 
-    if (emergencyContactPhone && !/^\d{10}$/.test(emergencyContactPhone)) {
+    if (phone === '') {
+      return sendJSON(res, 400, { error: 'Phone must contain exactly 10 digits' });
+    }
+
+    if (zipcode === '') {
+      return sendJSON(res, 400, { error: 'ZIP code must contain exactly 5 digits' });
+    }
+
+    if (emergencyContactPhone === '') {
       return sendJSON(res, 400, { error: 'Emergency contact phone must be exactly 10 digits' });
     }
 
@@ -1204,7 +1223,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
                     zipcode || null,
                     country || null,
                     emergencyContactName || null,
-                    formattedEmergencyContactPhone || null,
+                    emergencyContactPhone || null,
                     staffId
                   ],
                   (staffErr) => {
@@ -1237,17 +1256,29 @@ function createReceptionRoutes({ pool, sendJSON }) {
   function updateReceptionPatient(req, patientId, data, res) {
     const firstName = String(data?.firstName || '').trim();
     const lastName = String(data?.lastName || '').trim();
-    const phone = String(data?.phone || '').trim();
+    const phone = normalizeTenDigitPhone(data?.phone);
     const email = String(data?.email || '').trim();
     const address = String(data?.address || '').trim();
     const city = String(data?.city || '').trim();
     const state = String(data?.state || '').trim().toUpperCase();
-    const zipcode = String(data?.zipcode || '').trim();
+    const zipcode = normalizeFiveDigitZip(data?.zipcode);
     const emergencyContactName = String(data?.emergencyContactName || '').trim();
-    const emergencyContactPhone = String(data?.emergencyContactPhone || '').trim();
+    const emergencyContactPhone = normalizeTenDigitPhone(data?.emergencyContactPhone);
 
     if (!firstName || !lastName || !email) {
       return sendJSON(res, 400, { error: 'firstName, lastName, and email are required' });
+    }
+
+    if (phone === '') {
+      return sendJSON(res, 400, { error: 'Phone number must contain exactly 10 digits' });
+    }
+
+    if (zipcode === '') {
+      return sendJSON(res, 400, { error: 'ZIP code must contain exactly 5 digits' });
+    }
+
+    if (emergencyContactPhone === '') {
+      return sendJSON(res, 400, { error: 'Emergency contact phone must contain exactly 10 digits' });
     }
 
     pool.query(
@@ -1297,9 +1328,12 @@ function createReceptionRoutes({ pool, sendJSON }) {
     const firstName = String(data?.firstName || '').trim();
     const lastName = String(data?.lastName || '').trim();
     const dob = String(data?.dob || '').trim();
-    const phone = String(data?.phone || '').trim();
+    const phone = normalizeTenDigitPhone(data?.phone);
     const email = String(data?.email || '').trim();
     const gender = Number(data?.gender || 0);
+
+    const zipcode = normalizeFiveDigitZip(data?.zipcode);
+    const emergencyContactPhone = normalizeTenDigitPhone(data?.emergencyContactPhone);
 
     if (!firstName || !lastName || !dob || !email) {
       return sendJSON(res, 400, { error: 'firstName, lastName, dob, and email are required' });
@@ -1307,6 +1341,18 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
       return sendJSON(res, 400, { error: 'dob must use YYYY-MM-DD format' });
+    }
+
+    if (phone === '') {
+      return sendJSON(res, 400, { error: 'Phone number must contain exactly 10 digits' });
+    }
+
+    if (zipcode === '') {
+      return sendJSON(res, 400, { error: 'ZIP code must contain exactly 5 digits' });
+    }
+
+    if (emergencyContactPhone === '') {
+      return sendJSON(res, 400, { error: 'Emergency contact phone must contain exactly 10 digits' });
     }
 
     pool.query(
@@ -1336,9 +1382,9 @@ function createReceptionRoutes({ pool, sendJSON }) {
         data?.address ? String(data.address).trim() : null,
         data?.city ? String(data.city).trim() : null,
         data?.state ? String(data.state).trim().toUpperCase() : null,
-        data?.zipcode ? String(data.zipcode).trim() : null,
+        zipcode || null,
         data?.emergencyContactName ? String(data.emergencyContactName).trim() : null,
-        data?.emergencyContactPhone ? String(data.emergencyContactPhone).trim() : null
+        emergencyContactPhone || null
       ],
       (err, result) => {
         if (err) {

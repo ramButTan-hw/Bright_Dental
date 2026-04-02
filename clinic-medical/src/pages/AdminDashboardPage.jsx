@@ -35,6 +35,10 @@ const formatPhoneInput = (value) => {
   return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
 };
 
+const formatZipInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 5);
+
+const extractDigits = (value) => String(value || '').replace(/\D/g, '');
+
 function useSortState() {
   const [col, setCol] = useState(null);
   const [dir, setDir] = useState('asc');
@@ -486,6 +490,11 @@ function AdminDashboardPage() {
     e.preventDefault();
     setActionMessage('');
 
+    if (extractDigits(doctorForm.phone).length !== 10) {
+      setActionMessage('Doctor phone number must contain exactly 10 digits.');
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/doctors`, {
         method: 'POST',
@@ -510,6 +519,11 @@ function AdminDashboardPage() {
     e.preventDefault();
     setActionMessage('');
 
+    if (extractDigits(formState.phone).length !== 10) {
+      setActionMessage(`${roleLabel} phone number must contain exactly 10 digits.`);
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/staff/${rolePath}`, {
         method: 'POST',
@@ -533,6 +547,11 @@ function AdminDashboardPage() {
   const handleLocationSubmit = async (e) => {
     e.preventDefault();
     setActionMessage('');
+
+    if (!/^\d{5}$/.test(String(locationForm.zipCode || ''))) {
+      setActionMessage('Location ZIP code must contain exactly 5 digits.');
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/locations`, {
@@ -649,6 +668,53 @@ function AdminDashboardPage() {
     });
 
   const combinedNotifications = pendingStaffOffDayNotifications;
+
+  const todaysCancelledCount = useMemo(() => {
+    return (Array.isArray(cancelledAppointments) ? cancelledAppointments : []).filter((appt) => {
+      return String(appt.appointment_date || '').slice(0, 10) === selectedDate;
+    }).length;
+  }, [cancelledAppointments, selectedDate]);
+
+  const nextFiveAppointments = useMemo(() => {
+    const rows = Array.isArray(queue?.scheduledAppointments) ? queue.scheduledAppointments : [];
+    return rows.slice(0, 5);
+  }, [queue?.scheduledAppointments]);
+
+  const overviewCards = useMemo(() => {
+    const metrics = summary?.metrics || {};
+    return [
+      {
+        label: 'Scheduled Today',
+        value: Number(metrics.scheduledToday || queue?.scheduledAppointments?.length || 0),
+        hint: 'Appointments on today\'s book'
+      },
+      {
+        label: 'Patients Today',
+        value: Number(metrics.patientsScheduledToday || 0),
+        hint: 'Unique patients on the schedule'
+      },
+      {
+        label: 'Waiting Requests',
+        value: Number(metrics.waitingToSchedule || queue?.pendingRequests?.length || 0),
+        hint: 'Preference requests to assign'
+      },
+      {
+        label: 'Recall Overdue',
+        value: Number(followUpQueue?.summary?.overdue || 0),
+        hint: 'Patients overdue for follow-up'
+      },
+      {
+        label: 'Pending Time-Off',
+        value: Number(metrics.pendingTimeOffCount || 0),
+        hint: 'Requests awaiting approval'
+      },
+      {
+        label: 'Cancelled Today',
+        value: todaysCancelledCount,
+        hint: 'Same-day cancellations'
+      }
+    ];
+  }, [summary?.metrics, queue?.scheduledAppointments, queue?.pendingRequests, followUpQueue?.summary, todaysCancelledCount]);
 
   const filteredRecallItems = useMemo(() => {
     const items = Array.isArray(recallReport.items) ? recallReport.items : [];
@@ -775,44 +841,94 @@ function AdminDashboardPage() {
           {activeSection === 'overview' && (
             <>
               <section className="admin-metrics-grid">
-                <article className="metric-card">
-                  <h2>Outstanding Balance</h2>
-                  <p style={{ color: summary.metrics?.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
-                    {formatMoney(summary.metrics?.totalOutstanding)}
-                  </p>
-                </article>
-                <article className="metric-card">
-                  <h2>Waiting Requests</h2>
-                  <p>{summary.metrics?.waitingToSchedule || 0}</p>
-                </article>
-                <article className="metric-card">
-                  <h2>Dentists on Team</h2>
-                  <p>{summary.metrics?.doctorCount || 0}</p>
-                  {(summary.metrics?.doctorCount || 0) > 5 && <small>Above your baseline of 5 dentists</small>}
-                </article>
-                <article className="metric-card">
-                  <h2>New Patients This Month</h2>
-                  <p>{summary.metrics?.newPatientsThisMonth || 0}</p>
-                </article>
-                <article className="metric-card">
-                  <h2>Pending Time-Off Requests</h2>
-                  <p style={{ color: summary.metrics?.pendingTimeOffCount > 0 ? '#9d2e2e' : 'inherit' }}>
-                    {summary.metrics?.pendingTimeOffCount || 0}
-                  </p>
-                </article>
+                {overviewCards.map((card) => (
+                  <article className="metric-card" key={card.label}>
+                    <h2>{card.label}</h2>
+                    <p style={{ color: Number(card.value) > 0 ? 'inherit' : '#6d7e7d' }}>{card.value}</p>
+                    <small>{card.hint}</small>
+                  </article>
+                ))}
               </section>
 
-              <section className="admin-panel">
-                <h2>Notifications</h2>
-                {combinedNotifications.length ? (
-                  <ul className="notification-list">
-                    {combinedNotifications.map((note, idx) => (
-                      <li key={`${note.message}-${idx}`}>{note.message}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p>No scheduling alerts right now.</p>
-                )}
+              <section className="admin-grid-two overview-grid">
+                <article className="admin-panel">
+                  <div className="admin-panel-header-row">
+                    <h2>Priority Queue</h2>
+                    <span className="clinic-filter-chip">Date: {formatDate(selectedDate)}</span>
+                  </div>
+                  <div className="overview-queue-list">
+                    <div className="overview-queue-item">
+                      <div>
+                        <strong>Waiting appointment requests</strong>
+                        <p className="muted">{summary.metrics?.waitingToSchedule || 0} requests need assignment.</p>
+                      </div>
+                      <button type="button" className="admin-btn" onClick={() => setActiveSection('scheduling')}>Assign</button>
+                    </div>
+                    <div className="overview-queue-item">
+                      <div>
+                        <strong>Pending time-off approvals</strong>
+                        <p className="muted">{summary.metrics?.pendingTimeOffCount || 0} requests need review.</p>
+                      </div>
+                      <button type="button" className="admin-btn" onClick={() => setActiveSection('staff-scheduling')}>Review</button>
+                    </div>
+                    <div className="overview-queue-item">
+                      <div>
+                        <strong>Overdue recall follow-ups</strong>
+                        <p className="muted">{followUpQueue.summary?.overdue || 0} patients are overdue.</p>
+                      </div>
+                      <button type="button" className="admin-btn" onClick={() => setActiveSection('recall')}>Open Queue</button>
+                    </div>
+                    <div className="overview-queue-item">
+                      <div>
+                        <strong>Refund operations</strong>
+                        <p className="muted">Go to refunds to process or audit adjustments.</p>
+                      </div>
+                      <button type="button" className="admin-btn" onClick={() => setActiveSection('refunds')}>Process</button>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="admin-panel">
+                  <h2>Next 5 Appointments</h2>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Patient</th>
+                          <th>Dentist</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {nextFiveAppointments.length ? nextFiveAppointments.map((appt) => (
+                          <tr key={`overview-next-${appt.appointment_id}`}>
+                            <td>{formatTime(appt.appointment_time)}</td>
+                            <td>{appt.patient_name}</td>
+                            <td>{appt.doctor_name || 'TBD'}</td>
+                            <td>{appt.status_name}</td>
+                          </tr>
+                        )) : <tr><td colSpan="4">No scheduled appointments for this date.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: '0.65rem' }}>
+                    <button type="button" className="admin-ghost-button" onClick={() => setActiveSection('scheduling')}>Open Full Schedule</button>
+                  </div>
+                </article>
+
+                <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
+                  <h2>Notifications</h2>
+                  {combinedNotifications.length ? (
+                    <ul className="notification-list">
+                      {combinedNotifications.map((note, idx) => (
+                        <li key={`${note.message}-${idx}`}>{note.message}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>No scheduling alerts right now.</p>
+                  )}
+                </article>
               </section>
             </>
           )}
@@ -2057,7 +2173,7 @@ function AdminDashboardPage() {
                         <input placeholder="Street name" value={locationForm.streetName} onChange={(e) => setLocationForm((prev) => ({ ...prev, streetName: e.target.value }))} required />
                         <input placeholder="City" value={locationForm.city} onChange={(e) => setLocationForm((prev) => ({ ...prev, city: e.target.value }))} required />
                         <input placeholder="State" maxLength="2" value={locationForm.state} onChange={(e) => setLocationForm((prev) => ({ ...prev, state: e.target.value }))} required />
-                        <input placeholder="ZIP" value={locationForm.zipCode} onChange={(e) => setLocationForm((prev) => ({ ...prev, zipCode: e.target.value }))} required />
+                        <input placeholder="ZIP" value={locationForm.zipCode} inputMode="numeric" pattern="\d{5}" maxLength={5} onChange={(e) => setLocationForm((prev) => ({ ...prev, zipCode: formatZipInput(e.target.value) }))} required />
                         <button type="submit">Create Location</button>
                       </form>
                       <ul className="compact-list">

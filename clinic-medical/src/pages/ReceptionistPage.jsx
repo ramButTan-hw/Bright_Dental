@@ -162,6 +162,7 @@ function ReceptionistPage() {
   });
   const [singleReportFormat, setSingleReportFormat] = useState('PDF');
   const [isGeneratingSingleReport, setIsGeneratingSingleReport] = useState(false);
+  const [singleReportPreview, setSingleReportPreview] = useState(null);
   const [followUpContactModal, setFollowUpContactModal] = useState({
     isOpen: false,
     item: null,
@@ -377,6 +378,51 @@ function ReceptionistPage() {
     downloadReportJson(payload, `${baseFilename}.json`);
   };
 
+  const fetchSinglePatientReports = async (patientId) => {
+    const treatmentQueryString = buildReportQueryString(singleReportForm);
+    const apptForm = {
+      patientId: singleReportForm.patientId,
+      fromDate: singleReportForm.fromDate,
+      toDate: singleReportForm.toDate,
+      status: singleReportForm.status,
+      reason: singleReportForm.reason
+    };
+    const appointmentQueryString = buildReportQueryString(apptForm);
+
+    const [treatmentResponse, appointmentResponse] = await Promise.all([
+      fetch(`${API_BASE_URL}/api/reception/reports/patient?${treatmentQueryString}`),
+      fetch(`${API_BASE_URL}/api/reception/reports/patient-appointments?${appointmentQueryString}`)
+    ]);
+
+    const treatmentPayload = await treatmentResponse.json().catch(() => ({}));
+    if (!treatmentResponse.ok) {
+      throw new Error(treatmentPayload.error || 'Failed to generate treatment/finding report.');
+    }
+
+    const appointmentPayload = await appointmentResponse.json().catch(() => ({}));
+    if (!appointmentResponse.ok) {
+      throw new Error(appointmentPayload.error || 'Failed to generate single-patient appointment report.');
+    }
+
+    return { treatmentPayload, appointmentPayload, patientId };
+  };
+
+  const exportSinglePatientReports = ({ treatmentPayload, appointmentPayload, patientId }) => {
+    exportReportPayload(
+      treatmentPayload,
+      singleReportFormat,
+      `reception-patient-${patientId}-report-${singleReportForm.fromDate}-to-${singleReportForm.toDate}`,
+      'Reception Single Patient Treatment and Finding Report'
+    );
+
+    exportApptReportPayload(
+      appointmentPayload,
+      singleReportFormat,
+      `reception-patient-${patientId}-appointments-${singleReportForm.fromDate}-to-${singleReportForm.toDate}`,
+      'Single Patient Appointment Report'
+    );
+  };
+
   const generateSinglePatientReport = async (event) => {
     event.preventDefault();
     setMessage('');
@@ -388,23 +434,15 @@ function ReceptionistPage() {
 
     setIsGeneratingSingleReport(true);
     try {
-      const queryString = buildReportQueryString(singleReportForm);
-      const response = await fetch(`${API_BASE_URL}/api/reception/reports/patient?${queryString}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to generate treatment/finding report.');
-      }
-
-      exportReportPayload(
-        payload,
-        singleReportFormat,
-        `reception-patient-${patientId}-report-${singleReportForm.fromDate}-to-${singleReportForm.toDate}`,
-        'Reception Single Patient Treatment and Finding Report'
-      );
-
-      await generateSinglePatientApptReport(patientId);
-
-      setMessage(`Both reports generated and downloaded as ${singleReportFormat}.`);
+      const reportData = await fetchSinglePatientReports(patientId);
+      setSingleReportPreview({
+        patientId,
+        generatedAt: new Date().toISOString(),
+        filters: { ...singleReportForm },
+        treatmentPayload: reportData.treatmentPayload,
+        appointmentPayload: reportData.appointmentPayload
+      });
+      setMessage('Report generated on-screen. Download is optional.');
     } catch (err) {
       setMessage(err.message || 'Failed to generate report.');
     } finally {
@@ -503,25 +541,18 @@ function ReceptionistPage() {
     downloadReportJson(payload, `${baseFilename}.json`);
   };
 
-  const generateSinglePatientApptReport = async (patientId) => {
-    try {
-      const apptForm = { patientId: singleReportForm.patientId, fromDate: singleReportForm.fromDate, toDate: singleReportForm.toDate, status: singleReportForm.status, reason: singleReportForm.reason };
-      const queryString = buildReportQueryString(apptForm);
-      const response = await fetch(`${API_BASE_URL}/api/reception/reports/patient-appointments?${queryString}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to generate single-patient appointment report.');
-      }
-
-      exportApptReportPayload(
-        payload,
-        singleReportFormat,
-        `reception-patient-${patientId}-appointments-${singleReportForm.fromDate}-to-${singleReportForm.toDate}`,
-        'Single Patient Appointment Report'
-      );
-    } catch (err) {
-      throw err;
+  const downloadCurrentSinglePatientReport = () => {
+    if (!singleReportPreview?.treatmentPayload || !singleReportPreview?.appointmentPayload) {
+      setMessage('Generate a report first before downloading.');
+      return;
     }
+
+    exportSinglePatientReports({
+      treatmentPayload: singleReportPreview.treatmentPayload,
+      appointmentPayload: singleReportPreview.appointmentPayload,
+      patientId: singleReportPreview.patientId
+    });
+    setMessage(`Downloaded report files as ${singleReportFormat}.`);
   };
 
   const safeJson = async (response) => {
@@ -806,6 +837,39 @@ function ReceptionistPage() {
 
     await markFollowUpContacted(followUpContactModal.item, followUpContactModal.note);
   };
+
+  const previewTreatmentRows = useMemo(
+    () => flattenReportRows(singleReportPreview?.treatmentPayload).slice(0, 12),
+    [singleReportPreview?.treatmentPayload]
+  );
+
+  const previewAppointmentRows = useMemo(
+    () => flattenApptReportRows(singleReportPreview?.appointmentPayload).slice(0, 12),
+    [singleReportPreview?.appointmentPayload]
+  );
+
+  const previewSummary = useMemo(() => {
+    const treatmentSummary = singleReportPreview?.treatmentPayload?.summary || {};
+    const appointmentSummary = singleReportPreview?.appointmentPayload?.summary || {};
+    const firstVisit = Array.isArray(singleReportPreview?.treatmentPayload?.visits)
+      ? singleReportPreview.treatmentPayload.visits[0]
+      : null;
+    const firstAppointment = Array.isArray(singleReportPreview?.appointmentPayload?.appointments)
+      ? singleReportPreview.appointmentPayload.appointments[0]
+      : null;
+
+    return {
+      patientName: (firstAppointment?.patientName || firstVisit?.patientName || '').trim(),
+      totalVisits: Number(treatmentSummary.totalVisits || 0),
+      totalEntries: Number(treatmentSummary.totalEntries || 0),
+      totalTreatmentCost: Number(treatmentSummary.totalCost || 0),
+      totalAppointments: Number(appointmentSummary.totalAppointments || 0),
+      totalCollected: Number(appointmentSummary.totalCollected || 0),
+      totalOwed: Number(appointmentSummary.totalOwed || 0),
+      lastVisitDate: appointmentSummary.lastVisitDate || null,
+      nextUpcomingDate: appointmentSummary.nextUpcomingDate || null
+    };
+  }, [singleReportPreview]);
 
   return (
     <main className="reception-page">
@@ -1300,8 +1364,8 @@ function ReceptionistPage() {
         <h2>Reports</h2>
         <div className="reception-report-grid">
           <form className="reception-report-form" onSubmit={generateSinglePatientReport}>
-            <h3>Single Patient Report</h3>
-            <p>Generates treatment/finding and appointment reports for one patient in the selected date range.</p>
+            <h3>Patient Snapshot Report</h3>
+            <p>Generate a consolidated on-screen snapshot for front-desk and dentist handoff.</p>
             <label>
               <span>Patient ID</span>
               <input
@@ -1362,7 +1426,7 @@ function ReceptionistPage() {
               </label>
             </div>
             <label>
-              <span>Export Format</span>
+              <span>Download Format (optional)</span>
               <select
                 value={singleReportFormat}
                 onChange={(event) => setSingleReportFormat(event.target.value)}
@@ -1401,9 +1465,103 @@ function ReceptionistPage() {
               </select>
             </label>
             <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isGeneratingSingleReport}>
-              {isGeneratingSingleReport ? 'Generating...' : 'Generate Single Patient Report'}
+              {isGeneratingSingleReport ? 'Generating...' : 'Generate Snapshot On Screen'}
+            </button>
+            <button
+              type="button"
+              className="reception-action-btn reception-action-btn--secondary"
+              onClick={downloadCurrentSinglePatientReport}
+              disabled={!singleReportPreview}
+            >
+              Download Copy
             </button>
           </form>
+
+          {singleReportPreview && (
+            <article className="reception-report-preview">
+              <div className="reception-report-preview-header">
+                <h3>On-Screen Snapshot</h3>
+                <p>
+                  Patient #{singleReportPreview.patientId}
+                  {previewSummary.patientName ? ` (${previewSummary.patientName})` : ''}
+                  {' '}| Generated {formatDateTimeWithMeridiem(singleReportPreview.generatedAt)}
+                </p>
+              </div>
+
+              <div className="reception-report-summary-grid">
+                <div><span>Visits</span><strong>{previewSummary.totalVisits}</strong></div>
+                <div><span>Appointments</span><strong>{previewSummary.totalAppointments}</strong></div>
+                <div><span>Treatment Entries</span><strong>{previewSummary.totalEntries}</strong></div>
+                <div><span>Collected</span><strong>${previewSummary.totalCollected.toFixed(2)}</strong></div>
+                <div><span>Outstanding</span><strong>${previewSummary.totalOwed.toFixed(2)}</strong></div>
+                <div><span>Treatment Cost</span><strong>${previewSummary.totalTreatmentCost.toFixed(2)}</strong></div>
+              </div>
+
+              <p className="reception-report-keyline">
+                Last Visit: {previewSummary.lastVisitDate ? formatDate(previewSummary.lastVisitDate) : 'N/A'} | Next Upcoming: {previewSummary.nextUpcomingDate ? formatDate(previewSummary.nextUpcomingDate) : 'N/A'}
+              </p>
+
+              <h4>Recent Appointments</h4>
+              <div className="reception-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Time</th>
+                      <th>Status</th>
+                      <th>Dentist</th>
+                      <th>Billed</th>
+                      <th>Paid</th>
+                      <th>Owed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewAppointmentRows.length ? previewAppointmentRows.map((row) => (
+                      <tr key={`appt-preview-${row.appointmentId}`}>
+                        <td>{row.appointmentDate || 'N/A'}</td>
+                        <td>{row.appointmentTime ? formatTime(row.appointmentTime) : 'N/A'}</td>
+                        <td>{row.status || 'N/A'}</td>
+                        <td>{row.doctorName || 'N/A'}</td>
+                        <td>{row.amountBilled === '' ? '—' : `$${Number(row.amountBilled).toFixed(2)}`}</td>
+                        <td>{row.amountPaid === '' ? '—' : `$${Number(row.amountPaid).toFixed(2)}`}</td>
+                        <td>{row.amountOwed === '' ? '—' : `$${Number(row.amountOwed).toFixed(2)}`}</td>
+                      </tr>
+                    )) : <tr><td colSpan="7">No appointments found in the selected range.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+
+              <h4>Recent Treatments / Findings</h4>
+              <div className="reception-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Visit Date</th>
+                      <th>ADA Code</th>
+                      <th>Treatment</th>
+                      <th>Tooth</th>
+                      <th>Surface</th>
+                      <th>Cost</th>
+                      <th>Finding</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewTreatmentRows.length ? previewTreatmentRows.map((row, index) => (
+                      <tr key={`trt-preview-${row.patientId}-${row.visitDate}-${row.procedureCode}-${index}`}>
+                        <td>{row.visitDate || 'N/A'}</td>
+                        <td>{row.procedureCode || '—'}</td>
+                        <td>{row.treatmentDescription || '—'}</td>
+                        <td>{row.toothNumber || '—'}</td>
+                        <td>{row.surface || '—'}</td>
+                        <td>${Number(row.treatmentCost || 0).toFixed(2)}</td>
+                        <td>{row.finding || '—'}</td>
+                      </tr>
+                    )) : <tr><td colSpan="7">No treatment/finding entries found in the selected range.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          )}
 
         </div>
       </section>

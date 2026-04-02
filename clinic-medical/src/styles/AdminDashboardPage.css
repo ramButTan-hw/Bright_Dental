@@ -333,6 +333,34 @@
   color: #5a2500;
 }
 
+.overview-grid {
+  gap: 1rem;
+}
+
+.overview-queue-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.overview-queue-item {
+  border: 1px solid #d6e7e5;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.overview-queue-item strong {
+  color: #153736;
+  font-size: 0.92rem;
+}
+
+.overview-queue-item .muted {
+  margin: 0.2rem 0 0;
+}
+
 .muted {
   color: #506463;
   font-size: 0.9rem;

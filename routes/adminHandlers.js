@@ -479,12 +479,10 @@ function createAdminHandlers(deps) {
   }
 
   function normalizeUsPhone(value) {
-    const digits = String(value || '').replace(/\D/g, '').slice(0, 20);
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
     if (!digits) return '';
-    if (digits.length === 10) {
-      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-    }
-    return digits;
+    if (digits.length !== 10) return '';
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
 
   function createAdminDoctor(req, data, res) {
@@ -492,7 +490,8 @@ function createAdminHandlers(deps) {
     const lastName = String(data?.lastName || '').trim();
     const dob = String(data?.dob || '').trim();
     const normalizedSsn = normalizeSsn(data?.ssn);
-    const normalizedPhone = normalizeUsPhone(data?.phone);
+    const phoneDigits = String(data?.phone || '').replace(/\D/g, '');
+    const normalizedPhone = normalizeUsPhone(phoneDigits);
     const locationId = Number(data?.locationId || 0);
     const gender = Number(data?.gender || 0);
     const username = String(data?.username || '').trim();
@@ -508,8 +507,12 @@ function createAdminHandlers(deps) {
       return sendJSON(res, 400, { error: 'dob must use YYYY-MM-DD format' });
     }
 
-    if (!username || !password || !normalizedPhone) {
+    if (!username || !password || !phoneDigits) {
       return sendJSON(res, 400, { error: 'username, password, and phone are required' });
+    }
+
+    if (phoneDigits.length !== 10) {
+      return sendJSON(res, 400, { error: 'phone must contain exactly 10 digits' });
     }
 
     if (!/^\d{10}$/.test(npi)) {
@@ -658,6 +661,14 @@ function createAdminHandlers(deps) {
 
     if (!city || !state || !streetNo || !streetName || !zipCode) {
       return sendJSON(res, 400, { error: 'city, state, streetNo, streetName, and zipCode are required' });
+    }
+
+    if (!/^[A-Z]{2}$/.test(state)) {
+      return sendJSON(res, 400, { error: 'state must be a 2-letter abbreviation (e.g., TX)' });
+    }
+
+    if (!/^\d{5}$/.test(zipCode)) {
+      return sendJSON(res, 400, { error: 'zipCode must contain exactly 5 digits' });
     }
 
     pool.query(
@@ -975,7 +986,8 @@ function createAdminHandlers(deps) {
     const lastName = String(data?.lastName || '').trim();
     const dob = String(data?.dob || '').trim();
     const normalizedSsn = normalizeSsn(data?.ssn);
-    const normalizedPhone = normalizeUsPhone(data?.phone);
+    const phoneDigits = String(data?.phone || '').replace(/\D/g, '');
+    const normalizedPhone = normalizeUsPhone(phoneDigits);
     const gender = Number(data?.gender || 0);
     const locationId = Number(data?.locationId || 0);
     const username = String(data?.username || '').trim();
@@ -988,8 +1000,12 @@ function createAdminHandlers(deps) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
       return sendJSON(res, 400, { error: 'dob must use YYYY-MM-DD format' });
     }
-    if (!username || !password || !normalizedPhone) {
+    if (!username || !password || !phoneDigits) {
       return sendJSON(res, 400, { error: 'username, password, and phone are required' });
+    }
+
+    if (phoneDigits.length !== 10) {
+      return sendJSON(res, 400, { error: 'phone must contain exactly 10 digits' });
     }
     if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
       return sendJSON(res, 400, { error: 'Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number' });

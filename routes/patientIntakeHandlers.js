@@ -8,6 +8,13 @@ function createPatientIntakeHandlers(deps) {
     preferredTimeOptions
   } = deps;
 
+  function normalizeTenDigitPhone(value) {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+    if (!digits) return '';
+    if (digits.length !== 10) return null;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
   function getPainSymptoms(req, res) {
     pool.query(
       'SELECT pain_symptom_id, symptom_label, display_order FROM intake_pain_symptoms WHERE is_active = TRUE ORDER BY display_order ASC',
@@ -56,15 +63,14 @@ function createPatientIntakeHandlers(deps) {
       return sendJSON(res, 400, { error: 'Please select a valid gender.' });
     }
 
-    const phonePattern = /^\(\d{3}\) \d{3}-\d{4}$/;
-    const normalizedPhone = String(phone).trim();
-    const normalizedEmergencyContactPhone = String(emergencyContactPhone).trim();
+    const normalizedPhone = normalizeTenDigitPhone(phone);
+    const normalizedEmergencyContactPhone = normalizeTenDigitPhone(emergencyContactPhone);
 
-    if (!phonePattern.test(normalizedPhone)) {
-      return sendJSON(res, 400, { error: 'Phone must be in the format (XXX) XXX-XXXX' });
+    if (!normalizedPhone) {
+      return sendJSON(res, 400, { error: 'Phone must contain exactly 10 digits' });
     }
-    if (!phonePattern.test(normalizedEmergencyContactPhone)) {
-      return sendJSON(res, 400, { error: 'Emergency contact phone must be in the format (XXX) XXX-XXXX' });
+    if (!normalizedEmergencyContactPhone) {
+      return sendJSON(res, 400, { error: 'Emergency contact phone must contain exactly 10 digits' });
     }
 
     const normalizedSsn = String(ssn).trim();
@@ -72,7 +78,7 @@ function createPatientIntakeHandlers(deps) {
     const normalizedAddress = String(address || '').trim();
     const normalizedCity = String(city || '').trim();
     const normalizedState = String(state || '').trim().toUpperCase();
-    const normalizedZipcode = String(zipcode || '').trim();
+    const normalizedZipcode = String(zipcode || '').replace(/\D/g, '');
     const normalizedEmergencyContactName = String(emergencyContactName).trim();
     const ssnPattern = /^\d{3}-\d{2}-\d{4}$/;
     const driversLicensePattern = /^[A-Z0-9-]{5,20}$/;
@@ -99,7 +105,7 @@ function createPatientIntakeHandlers(deps) {
     if (!normalizedState || !/^[A-Z]{2}$/.test(normalizedState)) {
       return sendJSON(res, 400, { error: 'State must be a 2-letter abbreviation (e.g., TX)' });
     }
-    if (!normalizedZipcode || !/^\d{5}(-\d{4})?$/.test(normalizedZipcode)) {
+    if (!normalizedZipcode || !/^\d{5}$/.test(normalizedZipcode)) {
       return sendJSON(res, 400, { error: 'Zip code must be 5 digits (e.g., 77004)' });
     }
 
@@ -220,7 +226,7 @@ function createPatientIntakeHandlers(deps) {
         }
 
         const userQuery = 'INSERT INTO users (user_username, password_hash, user_email, user_phone, user_role) VALUES (?, SHA2(?, 256), ?, ?, ?)';
-        conn.query(userQuery, [username, password, email, phone, 'PATIENT'], (userErr, userResult) => {
+        conn.query(userQuery, [username, password, email, normalizedPhone, 'PATIENT'], (userErr, userResult) => {
           if (userErr) {
             return conn.rollback(() => {
               conn.release();
@@ -255,7 +261,7 @@ function createPatientIntakeHandlers(deps) {
               lastName,
               dob,
               numericGender,
-              phone,
+              normalizedPhone,
               email,
               normalizedSsn,
               normalizedDriversLicense,

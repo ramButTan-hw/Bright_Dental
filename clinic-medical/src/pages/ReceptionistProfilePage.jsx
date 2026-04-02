@@ -63,6 +63,16 @@ function ReceptionistProfilePage() {
     return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
   };
 
+  const formatPhone = (value) => {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+    if (!digits) return '';
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+  };
+
+  const formatZip = (value) => String(value || '').replace(/\D/g, '').slice(0, 5);
+
   const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -144,12 +154,12 @@ function ReceptionistProfilePage() {
           firstName: profile.first_name || '',
           lastName: profile.last_name || '',
           email: profile.user_email || '',
-          phone: profile.phone_number || '',
+          phone: formatPhone(profile.phone_number || ''),
           dateOfBirth: String(profile.date_of_birth || '').slice(0, 10),
           address: profile.s_address || '',
           city: profile.s_city || '',
           state: profile.s_state || '',
-          zipcode: profile.s_zipcode || '',
+          zipcode: formatZip(profile.s_zipcode || ''),
           country: profile.s_country || '',
           emergencyContactName: profile.emergency_contact_name || '',
           emergencyContactPhone: formatEmergencyPhone(profile.emergency_contact_phone)
@@ -256,6 +266,16 @@ function ReceptionistProfilePage() {
   };
 
   const updateField = (field, value) => {
+    if (field === 'phone') {
+      setForm((prev) => ({ ...prev, [field]: formatPhone(value) }));
+      return;
+    }
+
+    if (field === 'zipcode') {
+      setForm((prev) => ({ ...prev, [field]: formatZip(value) }));
+      return;
+    }
+
     if (field === 'emergencyContactPhone') {
       const formatted = formatEmergencyPhone(value);
       setForm((prev) => ({ ...prev, [field]: formatted }));
@@ -283,6 +303,23 @@ function ReceptionistProfilePage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setStatus('Saving profile changes...');
+
+    const phoneDigits = String(form.phone || '').replace(/\D/g, '');
+    const emergencyDigits = String(form.emergencyContactPhone || '').replace(/\D/g, '');
+    const zipDigits = String(form.zipcode || '').replace(/\D/g, '');
+
+    if (phoneDigits.length && phoneDigits.length !== 10) {
+      setStatus('Phone number must contain exactly 10 digits.');
+      return;
+    }
+    if (emergencyDigits.length && emergencyDigits.length !== 10) {
+      setStatus('Emergency contact phone must contain exactly 10 digits.');
+      return;
+    }
+    if (zipDigits.length && zipDigits.length !== 5) {
+      setStatus('ZIP code must contain exactly 5 digits.');
+      return;
+    }
 
     // Save profile image to DB
     if (resolvedStaffId) {
@@ -479,7 +516,7 @@ function ReceptionistProfilePage() {
 
               <label>
                 Phone
-                <input value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
+                <input type="tel" inputMode="numeric" pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}|[0-9]{10}" maxLength={12} value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
               </label>
 
               <label>
@@ -504,7 +541,7 @@ function ReceptionistProfilePage() {
 
               <label>
                 Zip Code
-                <input value={form.zipcode} onChange={(event) => updateField('zipcode', event.target.value)} />
+                <input inputMode="numeric" pattern="\d{5}" maxLength={5} value={form.zipcode} onChange={(event) => updateField('zipcode', event.target.value)} />
               </label>
 
               <label>
