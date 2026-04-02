@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { getReceptionPortalSession, resolveApiBaseUrl } from '../utils/patientPortal';
 
 function CreateAppointmentPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const session = getReceptionPortalSession();
 
@@ -19,6 +20,20 @@ function CreateAppointmentPage() {
     locationId: '',
     notes: ''
   });
+
+  useEffect(() => {
+    const prefill = location.state || {};
+    if (!prefill?.prefillFromRecallQueue) {
+      return;
+    }
+
+    setAppointmentForm((prev) => ({
+      ...prev,
+      patientId: prefill.patientId ? String(prefill.patientId) : prev.patientId,
+      appointmentDate: prefill.appointmentDate || prev.appointmentDate,
+      notes: prefill.notes || prev.notes
+    }));
+  }, [location.state]);
 
   const safeJson = async (response) => {
     const payload = await response.json().catch(() => ({}));
