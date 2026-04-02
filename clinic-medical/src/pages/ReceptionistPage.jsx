@@ -889,65 +889,39 @@ function ReceptionistPage() {
       {message && <p className="reception-message">{message}</p>}
 
       {doctorTimeOffNotification && (
-        <section
-          className="reception-panel"
-          aria-live="polite"
-          style={{
-            background: 'linear-gradient(135deg, #1f2d2a 0%, #17221f 100%)',
-            color: '#eef8f5',
-            borderColor: '#4ca38a',
-            boxShadow: '0 18px 42px rgba(0, 0, 0, 0.18)',
-            marginBottom: '1rem'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start' }}>
-            <div>
-              <div style={{ color: '#f7c948', fontSize: '0.82rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>
-                Doctor Time Off
+        <aside className="reception-toast-stack" aria-live="polite" aria-label="Doctor time off notification" style={{ bottom: '7.2rem', zIndex: 1300 }}>
+          <article className="reception-toast-card" style={{ background: 'linear-gradient(180deg, #1d2f2b 0%, #10211f 100%)', borderColor: 'rgba(120, 202, 190, 0.4)' }}>
+            <div className="reception-toast-card__top">
+              <div>
+                <p className="reception-toast-card__eyebrow">Doctor Time Off</p>
+                <h3>Doctor time off affected patient schedules</h3>
               </div>
-              <h2 style={{ margin: 0, color: '#f4f8f7', fontSize: '1.6rem' }}>Doctor time off affected patient schedules</h2>
+              <button
+                type="button"
+                className="reception-toast-card__close"
+                aria-label="Dismiss doctor time off notification"
+                onClick={() => dismissNotification(doctorTimeOffNotification.notification_id)}
+              >
+                &times;
+              </button>
             </div>
+            <p className="reception-toast-card__message">
+              {doctorTimeOffNotification.message}
+            </p>
             <button
               type="button"
-              aria-label="Dismiss doctor time off notification"
-              onClick={() => dismissNotification(doctorTimeOffNotification.notification_id)}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: '#b8c6c2',
-                cursor: 'pointer',
-                fontSize: '1.25rem',
-                lineHeight: 1,
-                padding: 0
+              className="reception-toast-card__action"
+              onClick={() => {
+                const target = document.getElementById('system-cancelled-appointments');
+                if (target) {
+                  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
               }}
             >
-              &times;
+              Review Cancellations &rarr;
             </button>
-          </div>
-          <p style={{ margin: '0.9rem 0 1rem', fontSize: '1rem', lineHeight: 1.6, color: '#dbe9e4' }}>
-            {doctorTimeOffNotification.message}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              const target = document.getElementById('system-cancelled-appointments');
-              if (target) {
-                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }
-            }}
-            style={{
-              border: 'none',
-              borderRadius: '999px',
-              padding: '0.8rem 1.15rem',
-              background: '#56d1b1',
-              color: '#0f1917',
-              fontWeight: 700,
-              cursor: 'pointer'
-            }}
-          >
-            Review Cancellations &rarr;
-          </button>
-        </section>
+          </article>
+        </aside>
       )}
 
       {mySchedule.length > 0 && (
