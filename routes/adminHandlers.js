@@ -1454,7 +1454,7 @@ function createAdminHandlers(deps) {
          a.appointment_time,
          CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
          CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-         l.address AS location,
+         CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location,
          cr.reason_text AS cancel_reason,
          a.updated_by AS cancelled_by,
          a.updated_at AS cancelled_at

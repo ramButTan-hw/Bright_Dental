@@ -469,6 +469,105 @@ pool.query(`CREATE TABLE IF NOT EXISTS refunds (
   if (err && !err.message.includes('already exists')) console.error('Create refunds table:', err.message);
 });
 
+pool.query(
+  `CREATE TABLE IF NOT EXISTS receptionist_notifications (
+    notification_id INT AUTO_INCREMENT PRIMARY KEY,
+    source_table VARCHAR(50) NOT NULL,
+    source_request_id INT NOT NULL,
+    patient_id INT NOT NULL,
+    notification_type ENUM('INSURANCE_CHANGE_REQUEST', 'PHARMACY_CHANGE_REQUEST') NOT NULL,
+    message VARCHAR(255) NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMP NULL DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_reception_notification_source (source_table, source_request_id),
+    INDEX idx_reception_notification_read (is_read, created_at),
+    INDEX idx_reception_notification_type (notification_type),
+    INDEX idx_reception_notification_patient (patient_id)
+  )`,
+  (err) => {
+    if (err && !err.message.includes('already exists')) console.error('Create receptionist_notifications table:', err.message);
+  }
+);
+
+pool.query('DROP TRIGGER IF EXISTS insurance_change_requests_create_notification', () => {
+  pool.query(`CREATE TRIGGER insurance_change_requests_create_notification
+AFTER INSERT ON insurance_change_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_name VARCHAR(120) DEFAULT '';
+    DECLARE v_action_label VARCHAR(24) DEFAULT 'change';
+    SELECT CONCAT(p_first_name, ' ', p_last_name) INTO v_patient_name
+    FROM patients
+    WHERE patient_id = NEW.patient_id
+    LIMIT 1;
+    IF NEW.change_type = 'ADD' THEN
+        SET v_action_label = 'add';
+    ELSEIF NEW.change_type = 'UPDATE' THEN
+        SET v_action_label = 'update';
+    ELSEIF NEW.change_type = 'REMOVE' THEN
+        SET v_action_label = 'remove';
+    END IF;
+    INSERT INTO receptionist_notifications (
+        source_table,
+        source_request_id,
+        patient_id,
+        notification_type,
+        message,
+        created_by,
+        updated_by
+    ) VALUES (
+        'insurance_change_requests',
+        NEW.request_id,
+        NEW.patient_id,
+        'INSURANCE_CHANGE_REQUEST',
+        CONCAT('Insurance ', v_action_label, ' request submitted by ', COALESCE(v_patient_name, 'a patient')),
+        'SYSTEM_TRIGGER',
+        'SYSTEM_TRIGGER'
+    );
+END`, (err) => { if (err) console.error('Create insurance_change_requests_create_notification trigger error:', err.message); });
+});
+
+pool.query('DROP TRIGGER IF EXISTS pharmacy_change_requests_create_notification', () => {
+  pool.query(`CREATE TRIGGER pharmacy_change_requests_create_notification
+AFTER INSERT ON pharmacy_change_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_name VARCHAR(120) DEFAULT '';
+    DECLARE v_action_label VARCHAR(24) DEFAULT 'change';
+    SELECT CONCAT(p_first_name, ' ', p_last_name) INTO v_patient_name
+    FROM patients
+    WHERE patient_id = NEW.patient_id
+    LIMIT 1;
+    IF NEW.change_type = 'ADD' THEN
+        SET v_action_label = 'add';
+    ELSEIF NEW.change_type = 'REMOVE' THEN
+        SET v_action_label = 'remove';
+    END IF;
+    INSERT INTO receptionist_notifications (
+        source_table,
+        source_request_id,
+        patient_id,
+        notification_type,
+        message,
+        created_by,
+        updated_by
+    ) VALUES (
+        'pharmacy_change_requests',
+        NEW.request_id,
+        NEW.patient_id,
+        'PHARMACY_CHANGE_REQUEST',
+        CONCAT('Pharmacy ', v_action_label, ' request submitted by ', COALESCE(v_patient_name, 'a patient')),
+        'SYSTEM_TRIGGER',
+        'SYSTEM_TRIGGER'
+    );
+END`, (err) => { if (err) console.error('Create pharmacy_change_requests_create_notification trigger error:', err.message); });
+});
+
 
 // Parse JSON body
 
@@ -553,6 +652,12 @@ const patientPortalRoutes = createPatientPortalRoutes({
   cancelPatientAppointment: patientCoreHandlers.cancelPatientAppointment,
   getDepartments: patientCoreHandlers.getDepartments,
   getInsuranceCompanies: patientCoreHandlers.getInsuranceCompanies,
+  submitInsuranceChangeRequest: patientCoreHandlers.submitInsuranceChangeRequest,
+  getInsuranceChangeRequests: patientCoreHandlers.getInsuranceChangeRequests,
+  resolveInsuranceChangeRequest: patientCoreHandlers.resolveInsuranceChangeRequest,
+  submitPharmacyChangeRequest: patientCoreHandlers.submitPharmacyChangeRequest,
+  getPharmacyChangeRequests: patientCoreHandlers.getPharmacyChangeRequests,
+  resolvePharmacyChangeRequest: patientCoreHandlers.resolvePharmacyChangeRequest,
   updatePatientProfile: patientCoreHandlers.updatePatientProfile,
   addPatientInsurance: patientCoreHandlers.addPatientInsurance,
   setPrimaryInsurance: patientCoreHandlers.setPrimaryInsurance,
