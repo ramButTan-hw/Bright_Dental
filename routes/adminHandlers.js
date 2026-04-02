@@ -159,6 +159,129 @@ function createAdminHandlers(deps) {
     });
   }
 
+  function getAdminFollowUpQueue(req, res) {
+    const parsedUrl = url.parse(req.url, true);
+    const windowDaysInput = Number(parsedUrl.query.windowDays || 365);
+    const windowDays = Number.isInteger(windowDaysInput) && windowDaysInput >= 0 && windowDaysInput <= 730
+      ? windowDaysInput
+      : 365;
+    const includeScheduled = String(parsedUrl.query.includeScheduled || '').trim().toLowerCase() === 'true';
+
+    (async () => {
+      const db = pool.promise();
+
+      const [rows] = await db.query(
+        `SELECT
+          q.patient_id,
+          q.next_follow_up_date,
+          q.pending_follow_up_items,
+          q.procedure_codes,
+          CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+          p.p_phone,
+          p.p_email,
+          na.next_appointment_date,
+          (
+            SELECT CONCAT(st.first_name, ' ', st.last_name)
+            FROM treatment_plans tp2
+            JOIN doctors d2 ON d2.doctor_id = tp2.doctor_id
+            JOIN staff st ON st.staff_id = d2.staff_id
+            WHERE tp2.patient_id = q.patient_id
+              AND tp2.follow_up_required = 1
+              AND tp2.follow_up_date = q.next_follow_up_date
+            ORDER BY tp2.created_at DESC
+            LIMIT 1
+          ) AS suggested_doctor_name
+        FROM (
+          SELECT
+            tp.patient_id,
+            MIN(tp.follow_up_date) AS next_follow_up_date,
+            COUNT(*) AS pending_follow_up_items,
+            GROUP_CONCAT(DISTINCT tp.procedure_code ORDER BY tp.follow_up_date ASC SEPARATOR ', ') AS procedure_codes
+          FROM treatment_plans tp
+          LEFT JOIN treatment_statuses ts ON ts.status_id = tp.status_id
+          WHERE tp.follow_up_required = 1
+            AND tp.follow_up_date IS NOT NULL
+            AND (ts.status_name = 'COMPLETED' OR ts.status_name IS NULL)
+          GROUP BY tp.patient_id
+          HAVING MIN(tp.follow_up_date) <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+        ) q
+        JOIN patients p ON p.patient_id = q.patient_id
+        LEFT JOIN (
+          SELECT
+            a.patient_id,
+            MIN(a.appointment_date) AS next_appointment_date
+          FROM appointments a
+          JOIN appointment_statuses s ON s.status_id = a.status_id
+          WHERE a.appointment_date >= CURDATE()
+            AND s.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
+          GROUP BY a.patient_id
+        ) na ON na.patient_id = q.patient_id
+        ORDER BY q.next_follow_up_date ASC, patient_name ASC`,
+        [windowDays]
+      );
+
+      const todayDate = new Date();
+      const today = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
+
+      const queueItems = (rows || []).map((row) => {
+        const dueDate = new Date(row.next_follow_up_date);
+        const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+        const msPerDay = 24 * 60 * 60 * 1000;
+        const daysUntilDue = Math.round((dueDay.getTime() - today.getTime()) / msPerDay);
+
+        const dueState = daysUntilDue < 0
+          ? 'OVERDUE'
+          : daysUntilDue === 0
+            ? 'DUE_TODAY'
+            : 'UPCOMING';
+
+        const nextApptDate = row.next_appointment_date ? String(row.next_appointment_date).slice(0, 10) : null;
+        const dueDateKey = String(row.next_follow_up_date).slice(0, 10);
+        const isAlreadyScheduled = Boolean(nextApptDate && nextApptDate >= dueDateKey);
+
+        return {
+          patientId: Number(row.patient_id || 0),
+          patientName: row.patient_name || 'Unknown patient',
+          phone: row.p_phone || null,
+          email: row.p_email || null,
+          followUpDate: dueDateKey,
+          dueState,
+          daysUntilDue,
+          pendingFollowUpItems: Number(row.pending_follow_up_items || 0),
+          procedureCodes: String(row.procedure_codes || '').split(',').map((value) => value.trim()).filter(Boolean),
+          suggestedDoctorName: row.suggested_doctor_name || null,
+          nextAppointmentDate: nextApptDate,
+          isAlreadyScheduled
+        };
+      });
+
+      const filteredItems = includeScheduled
+        ? queueItems
+        : queueItems.filter((item) => !item.isAlreadyScheduled);
+
+      const summary = filteredItems.reduce((acc, item) => {
+        if (item.dueState === 'OVERDUE') acc.overdue += 1;
+        if (item.dueState === 'DUE_TODAY') acc.dueToday += 1;
+        if (item.dueState === 'UPCOMING') acc.upcoming += 1;
+        if (item.isAlreadyScheduled) acc.scheduled += 1;
+        else acc.unscheduled += 1;
+        return acc;
+      }, { overdue: 0, dueToday: 0, upcoming: 0, scheduled: 0, unscheduled: 0 });
+
+      sendJSON(res, 200, {
+        generatedAt: new Date().toISOString(),
+        windowDays,
+        includeScheduled,
+        summary,
+        totalItems: filteredItems.length,
+        items: filteredItems
+      });
+    })().catch((err) => {
+      console.error('Error fetching admin follow-up queue:', err);
+      sendJSON(res, 500, { error: 'Database error' });
+    });
+  }
+
   function getAdminScheduledPatients(req, res) {
     const date = parseAdminDateParam(req, res);
     if (!date) return;
@@ -1511,6 +1634,7 @@ function createAdminHandlers(deps) {
   return {
     getAdminDashboardSummary,
     getAdminAppointmentsQueue,
+    getAdminFollowUpQueue,
     getAdminScheduledPatients,
     getAdminPatientsReport,
     getAdminStaffReport,

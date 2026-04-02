@@ -81,6 +81,29 @@ function normalizeDateKey(value) {
   return 'Unknown date';
 }
 
+function toDateInputValue(value) {
+  if (!value) {
+    return '';
+  }
+
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
+function addMonthsToDateInputValue(value, months) {
+  const baseDate = value ? new Date(`${toDateInputValue(value)}T00:00:00`) : new Date();
+  if (Number.isNaN(baseDate.getTime())) {
+    return '';
+  }
+
+  baseDate.setMonth(baseDate.getMonth() + months);
+  return baseDate.toISOString().slice(0, 10);
+}
+
 function dateSortValue(value) {
   if (!value) return 0;
   const ts = new Date(value).getTime();
@@ -96,7 +119,17 @@ function buildHistoryByDate(completedTreatments, dentalFindings) {
     tooth: item.tooth_number || 'N/A',
     surface: item.surface || 'N/A',
     label: item.procedure_code || 'Procedure',
-    description: item.procedure_description || item.notes || 'Completed treatment'
+    description: (() => {
+      const baseDescription = item.procedure_description || item.notes || 'Completed treatment';
+      if (!item.follow_up_required) {
+        return baseDescription;
+      }
+
+      const followUpText = item.follow_up_date
+        ? ` Follow-up due ${formatDate(item.follow_up_date)}`
+        : ' Follow-up required';
+      return `${baseDescription}.${followUpText}`;
+    })()
   }));
 
   const findingEntries = dentalFindings.map((item) => ({
@@ -170,6 +203,8 @@ function DentistPatientProfilePage() {
     estimatedCost: '',
     priority: '',
     notes: '',
+    followUpRequired: false,
+    followUpDate: '',
     statusName: 'COMPLETED'
   });
 
@@ -261,6 +296,10 @@ function DentistPatientProfilePage() {
         throw new Error('Please select an ADA procedure code for the treatment entry.');
       }
 
+      if (treatmentForm.followUpRequired && !treatmentForm.followUpDate) {
+        throw new Error('Please choose a follow-up date before saving the treatment.');
+      }
+
       let savedCount = 0;
 
       if (hasFindings) {
@@ -293,7 +332,9 @@ function DentistPatientProfilePage() {
 
       const treatmentRequestBody = {
         ...treatmentForm,
-        estimatedCost: treatmentForm.estimatedCost ? Number(treatmentForm.estimatedCost) : null
+        estimatedCost: treatmentForm.estimatedCost ? Number(treatmentForm.estimatedCost) : null,
+        followUpRequired: Boolean(treatmentForm.followUpRequired),
+        followUpDate: treatmentForm.followUpRequired ? treatmentForm.followUpDate : ''
       };
 
       const treatmentResponse = await fetch(`${API_BASE_URL}/api/dentist/appointments/${appointmentId}/treatments?doctorId=${doctorId}`, {
@@ -324,6 +365,8 @@ function DentistPatientProfilePage() {
         estimatedCost: '',
         priority: '',
         notes: '',
+        followUpRequired: false,
+        followUpDate: '',
         statusName: 'COMPLETED'
       });
       await loadDetail();
@@ -381,6 +424,16 @@ function DentistPatientProfilePage() {
       ...prev,
       procedureCode: value,
       estimatedCost: normalizeFeeValue(selected?.default_fees)
+    }));
+  };
+
+  const handleTreatmentFollowUpChange = (checked) => {
+    setTreatmentForm((prev) => ({
+      ...prev,
+      followUpRequired: checked,
+      followUpDate: checked
+        ? (prev.followUpDate || addMonthsToDateInputValue(detail?.appointment?.appointment_date || new Date(), 6))
+        : ''
     }));
   };
 
@@ -465,7 +518,9 @@ function DentistPatientProfilePage() {
       surface: treatment.surface || '',
       estimatedCost: treatment.default_fees != null ? String(treatment.default_fees) : String(treatment.estimated_cost || ''),
       priority: treatment.priority || '',
-      notes: treatment.notes || ''
+      notes: treatment.notes || '',
+      followUpRequired: Boolean(treatment.follow_up_required),
+      followUpDate: toDateInputValue(treatment.follow_up_date)
     });
     setEditConfirmPending(false);
   };
@@ -485,7 +540,9 @@ function DentistPatientProfilePage() {
           surface: editingTreatment.surface,
           estimatedCost: editingTreatment.estimatedCost,
           priority: editingTreatment.priority,
-          notes: editingTreatment.notes
+          notes: editingTreatment.notes,
+          followUpRequired: Boolean(editingTreatment.followUpRequired),
+          followUpDate: editingTreatment.followUpDate
         })
       });
       const payload = await response.json().catch(() => ({}));
@@ -670,6 +727,24 @@ function DentistPatientProfilePage() {
             ))}
           </select>
           <textarea className="dentist-note-box" placeholder="Treatment notes" value={treatmentForm.notes} onChange={(e) => setTreatmentForm((p) => ({ ...p, notes: e.target.value }))} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.92rem' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(treatmentForm.followUpRequired)}
+              onChange={(e) => handleTreatmentFollowUpChange(e.target.checked)}
+            />
+            Follow-up required
+          </label>
+          {treatmentForm.followUpRequired && (
+            <input
+              className="dentist-search-input"
+              type="date"
+              value={treatmentForm.followUpDate}
+              onChange={(e) => setTreatmentForm((p) => ({ ...p, followUpDate: e.target.value }))}
+              min={toDateInputValue(detail?.appointment?.appointment_date || new Date())}
+              required
+            />
+          )}
           <button type="submit" className="dentist-save-btn">Save Finding + Treatment</button>
         </form>
         )}
@@ -791,6 +866,31 @@ function DentistPatientProfilePage() {
                   <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Notes
                     <textarea className="dentist-note-box" value={editingTreatment.notes} onChange={(e) => setEditingTreatment((prev) => ({ ...prev, notes: e.target.value }))} />
                   </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(editingTreatment.followUpRequired)}
+                      onChange={(e) => setEditingTreatment((prev) => ({
+                        ...prev,
+                        followUpRequired: e.target.checked,
+                        followUpDate: e.target.checked
+                          ? (prev.followUpDate || addMonthsToDateInputValue(detail?.appointment?.appointment_date || new Date(), 6))
+                          : ''
+                      }))}
+                    />
+                    Follow-up required
+                  </label>
+                  {editingTreatment.followUpRequired && (
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Follow-up Date
+                      <input
+                        className="dentist-search-input"
+                        type="date"
+                        value={editingTreatment.followUpDate}
+                        min={toDateInputValue(detail?.appointment?.appointment_date || new Date())}
+                        onChange={(e) => setEditingTreatment((prev) => ({ ...prev, followUpDate: e.target.value }))}
+                      />
+                    </label>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
                   <button type="button" className="dentist-history-delete-btn" onClick={() => { setEditingTreatment(null); setEditConfirmPending(false); }}>Cancel</button>

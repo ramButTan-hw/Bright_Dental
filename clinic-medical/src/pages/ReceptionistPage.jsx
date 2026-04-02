@@ -145,6 +145,8 @@ function ReceptionistPage() {
 
   const [requests, setRequests] = useState([]);
   const [allAppointmentsForDate, setAllAppointmentsForDate] = useState([]);
+  const [followUpQueue, setFollowUpQueue] = useState({ summary: { overdue: 0, dueToday: 0, upcoming: 0, scheduled: 0, unscheduled: 0 }, items: [] });
+  const [includeScheduledFollowUps, setIncludeScheduledFollowUps] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [statusFilters, setStatusFilters] = useState(new Set(['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN']));
   const [message, setMessage] = useState('');
@@ -160,6 +162,11 @@ function ReceptionistPage() {
   });
   const [singleReportFormat, setSingleReportFormat] = useState('PDF');
   const [isGeneratingSingleReport, setIsGeneratingSingleReport] = useState(false);
+  const [followUpContactModal, setFollowUpContactModal] = useState({
+    isOpen: false,
+    item: null,
+    note: ''
+  });
   const [timeOffForm, setTimeOffForm] = useState({
     startDate: '',
     startTime: '',
@@ -531,7 +538,7 @@ function ReceptionistPage() {
   };
 
   const loadCore = async () => {
-    const [requestsData, timeOffData, locationData, departmentsData, scheduleData, notificationsData, insuranceChangeData, pharmacyChangeData] = await Promise.all([
+    const [requestsData, timeOffData, locationData, departmentsData, scheduleData, notificationsData, insuranceChangeData, pharmacyChangeData, followUpData] = await Promise.all([
       fetchWithTimeout(`${API_BASE_URL}/api/appointments/preference-requests`).then(safeJson),
       session?.staffId
         ? fetchWithTimeout(`${API_BASE_URL}/api/staff/time-off-requests?staffId=${encodeURIComponent(session.staffId)}`).then(safeJson)
@@ -543,7 +550,8 @@ function ReceptionistPage() {
         : Promise.resolve([]),
       fetchWithTimeout(`${API_BASE_URL}/api/reception/notifications`).then(safeJson),
       fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson),
-      fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson)
+      fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson),
+      fetchWithTimeout(`${API_BASE_URL}/api/reception/follow-ups/queue?windowDays=365&includeScheduled=${includeScheduledFollowUps}`).then(safeJson)
     ]);
 
     setRequests(Array.isArray(requestsData) ? requestsData : []);
@@ -554,6 +562,10 @@ function ReceptionistPage() {
     setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
     setInsuranceChangeRequests(Array.isArray(insuranceChangeData) ? insuranceChangeData : []);
     setPharmacyChangeRequests(Array.isArray(pharmacyChangeData) ? pharmacyChangeData : []);
+    setFollowUpQueue({
+      summary: followUpData?.summary || { overdue: 0, dueToday: 0, upcoming: 0, scheduled: 0, unscheduled: 0 },
+      items: Array.isArray(followUpData?.items) ? followUpData.items : []
+    });
     await loadAppointmentsForDate(selectedDate);
   };
 
@@ -717,7 +729,7 @@ function ReceptionistPage() {
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [API_BASE_URL, navigate, session?.staffId]);
+  }, [API_BASE_URL, navigate, session?.staffId, includeScheduledFollowUps]);
 
   useEffect(() => {
     if (!session?.staffId) return undefined;
@@ -727,7 +739,7 @@ function ReceptionistPage() {
     }, 30000);
 
     return () => window.clearInterval(intervalId);
-  }, [API_BASE_URL, session?.staffId]);
+  }, [API_BASE_URL, session?.staffId, includeScheduledFollowUps]);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/admin/system-cancelled-appointments`)
@@ -747,6 +759,52 @@ function ReceptionistPage() {
 
   const navigateToPatientProfile = (patientId) => {
     navigate(`/receptionist/patient-profile/${patientId}`);
+  };
+
+  const openFollowUpContactModal = (item) => {
+    setFollowUpContactModal({
+      isOpen: true,
+      item,
+      note: item.lastContactNote || ''
+    });
+  };
+
+  const closeFollowUpContactModal = () => {
+    setFollowUpContactModal({
+      isOpen: false,
+      item: null,
+      note: ''
+    });
+  };
+
+  const markFollowUpContacted = async (item, contactNote) => {
+    try {
+      await fetchWithTimeout(`${API_BASE_URL}/api/reception/follow-ups/contact`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientId: item.patientId,
+          followUpDate: item.followUpDate,
+          contactedBy: session?.username || session?.staffId || 'RECEPTION_PORTAL',
+          contactNote: String(contactNote || '').trim()
+        })
+      }).then(safeJson);
+
+      setMessage(`Follow-up for ${item.patientName} marked as contacted.`);
+      closeFollowUpContactModal();
+      await loadCore();
+    } catch (err) {
+      setMessage(err.message || 'Failed to mark follow-up as contacted.');
+    }
+  };
+
+  const submitFollowUpContact = async (event) => {
+    event.preventDefault();
+    if (!followUpContactModal.item) {
+      return;
+    }
+
+    await markFollowUpContacted(followUpContactModal.item, followUpContactModal.note);
   };
 
   return (
@@ -874,6 +932,117 @@ function ReceptionistPage() {
               {!requests.length && (
                 <tr>
                   <td colSpan="5">No appointment requests found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="reception-panel">
+        <h2>Follow-Up Recall Queue</h2>
+        <p style={{ color: '#4b6966', marginBottom: '0.65rem' }}>
+          Overdue: {followUpQueue.summary?.overdue || 0} | Due Today: {followUpQueue.summary?.dueToday || 0} | Upcoming: {followUpQueue.summary?.upcoming || 0} | Unscheduled: {followUpQueue.summary?.unscheduled || 0}
+        </p>
+        <label style={{ display: 'inline-flex', alignItems: 'center', marginBottom: '0.7rem', fontSize: '0.9rem', color: '#335553' }}>
+          <input
+            type="checkbox"
+            checked={includeScheduledFollowUps}
+            onChange={(e) => setIncludeScheduledFollowUps(e.target.checked)}
+            style={{ marginRight: '0.45rem' }}
+          />
+          Include already scheduled patients
+        </label>
+
+        <div className="reception-table-wrap reception-table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Patient</th>
+                <th>Phone</th>
+                <th>Follow-Up Date</th>
+                <th>Status</th>
+                <th>Procedures</th>
+                <th>Suggested Dentist</th>
+                <th>Contact</th>
+                <th>Note</th>
+                <th>Next Appointment</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {followUpQueue.items?.length ? followUpQueue.items.map((item) => (
+                <tr key={`${item.patientId}-${item.followUpDate}`}>
+                  <td>{item.patientName}</td>
+                  <td>{item.phone || 'N/A'}</td>
+                  <td>{formatDate(item.followUpDate)}</td>
+                  <td>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '0.15rem 0.45rem',
+                        borderRadius: '999px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        background: item.dueState === 'OVERDUE' ? '#f8d7da' : item.dueState === 'DUE_TODAY' ? '#fff3cd' : '#e7f1ff',
+                        color: item.dueState === 'OVERDUE' ? '#721c24' : item.dueState === 'DUE_TODAY' ? '#856404' : '#1f4d7a'
+                      }}
+                    >
+                      {item.dueState === 'OVERDUE' ? `Overdue (${Math.abs(Number(item.daysUntilDue || 0))}d)` : item.dueState === 'DUE_TODAY' ? 'Due Today' : `Upcoming (${Number(item.daysUntilDue || 0)}d)`}
+                    </span>
+                    {item.isAlreadyScheduled && (
+                      <span style={{ marginLeft: '0.4rem', fontSize: '0.75rem', color: '#155724', fontWeight: 700 }}>
+                        Scheduled
+                      </span>
+                    )}
+                  </td>
+                  <td>{Array.isArray(item.procedureCodes) && item.procedureCodes.length ? item.procedureCodes.join(', ') : 'N/A'}</td>
+                  <td>{item.suggestedDoctorName || 'Any available dentist'}</td>
+                  <td>
+                    {item.lastContactedAt ? (
+                      <div style={{ display: 'grid', gap: '0.2rem' }}>
+                        <span style={{ color: '#155724', fontWeight: 700, fontSize: '0.8rem' }}>
+                          Contacted{item.lastContactedBy ? ` by ${item.lastContactedBy}` : ''}
+                        </span>
+                        <span style={{ color: '#4b6966', fontSize: '0.75rem' }}>{formatDateTimeWithMeridiem(item.lastContactedAt)}</span>
+                      </div>
+                    ) : (
+                      <span style={{ color: '#856404', fontSize: '0.8rem' }}>Not contacted</span>
+                    )}
+                  </td>
+                  <td>{item.lastContactNote || 'No note'}</td>
+                  <td>{item.nextAppointmentDate ? formatDate(item.nextAppointmentDate) : 'Not booked'}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => navigateToPatientProfile(item.patientId)}>
+                        Open Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openFollowUpContactModal(item)}
+                        disabled={Boolean(item.lastContactedAt)}
+                      >
+                        {item.lastContactedAt ? 'Contacted' : 'Mark Contacted'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/receptionist/create-appointment', {
+                          state: {
+                            prefillFromRecallQueue: true,
+                            patientId: item.patientId,
+                            appointmentDate: item.followUpDate,
+                            notes: `Follow-up recall${item.procedureCodes?.length ? ` (${item.procedureCodes.join(', ')})` : ''}`
+                          }
+                        })}
+                      >
+                        Create Appointment
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="10">No follow-ups due in the selected recall window.</td>
                 </tr>
               )}
             </tbody>
@@ -1062,6 +1231,71 @@ function ReceptionistPage() {
         </div>
       </section>
 
+
+      {followUpContactModal.isOpen && followUpContactModal.item && (
+        <div
+          role="presentation"
+          onClick={closeFollowUpContactModal}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(8, 24, 22, 0.55)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 1000,
+            padding: '1rem'
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="follow-up-contact-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 'min(560px, 100%)',
+              background: '#fff',
+              borderRadius: '18px',
+              border: '1px solid #d6e7e4',
+              boxShadow: '0 24px 60px rgba(7, 33, 30, 0.22)',
+              padding: '1.25rem'
+            }}
+          >
+            <form onSubmit={submitFollowUpContact} style={{ display: 'grid', gap: '1rem' }}>
+              <div>
+                <h2 id="follow-up-contact-title" style={{ margin: 0 }}>Mark Follow-Up Contacted</h2>
+                <p style={{ margin: '0.35rem 0 0', color: '#4b6966' }}>
+                  {followUpContactModal.item.patientName} - {formatDate(followUpContactModal.item.followUpDate)}
+                </p>
+              </div>
+
+              <label style={{ display: 'grid', gap: '0.4rem', color: '#123f3c', fontWeight: 600 }}>
+                Contact Note
+                <textarea
+                  value={followUpContactModal.note}
+                  onChange={(event) => setFollowUpContactModal((current) => ({ ...current, note: event.target.value }))}
+                  rows={4}
+                  placeholder="Add a short note about the call, voicemail, or next step."
+                  style={{
+                    width: '100%',
+                    resize: 'vertical',
+                    borderRadius: '12px',
+                    border: '1px solid #c8dad7',
+                    padding: '0.85rem 1rem',
+                    font: 'inherit'
+                  }}
+                />
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <button type="button" onClick={closeFollowUpContactModal}>
+                  Cancel
+                </button>
+                <button type="submit">Save Contact Note</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       <section className="reception-panel">
         <h2>Reports</h2>
         <div className="reception-report-grid">

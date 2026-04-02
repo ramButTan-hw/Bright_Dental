@@ -3,6 +3,7 @@ function createAdminRoutes(handlers) {
     sendJSON,
     getAdminDashboardSummary,
     getAdminAppointmentsQueue,
+    getAdminFollowUpQueue,
     getAdminScheduledPatients,
     getAdminPatientsReport,
     getAdminStaffReport,
@@ -53,6 +54,11 @@ function createAdminRoutes(handlers) {
 
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'appointments' && parts[3] === 'queue') {
       getAdminAppointmentsQueue(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'follow-ups' && parts[3] === 'queue') {
+      getAdminFollowUpQueue(req, res);
       return true;
     }
 
