@@ -290,119 +290,132 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     });
   }
 
-  function generateInvoiceForAppointment(appointmentId, callback) {
-    // Check if invoice already exists for this appointment
+  function computeInvoiceBreakdownForAppointment(appointmentId, callback) {
     pool.query(
-      'SELECT invoice_id FROM invoices WHERE appointment_id = ? LIMIT 1',
+      `SELECT a.patient_id, a.appointment_date
+       FROM appointments a
+       WHERE a.appointment_id = ?
+       LIMIT 1`,
       [appointmentId],
-      (checkErr, existing) => {
-        if (checkErr) return callback(checkErr);
-        if (existing?.length) return callback(null); // already has invoice
+      (apptErr, apptRows) => {
+        if (apptErr) return callback(apptErr);
+        if (!apptRows?.length) return callback(null, null);
 
-        // Get appointment details (patient, date) and treatment costs
+        const { patient_id: patientId, appointment_date: apptDate } = apptRows[0];
+        const dateStr = apptDate instanceof Date
+          ? apptDate.toISOString().slice(0, 10)
+          : String(apptDate || '').slice(0, 10);
+
         pool.query(
-          `SELECT a.patient_id, a.appointment_date
-           FROM appointments a
-           WHERE a.appointment_id = ?
-           LIMIT 1`,
-          [appointmentId],
-          (apptErr, apptRows) => {
-            if (apptErr) return callback(apptErr);
-            if (!apptRows?.length) return callback(null);
+          `SELECT tp.procedure_code, tp.estimated_cost
+           FROM treatment_plans tp
+           WHERE tp.patient_id = ? AND tp.start_date = ?`,
+          [patientId, dateStr],
+          (tpErr, treatmentRows) => {
+            if (tpErr) return callback(tpErr);
 
-            const { patient_id: patientId, appointment_date: apptDate } = apptRows[0];
-            const dateStr = apptDate instanceof Date
-              ? apptDate.toISOString().slice(0, 10)
-              : String(apptDate || '').slice(0, 10);
+            const totalAmountRaw = (treatmentRows || []).reduce((sum, row) => {
+              const cost = Number(row.estimated_cost || 0);
+              return sum + (Number.isFinite(cost) ? cost : 0);
+            }, 0);
+            const totalAmount = Math.round(Math.max(totalAmountRaw, 0) * 100) / 100;
 
-            // Get all treatment plans for this patient on this appointment date
+            if (totalAmount <= 0) {
+              return callback(null, {
+                patientId,
+                insuranceId: null,
+                totalAmount: 0,
+                insuranceCovered: 0,
+                patientAmount: 0
+              });
+            }
+
             pool.query(
-              `SELECT tp.procedure_code, tp.estimated_cost
-               FROM treatment_plans tp
-               WHERE tp.patient_id = ? AND tp.start_date = ?`,
-              [patientId, dateStr],
-              (tpErr, treatmentRows) => {
-                if (tpErr) return callback(tpErr);
-
-                const totalAmount = treatmentRows.reduce((sum, row) => {
-                  const cost = Number(row.estimated_cost || 0);
-                  return sum + (Number.isFinite(cost) ? cost : 0);
-                }, 0);
-
-                if (totalAmount <= 0) {
-                  // No treatments with cost — still create a zero invoice
-                  return insertInvoice(appointmentId, patientId, null, 0, 0, 0, callback);
+              `SELECT i.insurance_id, i.company_id
+               FROM insurance i
+               WHERE i.patient_id = ? AND i.is_primary = TRUE
+               ORDER BY i.insurance_id DESC
+               LIMIT 1`,
+              [patientId],
+              (insErr, insRows) => {
+                if (insErr) return callback(insErr);
+                if (!insRows?.length) {
+                  return callback(null, {
+                    patientId,
+                    insuranceId: null,
+                    totalAmount,
+                    insuranceCovered: 0,
+                    patientAmount: totalAmount
+                  });
                 }
 
-                // Get patient's primary insurance
+                const { insurance_id: insuranceId, company_id: companyId } = insRows[0];
+                const procedureCodes = (treatmentRows || [])
+                  .map((row) => (row.procedure_code ? String(row.procedure_code).trim().toUpperCase() : null))
+                  .filter(Boolean);
+
+                if (!procedureCodes.length) {
+                  return callback(null, {
+                    patientId,
+                    insuranceId,
+                    totalAmount,
+                    insuranceCovered: 0,
+                    patientAmount: totalAmount
+                  });
+                }
+
+                const placeholders = procedureCodes.map(() => '?').join(',');
                 pool.query(
-                  `SELECT i.insurance_id, i.company_id
-                   FROM insurance i
-                   WHERE i.patient_id = ? AND i.is_primary = TRUE
-                   LIMIT 1`,
-                  [patientId],
-                  (insErr, insRows) => {
-                    if (insErr) return callback(insErr);
+                  `SELECT procedure_code, coverage_percent, copay_amount
+                   FROM insurance_coverage
+                   WHERE company_id = ? AND procedure_code IN (${placeholders})`,
+                  [companyId, ...procedureCodes],
+                  (covErr, covRows) => {
+                    if (covErr) return callback(covErr);
 
-                    if (!insRows?.length) {
-                      // No insurance — patient pays full amount
-                      return insertInvoice(appointmentId, patientId, null, totalAmount, 0, totalAmount, callback);
-                    }
+                    const coverageMap = new Map();
+                    (covRows || []).forEach((row) => {
+                      coverageMap.set(String(row.procedure_code).toUpperCase(), {
+                        percent: Number(row.coverage_percent || 0),
+                        copay: Number(row.copay_amount || 0)
+                      });
+                    });
 
-                    const { insurance_id: insuranceId, company_id: companyId } = insRows[0];
+                    let insuranceCovered = 0;
+                    let patientAmount = 0;
 
-                    // Calculate coverage from insurance_coverage table
-                    const procedureCodes = treatmentRows
-                      .map((row) => row.procedure_code)
-                      .filter(Boolean);
+                    (treatmentRows || []).forEach((row) => {
+                      const cost = Number(row.estimated_cost || 0);
+                      if (!Number.isFinite(cost) || cost <= 0) return;
 
-                    if (!procedureCodes.length) {
-                      // No procedure codes — no coverage lookup possible
-                      return insertInvoice(appointmentId, patientId, insuranceId, totalAmount, 0, totalAmount, callback);
-                    }
+                      const code = row.procedure_code ? String(row.procedure_code).trim().toUpperCase() : null;
+                      const cov = code ? coverageMap.get(code) : null;
 
-                    const placeholders = procedureCodes.map(() => '?').join(',');
-                    pool.query(
-                      `SELECT procedure_code, coverage_percent, copay_amount
-                       FROM insurance_coverage
-                       WHERE company_id = ? AND procedure_code IN (${placeholders})`,
-                      [companyId, ...procedureCodes],
-                      (covErr, covRows) => {
-                        if (covErr) return callback(covErr);
-
-                        const coverageMap = new Map();
-                        (covRows || []).forEach((row) => {
-                          coverageMap.set(row.procedure_code, {
-                            percent: Number(row.coverage_percent || 0),
-                            copay: Number(row.copay_amount || 0)
-                          });
-                        });
-
-                        let insuranceCovered = 0;
-                        let patientOwes = 0;
-
-                        treatmentRows.forEach((row) => {
-                          const cost = Number(row.estimated_cost || 0);
-                          if (!Number.isFinite(cost) || cost <= 0) return;
-
-                          const cov = coverageMap.get(row.procedure_code);
-                          if (cov) {
-                            const covered = cost * (cov.percent / 100);
-                            const patientPortion = cost - covered + cov.copay;
-                            insuranceCovered += covered;
-                            patientOwes += patientPortion;
-                          } else {
-                            // No coverage record — patient pays full
-                            patientOwes += cost;
-                          }
-                        });
-
-                        insuranceCovered = Math.round(insuranceCovered * 100) / 100;
-                        patientOwes = Math.round(patientOwes * 100) / 100;
-
-                        insertInvoice(appointmentId, patientId, insuranceId, totalAmount, insuranceCovered, patientOwes, callback);
+                      if (!cov) {
+                        patientAmount += cost;
+                        return;
                       }
-                    );
+
+                      const coveredByPercent = Math.max(0, Math.min(cost, cost * (cov.percent / 100)));
+                      const minimumPatient = Math.max(0, Math.min(cost, cov.copay || 0));
+                      const basePatient = Math.max(0, cost - coveredByPercent);
+                      const finalPatient = Math.max(basePatient, minimumPatient);
+                      const finalInsurance = Math.max(0, cost - finalPatient);
+
+                      patientAmount += finalPatient;
+                      insuranceCovered += finalInsurance;
+                    });
+
+                    insuranceCovered = Math.round(insuranceCovered * 100) / 100;
+                    patientAmount = Math.round(patientAmount * 100) / 100;
+
+                    callback(null, {
+                      patientId,
+                      insuranceId,
+                      totalAmount,
+                      insuranceCovered,
+                      patientAmount
+                    });
                   }
                 );
               }
@@ -413,16 +426,94 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     );
   }
 
-  function insertInvoice(appointmentId, patientId, insuranceId, amount, insuranceCovered, patientAmount, callback) {
-    const paymentStatus = patientAmount <= 0 ? 'Paid' : 'Unpaid';
+  function upsertInvoiceForAppointment(appointmentId, callback) {
+    computeInvoiceBreakdownForAppointment(appointmentId, (calcErr, breakdown) => {
+      if (calcErr) return callback(calcErr);
+      if (!breakdown) return callback(null, null);
+
+      pool.query(
+        `SELECT i.invoice_id,
+                COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS total_paid,
+                COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS total_refunded
+         FROM invoices i
+         WHERE i.appointment_id = ?
+         LIMIT 1`,
+        [appointmentId],
+        (existingErr, existingRows) => {
+          if (existingErr) return callback(existingErr);
+
+          const existing = existingRows?.[0];
+          const netPaid = existing ? (Number(existing.total_paid || 0) - Number(existing.total_refunded || 0)) : 0;
+          const paymentStatus = breakdown.patientAmount <= 0
+            ? 'Paid'
+            : netPaid >= breakdown.patientAmount
+              ? 'Paid'
+              : netPaid > 0
+                ? 'Partial'
+                : 'Unpaid';
+
+          if (!existing) {
+            return insertInvoice(
+              appointmentId,
+              breakdown.insuranceId,
+              breakdown.totalAmount,
+              breakdown.insuranceCovered,
+              breakdown.patientAmount,
+              paymentStatus,
+              callback
+            );
+          }
+
+          pool.query(
+            `UPDATE invoices
+             SET insurance_id = ?,
+                 amount = ?,
+                 insurance_covered_amount = ?,
+                 patient_amount = ?,
+                 payment_status = ?,
+                 updated_by = 'SYSTEM_AUTO_RECALC'
+             WHERE invoice_id = ?`,
+            [
+              breakdown.insuranceId,
+              breakdown.totalAmount,
+              breakdown.insuranceCovered,
+              breakdown.patientAmount,
+              paymentStatus,
+              existing.invoice_id
+            ],
+            (updateErr) => {
+              if (updateErr) return callback(updateErr);
+              callback(null, {
+                invoiceId: Number(existing.invoice_id),
+                ...breakdown,
+                paymentStatus,
+                netPaid
+              });
+            }
+          );
+        }
+      );
+    });
+  }
+
+  function generateInvoiceForAppointment(appointmentId, callback) {
+    upsertInvoiceForAppointment(appointmentId, (err) => callback(err || null));
+  }
+
+  function insertInvoice(appointmentId, insuranceId, amount, insuranceCovered, patientAmount, paymentStatus, callback) {
     pool.query(
       `INSERT INTO invoices (appointment_id, insurance_id, amount, insurance_covered_amount, patient_amount, payment_status, created_by, updated_by)
        VALUES (?, ?, ?, ?, ?, ?, 'SYSTEM_AUTO', 'SYSTEM_AUTO')`,
       [appointmentId, insuranceId, amount, insuranceCovered, patientAmount, paymentStatus],
       (err, result) => {
         if (err) return callback(err);
-        console.log(`Auto-generated invoice #${result.insertId} for appointment ${appointmentId}: total=$${amount.toFixed(2)}, insurance=$${insuranceCovered.toFixed(2)}, patient=$${patientAmount.toFixed(2)}`);
-        callback(null);
+        callback(null, {
+          invoiceId: Number(result.insertId),
+          totalAmount: amount,
+          insuranceCovered,
+          patientAmount,
+          paymentStatus
+        });
       }
     );
   }
@@ -1256,64 +1347,47 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                   return sendJSON(res, 200, { message: 'Treatment updated successfully', costChanged: false });
                 }
 
-                // Recalculate invoice: find invoice for this appointment
+                // Recalculate invoice using coverage table for this appointment
                 pool.query(
-                  `SELECT i.invoice_id, i.amount, i.insurance_covered_amount, i.patient_amount, i.appointment_id,
-                          COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS total_paid,
-                          COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS total_refunded
-                   FROM invoices i
-                   JOIN appointments a ON a.appointment_id = i.appointment_id
-                   WHERE a.patient_id = ? AND a.appointment_date = ?
+                  `SELECT a.appointment_id
+                   FROM appointments a
+                   WHERE a.patient_id = ? AND a.doctor_id = ? AND a.appointment_date = ?
                    LIMIT 1`,
-                  [patientId, startDate],
-                  (invErr, invRows) => {
-                    if (invErr || !invRows?.length) {
-                      // No invoice found, still report success
+                  [patientId, doctorId, startDate],
+                  (apptErr, apptRows) => {
+                    if (apptErr || !apptRows?.length) {
                       return sendJSON(res, 200, { message: 'Treatment updated (no invoice to adjust)', costChanged: true, costDiff });
                     }
 
-                    const inv = invRows[0];
-                    const oldTotal = Number(inv.amount);
-                    const newTotal = oldTotal + costDiff;
-                    const oldInsurance = Number(inv.insurance_covered_amount);
-                    // Scale insurance proportionally
-                    const insuranceRatio = oldTotal > 0 ? oldInsurance / oldTotal : 0;
-                    const newInsurance = Math.round(newTotal * insuranceRatio * 100) / 100;
-                    const newPatientAmount = Math.round((newTotal - newInsurance) * 100) / 100;
-                    const totalPaid = Number(inv.total_paid);
-                    const totalRefunded = Number(inv.total_refunded);
-                    const netPaid = totalPaid - totalRefunded;
-
-                    // Determine if refund is needed (patient paid more than new amount)
-                    const refundNeeded = netPaid > newPatientAmount && newPatientAmount >= 0;
-                    const refundAmount = refundNeeded ? Math.round((netPaid - newPatientAmount) * 100) / 100 : 0;
-
-                    // Update invoice amounts
-                    const newPaymentStatus = newPatientAmount <= 0 ? 'Paid'
-                      : netPaid >= newPatientAmount ? 'Paid'
-                      : netPaid > 0 ? 'Partial' : 'Unpaid';
-
-                    pool.query(
-                      `UPDATE invoices SET amount = ?, insurance_covered_amount = ?, patient_amount = ?, payment_status = ?, updated_by = 'TREATMENT_EDIT'
-                       WHERE invoice_id = ?`,
-                      [Math.max(newTotal, 0), Math.max(newInsurance, 0), Math.max(newPatientAmount, 0), newPaymentStatus, inv.invoice_id],
-                      (updInvErr) => {
-                        if (updInvErr) console.error('Error updating invoice:', updInvErr);
-
-                        return sendJSON(res, 200, {
-                          message: 'Treatment updated and invoice recalculated',
-                          costChanged: true,
-                          costDiff,
-                          invoiceId: inv.invoice_id,
-                          oldTotal,
-                          newTotal: Math.max(newTotal, 0),
-                          newPatientAmount: Math.max(newPatientAmount, 0),
-                          totalPaid: netPaid,
-                          refundNeeded,
-                          refundAmount
-                        });
+                    const appointmentId = Number(apptRows[0].appointment_id);
+                    upsertInvoiceForAppointment(appointmentId, (recalcErr, invoiceInfo) => {
+                      if (recalcErr || !invoiceInfo) {
+                        if (recalcErr) {
+                          console.error('Error recalculating invoice from insurance coverage:', recalcErr);
+                        }
+                        return sendJSON(res, 200, { message: 'Treatment updated (invoice recalculation skipped)', costChanged: true, costDiff });
                       }
-                    );
+
+                      const oldTotal = Number((invoiceInfo.totalAmount || 0) - costDiff);
+                      const newTotal = Number(invoiceInfo.totalAmount || 0);
+                      const newPatientAmount = Number(invoiceInfo.patientAmount || 0);
+                      const totalPaid = Number(invoiceInfo.netPaid || 0);
+                      const refundNeeded = totalPaid > newPatientAmount && newPatientAmount >= 0;
+                      const refundAmount = refundNeeded ? Math.round((totalPaid - newPatientAmount) * 100) / 100 : 0;
+
+                      return sendJSON(res, 200, {
+                        message: 'Treatment updated and invoice recalculated',
+                        costChanged: true,
+                        costDiff,
+                        invoiceId: invoiceInfo.invoiceId,
+                        oldTotal,
+                        newTotal,
+                        newPatientAmount,
+                        totalPaid,
+                        refundNeeded,
+                        refundAmount
+                      });
+                    });
                   }
                 );
               }
