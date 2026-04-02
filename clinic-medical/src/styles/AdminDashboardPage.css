@@ -125,6 +125,67 @@
   align-items: flex-end;
 }
 
+.clinic-filter-grid {
+  margin-top: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.clinic-filter-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.clinic-filter-chips {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.clinic-filter-chip {
+  border: 1px solid #c5dcda;
+  border-radius: 999px;
+  padding: 0.28rem 0.65rem;
+  background: #f4faf9;
+  color: #17403e;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.recall-header-row {
+  align-items: flex-start;
+}
+
+.recall-header-copy {
+  flex: 1 1 380px;
+}
+
+.recall-primary-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.recall-filter-grid {
+  margin-top: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.recall-search-field {
+  grid-column: span 1;
+}
+
+.recall-generated-at {
+  margin-top: 0.65rem;
+}
+
 .admin-error {
   color: #9a1f1f;
 }
@@ -239,6 +300,30 @@
   font-size: 0.9rem;
 }
 
+.admin-inline-filter input {
+  border-radius: 10px;
+  border: 1px solid #b9d0ce;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.9rem;
+  min-width: 0;
+}
+
+.admin-btn {
+  border: 1px solid #0f6965;
+  border-radius: 10px;
+  background: #0f6965;
+  color: #fff;
+  padding: 0.48rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
 .notification-list {
   margin: 0;
   padding-left: 1rem;
@@ -255,6 +340,25 @@
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.report-table-wrap {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.report-table-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 0.7rem;
+}
+
+.report-table-pager span {
+  color: #2a4f4d;
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
 table {
@@ -344,11 +448,23 @@ th {
   .admin-grid-two {
     grid-template-columns: 1fr;
   }
+
+  .clinic-filter-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .admin-page {
     padding-top: 8rem;
+  }
+
+  .clinic-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recall-filter-grid {
+    grid-template-columns: 1fr;
   }
 
   .admin-header {

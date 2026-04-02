@@ -7,6 +7,7 @@ function createAdminRoutes(handlers) {
     getAdminPatientsReport,
     getAdminStaffReport,
     getClinicPerformanceReport,
+    getRecallReport,
     getAdminDoctors,
     createAdminDoctor,
     getAdminLocations,
@@ -74,6 +75,11 @@ function createAdminRoutes(handlers) {
 
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'performance') {
       getClinicPerformanceReport(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'recall') {
+      getRecallReport(req, res);
       return true;
     }
 
