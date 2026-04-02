@@ -174,6 +174,23 @@ function ReceptionistPage() {
   const [isSubmittingTimeOff, setIsSubmittingTimeOff] = useState(false);
   const [mySchedule, setMySchedule] = useState([]);
   const [systemCancelledAppts, setSystemCancelledAppts] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('dismissedReceptionNotifications') || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
+  const [insuranceChangeRequests, setInsuranceChangeRequests] = useState([]);
+  const [pharmacyChangeRequests, setPharmacyChangeRequests] = useState([]);
+  const [dismissedRequestAlertIds, setDismissedRequestAlertIds] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('dismissedReceptionRequestAlerts') || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
 
   const buildReportQueryString = (formValues) => {
     const params = new URLSearchParams();
@@ -514,7 +531,7 @@ function ReceptionistPage() {
   };
 
   const loadCore = async () => {
-    const [requestsData, timeOffData, locationData, departmentsData, scheduleData] = await Promise.all([
+    const [requestsData, timeOffData, locationData, departmentsData, scheduleData, notificationsData, insuranceChangeData, pharmacyChangeData] = await Promise.all([
       fetchWithTimeout(`${API_BASE_URL}/api/appointments/preference-requests`).then(safeJson),
       session?.staffId
         ? fetchWithTimeout(`${API_BASE_URL}/api/staff/time-off-requests?staffId=${encodeURIComponent(session.staffId)}`).then(safeJson)
@@ -523,7 +540,10 @@ function ReceptionistPage() {
       fetchWithTimeout(`${API_BASE_URL}/api/departments`).then(safeJson),
       session?.staffId
         ? fetchWithTimeout(`${API_BASE_URL}/api/staff/schedules?staffId=${encodeURIComponent(session.staffId)}`).then(safeJson)
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      fetchWithTimeout(`${API_BASE_URL}/api/reception/notifications`).then(safeJson),
+      fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson),
+      fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson)
     ]);
 
     setRequests(Array.isArray(requestsData) ? requestsData : []);
@@ -531,7 +551,63 @@ function ReceptionistPage() {
     setTimeOffLocations(Array.isArray(locationData) ? locationData : []);
     setDepartments(Array.isArray(departmentsData) ? departmentsData : []);
     setMySchedule(Array.isArray(scheduleData) ? scheduleData : []);
+    setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
+    setInsuranceChangeRequests(Array.isArray(insuranceChangeData) ? insuranceChangeData : []);
+    setPharmacyChangeRequests(Array.isArray(pharmacyChangeData) ? pharmacyChangeData : []);
     await loadAppointmentsForDate(selectedDate);
+  };
+
+  const visibleNotifications = notifications.filter((notification) => !dismissedNotificationIds.has(notification.notification_id));
+  const unreadNotificationCount = visibleNotifications.length;
+  const latestNotification = visibleNotifications[0] || null;
+
+  const requestAlerts = [
+    ...(insuranceChangeRequests.length > 0 ? [{
+      alertKey: `insurance:${insuranceChangeRequests[0].request_id}`,
+      alertType: 'insurance',
+      title: `${insuranceChangeRequests.length} Insurance Change Request${insuranceChangeRequests.length === 1 ? '' : 's'}`,
+      request: insuranceChangeRequests[0],
+      count: insuranceChangeRequests.length,
+      sectionId: 'insurance-section'
+    }] : []),
+    ...(pharmacyChangeRequests.length > 0 ? [{
+      alertKey: `pharmacy:${pharmacyChangeRequests[0].request_id}`,
+      alertType: 'pharmacy',
+      title: `${pharmacyChangeRequests.length} Pharmacy Change Request${pharmacyChangeRequests.length === 1 ? '' : 's'}`,
+      request: pharmacyChangeRequests[0],
+      count: pharmacyChangeRequests.length,
+      sectionId: 'pharmacy-section'
+    }] : [])
+  ].filter((alert) => !dismissedRequestAlertIds.has(alert.alertKey));
+
+  const dismissRequestAlert = (alertKey) => {
+    setDismissedRequestAlertIds((prev) => {
+      const next = new Set(prev);
+      next.add(alertKey);
+      try {
+        localStorage.setItem('dismissedReceptionRequestAlerts', JSON.stringify([...next]));
+      } catch {
+        // ignore storage failures
+      }
+      return next;
+    });
+  };
+
+  const openPatientProfileSection = (patientId, sectionId) => {
+    navigate(`/receptionist/patient-profile/${patientId}#${sectionId}`);
+  };
+
+  const dismissNotification = (notificationId) => {
+    setDismissedNotificationIds((prev) => {
+      const next = new Set(prev);
+      next.add(notificationId);
+      try {
+        localStorage.setItem('dismissedReceptionNotifications', JSON.stringify([...next]));
+      } catch {
+        // ignore storage failures
+      }
+      return next;
+    });
   };
 
   const shiftDate = (offset) => {
@@ -644,6 +720,16 @@ function ReceptionistPage() {
   }, [API_BASE_URL, navigate, session?.staffId]);
 
   useEffect(() => {
+    if (!session?.staffId) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      loadCore().catch(() => {});
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, [API_BASE_URL, session?.staffId]);
+
+  useEffect(() => {
     fetch(`${API_BASE_URL}/api/admin/system-cancelled-appointments`)
       .then((res) => res.ok ? res.json() : Promise.resolve([]))
       .then((data) => setSystemCancelledAppts(Array.isArray(data) ? data : []))
@@ -691,6 +777,47 @@ function ReceptionistPage() {
             ))}
           </div>
         </section>
+      )}
+
+      {requestAlerts.length > 0 && (
+        <aside className="reception-request-alert-stack" aria-live="polite" aria-label="Pending insurance and pharmacy requests">
+          {requestAlerts.map((alert) => (
+            <article
+              key={alert.alertKey}
+              className={`reception-request-alert-card reception-request-alert-card--${alert.alertType}`}
+            >
+              <div className="reception-request-alert-card__top">
+                <div>
+                  <p className="reception-request-alert-card__eyebrow">Reception Alert</p>
+                  <h3>{alert.title}</h3>
+                </div>
+                <button
+                  type="button"
+                  className="reception-request-alert-card__close"
+                  aria-label="Dismiss request alert"
+                  onClick={() => dismissRequestAlert(alert.alertKey)}
+                >
+                  &times;
+                </button>
+              </div>
+              <p className="reception-request-alert-card__patient"><strong>{alert.request.patient_name}</strong></p>
+              <p className="reception-request-alert-card__message">
+                {alert.alertType === 'pharmacy'
+                  ? `${alert.request.change_type} pharmacy request ready for review.`
+                  : `${alert.request.change_type} insurance request ready for review.`}
+              </p>
+              <button
+                type="button"
+                className="reception-request-alert-card__action"
+                onClick={() => {
+                  openPatientProfileSection(alert.request.patient_id, alert.sectionId);
+                }}
+              >
+                Open Patient Profile
+              </button>
+            </article>
+          ))}
+        </aside>
       )}
 
       <PatientSearch />
@@ -753,6 +880,116 @@ function ReceptionistPage() {
           </table>
         </div>
       </section>
+
+      {insuranceChangeRequests.length > 0 && (
+        <section className="reception-panel" id="insurance-change-requests">
+          <h2>Insurance Change Requests</h2>
+          <div className="reception-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Patient</th>
+                  <th>Type</th>
+                  <th>Company</th>
+                  <th>Member ID</th>
+                  <th>Group</th>
+                  <th>Primary</th>
+                  <th>Note</th>
+                  <th>Requested</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {insuranceChangeRequests.map((req) => (
+                  <tr key={req.request_id}>
+                    <td style={{ cursor: 'pointer', color: '#0f6965', fontWeight: 600 }} onClick={() => navigateToPatientProfile(req.patient_id)}>{req.patient_name}</td>
+                    <td>{req.change_type}</td>
+                    <td>{req.change_type === 'REMOVE' ? <span style={{ color: '#999' }}>{req.current_company_name || '—'}</span> : (req.new_company_name || '—')}</td>
+                    <td>{req.change_type !== 'REMOVE' ? (req.member_id || '—') : <span style={{ color: '#999' }}>{req.current_member_id || '—'}</span>}</td>
+                    <td>{req.change_type !== 'REMOVE' ? (req.group_number || '—') : <span style={{ color: '#999' }}>{req.current_group_number || '—'}</span>}</td>
+                    <td>{req.change_type !== 'REMOVE' ? (req.is_primary ? 'Yes' : 'No') : '—'}</td>
+                    <td style={{ maxWidth: '160px', fontSize: '0.8rem', color: '#555' }}>{req.patient_note || '—'}</td>
+                    <td style={{ fontSize: '0.8rem', color: '#777' }}>{new Date(req.created_at).toLocaleDateString()}</td>
+                    <td style={{ display: 'flex', gap: '0.4rem' }}>
+                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={async () => {
+                          try {
+                            await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests/${req.request_id}/approved`, { method: 'PUT' }).then(safeJson);
+                            setMessage('Insurance change approved.');
+                            const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson);
+                            setInsuranceChangeRequests(Array.isArray(fresh) ? fresh : []);
+                          } catch (err) { setMessage(err.message || 'Failed to approve.'); }
+                        }}>Approve</button>
+                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={async () => {
+                          try {
+                            await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests/${req.request_id}/denied`, { method: 'PUT' }).then(safeJson);
+                            setMessage('Insurance change denied.');
+                            const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson);
+                            setInsuranceChangeRequests(Array.isArray(fresh) ? fresh : []);
+                          } catch (err) { setMessage(err.message || 'Failed to deny.'); }
+                        }}>Deny</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {pharmacyChangeRequests.length > 0 && (
+        <section className="reception-panel" id="pharmacy-change-requests">
+          <h2>Pharmacy Change Requests</h2>
+          <div className="reception-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Patient</th>
+                  <th>Type</th>
+                  <th>Pharmacy</th>
+                  <th>Primary</th>
+                  <th>Note</th>
+                  <th>Requested</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pharmacyChangeRequests.map((req) => (
+                  <tr key={req.request_id}>
+                    <td style={{ cursor: 'pointer', color: '#0f6965', fontWeight: 600 }} onClick={() => navigateToPatientProfile(req.patient_id)}>{req.patient_name}</td>
+                    <td>{req.change_type}</td>
+                    <td>{req.change_type === 'REMOVE' ? <span style={{ color: '#999' }}>{req.current_pharm_name || '—'}</span> : `${req.new_pharm_name || '—'}${req.new_pharm_city ? ` (${req.new_pharm_city}, ${req.new_pharm_state})` : ''}`}</td>
+                    <td>{req.change_type === 'ADD' ? (req.is_primary ? 'Yes' : 'No') : '—'}</td>
+                    <td style={{ maxWidth: '160px', fontSize: '0.8rem', color: '#555' }}>{req.patient_note || '—'}</td>
+                    <td style={{ fontSize: '0.8rem', color: '#777' }}>{new Date(req.created_at).toLocaleDateString()}</td>
+                    <td style={{ display: 'flex', gap: '0.4rem' }}>
+                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={async () => {
+                          try {
+                            await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests/${req.request_id}/approved`, { method: 'PUT' }).then(safeJson);
+                            setMessage('Pharmacy change approved.');
+                            const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson);
+                            setPharmacyChangeRequests(Array.isArray(fresh) ? fresh : []);
+                          } catch (err) { setMessage(err.message || 'Failed to approve.'); }
+                        }}>Approve</button>
+                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={async () => {
+                          try {
+                            await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests/${req.request_id}/denied`, { method: 'PUT' }).then(safeJson);
+                            setMessage('Pharmacy change denied.');
+                            const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson);
+                            setPharmacyChangeRequests(Array.isArray(fresh) ? fresh : []);
+                          } catch (err) { setMessage(err.message || 'Failed to deny.'); }
+                        }}>Deny</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section className="reception-panel">
         <div className="reception-date-nav">

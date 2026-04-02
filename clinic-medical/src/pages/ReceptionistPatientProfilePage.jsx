@@ -59,6 +59,10 @@ function ReceptionistPatientProfilePage() {
   const [pharmAssignId, setPharmAssignId] = useState('');
   const [pharmAssignPrimary, setPharmAssignPrimary] = useState(false);
   const [isAssigningPharm, setIsAssigningPharm] = useState(false);
+  const [pendingInsuranceRequests, setPendingInsuranceRequests] = useState([]);
+  const [pendingPharmacyRequests, setPendingPharmacyRequests] = useState([]);
+  const [resolvingInsuranceRequestId, setResolvingInsuranceRequestId] = useState(null);
+  const [resolvingPharmacyRequestId, setResolvingPharmacyRequestId] = useState(null);
 
   // Insurance state
   const [insuranceFormOpen, setInsuranceFormOpen] = useState(false);
@@ -121,6 +125,18 @@ function ReceptionistPatientProfilePage() {
       });
       setConfirmForms(forms);
 
+      const [insuranceRequestsData, pharmacyRequestsData] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson).catch(() => []),
+        fetch(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson).catch(() => [])
+      ]);
+
+      setPendingInsuranceRequests(
+        (Array.isArray(insuranceRequestsData) ? insuranceRequestsData : []).filter((req) => Number(req.patient_id) === Number(patientId))
+      );
+      setPendingPharmacyRequests(
+        (Array.isArray(pharmacyRequestsData) ? pharmacyRequestsData : []).filter((req) => Number(req.patient_id) === Number(patientId))
+      );
+
       // Fetch availability for any pre-populated doctors
       for (const req of pending) {
         const docId = req.assigned_doctor_id ? String(req.assigned_doctor_id) : '';
@@ -150,6 +166,22 @@ function ReceptionistPatientProfilePage() {
     }
     loadPatientData();
   }, [API_BASE_URL, patientId]);
+
+  useEffect(() => {
+    const hash = String(window.location.hash || '').replace('#', '');
+    if (!hash) return;
+
+    const tryScroll = () => {
+      const element = document.getElementById(hash);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
+    window.requestAnimationFrame(tryScroll);
+    const timeoutId = window.setTimeout(tryScroll, 150);
+    return () => window.clearTimeout(timeoutId);
+  }, [patientId]);
 
   // Load doctors when location changes (for create appointment form)
   useEffect(() => {
@@ -340,6 +372,36 @@ function ReceptionistPatientProfilePage() {
       setError(err.message || 'Failed to revert appointment.');
     } finally {
       setRevertingId(null);
+    }
+  };
+
+  const resolveInsuranceRequest = async (requestId, action) => {
+    setResolvingInsuranceRequestId(requestId);
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/reception/insurance-change-requests/${requestId}/${action}`, { method: 'PUT' }).then(safeJson);
+      setMessage(`Insurance request ${action.toLowerCase()}.`);
+      await loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to update insurance request.');
+    } finally {
+      setResolvingInsuranceRequestId(null);
+    }
+  };
+
+  const resolvePharmacyRequest = async (requestId, action) => {
+    setResolvingPharmacyRequestId(requestId);
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/reception/pharmacy-change-requests/${requestId}/${action}`, { method: 'PUT' }).then(safeJson);
+      setMessage(`Pharmacy request ${action.toLowerCase()}.`);
+      await loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to update pharmacy request.');
+    } finally {
+      setResolvingPharmacyRequestId(null);
     }
   };
 
@@ -788,6 +850,42 @@ function ReceptionistPatientProfilePage() {
           )) : (
             <p style={{ color: '#4b6966' }}><em>No insurance on file</em></p>
           )}
+
+          <div id="insurance-section" style={{ scrollMarginTop: '6.5rem', marginTop: '1rem' }}>
+            <h3 style={{ margin: '0 0 0.5rem' }}>Pending Insurance Change Requests</h3>
+            {pendingInsuranceRequests.length > 0 ? pendingInsuranceRequests.map((req) => (
+              <div key={req.request_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.75rem', marginBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <div>
+                    <p style={{ margin: '0 0 0.25rem', fontWeight: 700 }}>{req.change_type} Insurance</p>
+                    <p style={{ margin: 0 }}><strong>Company:</strong> {req.new_company_name || req.current_company_name || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Member ID:</strong> {req.member_id || req.current_member_id || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Group:</strong> {req.group_number || req.current_group_number || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Primary:</strong> {req.is_primary ? 'Yes' : 'No'}</p>
+                    {req.patient_note && <p style={{ margin: '0.25rem 0 0' }}><strong>Note:</strong> {req.patient_note}</p>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--primary"
+                      disabled={resolvingInsuranceRequestId === req.request_id}
+                      onClick={() => resolveInsuranceRequest(req.request_id, 'APPROVED')}
+                    >
+                      {resolvingInsuranceRequestId === req.request_id ? 'Approving...' : 'Approve'}
+                    </button>
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--secondary"
+                      disabled={resolvingInsuranceRequestId === req.request_id}
+                      onClick={() => resolveInsuranceRequest(req.request_id, 'DENIED')}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )) : <p style={{ color: '#4b6966' }}><em>No pending insurance requests.</em></p>}
+          </div>
         </article>
 
         <article className="reception-panel">
@@ -1148,6 +1246,41 @@ function ReceptionistPatientProfilePage() {
             )) : (
               <p style={{ color: '#4b6966' }}><em>No pharmacy assigned</em></p>
             )}
+          </div>
+
+          <div id="pharmacy-section" style={{ scrollMarginTop: '6.5rem', marginTop: '1rem' }}>
+            <h3 style={{ margin: '0 0 0.5rem' }}>Pending Pharmacy Change Requests</h3>
+            {pendingPharmacyRequests.length > 0 ? pendingPharmacyRequests.map((req) => (
+              <div key={req.request_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.75rem', marginBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <div>
+                    <p style={{ margin: '0 0 0.25rem', fontWeight: 700 }}>{req.change_type} Pharmacy</p>
+                    <p style={{ margin: 0 }}><strong>Pharmacy:</strong> {req.new_pharm_name || req.current_pharm_name || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Location:</strong> {[req.new_pharm_city || req.current_pharm_city, req.new_pharm_state || req.current_pharm_state].filter(Boolean).join(', ') || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Primary:</strong> {req.is_primary ? 'Yes' : 'No'}</p>
+                    {req.patient_note && <p style={{ margin: '0.25rem 0 0' }}><strong>Note:</strong> {req.patient_note}</p>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--primary"
+                      disabled={resolvingPharmacyRequestId === req.request_id}
+                      onClick={() => resolvePharmacyRequest(req.request_id, 'APPROVED')}
+                    >
+                      {resolvingPharmacyRequestId === req.request_id ? 'Approving...' : 'Approve'}
+                    </button>
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--secondary"
+                      disabled={resolvingPharmacyRequestId === req.request_id}
+                      onClick={() => resolvePharmacyRequest(req.request_id, 'DENIED')}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )) : <p style={{ color: '#4b6966' }}><em>No pending pharmacy requests.</em></p>}
           </div>
         </article>
 

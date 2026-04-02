@@ -798,9 +798,150 @@ CREATE TABLE IF NOT EXISTS intake_medication_rows (
 
 
 
+CREATE TABLE IF NOT EXISTS insurance_change_requests (
+    request_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    insurance_id INT,
+    change_type ENUM('ADD', 'UPDATE', 'REMOVE') NOT NULL,
+    company_id INT,
+    member_id VARCHAR(50),
+    group_number VARCHAR(50),
+    is_primary BOOLEAN DEFAULT FALSE,
+    request_status ENUM('PENDING', 'APPROVED', 'DENIED') NOT NULL DEFAULT 'PENDING',
+    patient_note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (insurance_id) REFERENCES insurance(insurance_id) ON DELETE SET NULL,
+    FOREIGN KEY (company_id) REFERENCES insurance_companies(company_id)
+);
+
+
+
+
+CREATE TABLE IF NOT EXISTS pharmacy_change_requests (
+    request_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    patient_pharmacy_id INT,
+    change_type ENUM('ADD', 'REMOVE') NOT NULL,
+    pharm_id INT,
+    is_primary TINYINT(1) DEFAULT 0,
+    request_status ENUM('PENDING', 'APPROVED', 'DENIED') NOT NULL DEFAULT 'PENDING',
+    patient_note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (patient_pharmacy_id) REFERENCES patient_pharmacies(patient_pharmacy_id) ON DELETE SET NULL,
+    FOREIGN KEY (pharm_id) REFERENCES pharmacies(pharm_id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS receptionist_notifications (
+    notification_id INT AUTO_INCREMENT PRIMARY KEY,
+    source_table VARCHAR(50) NOT NULL,
+    source_request_id INT NOT NULL,
+    patient_id INT NOT NULL,
+    notification_type ENUM('INSURANCE_CHANGE_REQUEST', 'PHARMACY_CHANGE_REQUEST') NOT NULL,
+    message VARCHAR(255) NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMP NULL DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_reception_notification_source (source_table, source_request_id),
+    INDEX idx_reception_notification_read (is_read, created_at),
+    INDEX idx_reception_notification_type (notification_type),
+    INDEX idx_reception_notification_patient (patient_id)
+);
+
 -- TRIGGERS
 
 DELIMITER $$
+
+-- Trigger: Create receptionist notification when an insurance change request is submitted
+DROP TRIGGER IF EXISTS insurance_change_requests_create_notification $$
+CREATE TRIGGER insurance_change_requests_create_notification
+AFTER INSERT ON insurance_change_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_name VARCHAR(120) DEFAULT '';
+    DECLARE v_action_label VARCHAR(24) DEFAULT 'change';
+
+    SELECT CONCAT(p_first_name, ' ', p_last_name)
+    INTO v_patient_name
+    FROM patients
+    WHERE patient_id = NEW.patient_id
+    LIMIT 1;
+
+    IF NEW.change_type = 'ADD' THEN
+        SET v_action_label = 'add';
+    ELSEIF NEW.change_type = 'UPDATE' THEN
+        SET v_action_label = 'update';
+    ELSEIF NEW.change_type = 'REMOVE' THEN
+        SET v_action_label = 'remove';
+    END IF;
+
+    INSERT INTO receptionist_notifications (
+        source_table,
+        source_request_id,
+        patient_id,
+        notification_type,
+        message,
+        created_by,
+        updated_by
+    ) VALUES (
+        'insurance_change_requests',
+        NEW.request_id,
+        NEW.patient_id,
+        'INSURANCE_CHANGE_REQUEST',
+        CONCAT('Insurance ', v_action_label, ' request submitted by ', COALESCE(v_patient_name, 'a patient')),
+        'SYSTEM_TRIGGER',
+        'SYSTEM_TRIGGER'
+    );
+END $$
+
+-- Trigger: Create receptionist notification when a pharmacy change request is submitted
+DROP TRIGGER IF EXISTS pharmacy_change_requests_create_notification $$
+CREATE TRIGGER pharmacy_change_requests_create_notification
+AFTER INSERT ON pharmacy_change_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_name VARCHAR(120) DEFAULT '';
+    DECLARE v_action_label VARCHAR(24) DEFAULT 'change';
+
+    SELECT CONCAT(p_first_name, ' ', p_last_name)
+    INTO v_patient_name
+    FROM patients
+    WHERE patient_id = NEW.patient_id
+    LIMIT 1;
+
+    IF NEW.change_type = 'ADD' THEN
+        SET v_action_label = 'add';
+    ELSEIF NEW.change_type = 'REMOVE' THEN
+        SET v_action_label = 'remove';
+    END IF;
+
+    INSERT INTO receptionist_notifications (
+        source_table,
+        source_request_id,
+        patient_id,
+        notification_type,
+        message,
+        created_by,
+        updated_by
+    ) VALUES (
+        'pharmacy_change_requests',
+        NEW.request_id,
+        NEW.patient_id,
+        'PHARMACY_CHANGE_REQUEST',
+        CONCAT('Pharmacy ', v_action_label, ' request submitted by ', COALESCE(v_patient_name, 'a patient')),
+        'SYSTEM_TRIGGER',
+        'SYSTEM_TRIGGER'
+    );
+END $$
 
 -- Trigger 1: Enforce cancel_reason when appointment is cancelled
 DROP TRIGGER IF EXISTS appointments_require_cancel_reason_on_insert $$
@@ -855,70 +996,6 @@ BEGIN
             SIGNAL SQLSTATE '45000'
                 SET MESSAGE_TEXT = 'A checked-in appointment can only be marked Completed or Cancelled';
         END IF;
-    END IF;
-END $$
-
--- Trigger 2: Auto-update invoice payment_status when payment is inserted
-DROP TRIGGER IF EXISTS payments_update_invoice_status $$
-CREATE TRIGGER payments_update_invoice_status
-AFTER INSERT ON payments
-FOR EACH ROW
-BEGIN
-    DECLARE total_paid DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE patient_due DECIMAL(10,2) DEFAULT 0.00;
-
-    IF NEW.invoice_id IS NOT NULL THEN
-        SELECT COALESCE(SUM(payment_amount), 0.00)
-        INTO total_paid
-        FROM payments
-        WHERE invoice_id = NEW.invoice_id;
-
-        SELECT COALESCE(patient_amount, 0.00)
-        INTO patient_due
-        FROM invoices
-        WHERE invoice_id = NEW.invoice_id;
-
-        UPDATE invoices
-        SET payment_status = CASE
-            WHEN total_paid <= 0 THEN 'Unpaid'
-            WHEN total_paid < patient_due THEN 'Partial'
-            ELSE 'Paid'
-        END
-        WHERE invoice_id = NEW.invoice_id;
-    END IF;
-END $$
-
--- Trigger 5: Enforce one primary insurance policy per patient
-DROP TRIGGER IF EXISTS insurance_single_primary_insert $$
-CREATE TRIGGER insurance_single_primary_insert
-BEFORE INSERT ON insurance
-FOR EACH ROW
-BEGIN
-    IF NEW.is_primary = TRUE AND EXISTS (
-        SELECT 1
-        FROM insurance i
-        WHERE i.patient_id = NEW.patient_id
-          AND i.is_primary = TRUE
-    ) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Patient already has a primary insurance policy';
-    END IF;
-END $$
-
-DROP TRIGGER IF EXISTS insurance_single_primary_update $$
-CREATE TRIGGER insurance_single_primary_update
-BEFORE UPDATE ON insurance
-FOR EACH ROW
-BEGIN
-    IF NEW.is_primary = TRUE AND EXISTS (
-        SELECT 1
-        FROM insurance i
-        WHERE i.patient_id = NEW.patient_id
-          AND i.insurance_id <> NEW.insurance_id
-          AND i.is_primary = TRUE
-    ) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Patient already has a primary insurance policy';
     END IF;
 END $$
 
@@ -1375,10 +1452,6 @@ END $$
 
 
 DELIMITER ;
-
--- Add 'Refunded' to payment_status ENUM for existing databases
-ALTER TABLE invoices MODIFY COLUMN payment_status ENUM('Unpaid', 'Partial', 'Paid', 'Refunded') NOT NULL DEFAULT 'Unpaid';
-
 
 
 

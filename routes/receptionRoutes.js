@@ -847,6 +847,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
         pool.query(
           `SELECT
             i.insurance_id,
+            i.company_id,
             i.member_id,
             i.group_number,
             i.is_primary,
@@ -1369,6 +1370,32 @@ function createReceptionRoutes({ pool, sendJSON }) {
     );
   }
 
+  function getReceptionNotifications(req, res) {
+    pool.query(
+      `SELECT
+        rn.notification_id,
+        rn.notification_type,
+        rn.message,
+        rn.created_at,
+        rn.source_table,
+        rn.source_request_id,
+        rn.patient_id,
+        CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name
+       FROM receptionist_notifications rn
+       JOIN patients p ON p.patient_id = rn.patient_id
+       WHERE rn.is_read = FALSE
+       ORDER BY rn.created_at DESC
+       LIMIT 50`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching receptionist notifications:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
   function assignPatientPharmacy(req, patientId, data, res) {
     const pharmId = Number(data?.pharmId);
     const isPrimary = data?.isPrimary ? 1 : 0;
@@ -1501,6 +1528,11 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'doctors') {
       getReceptionDoctors(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'notifications') {
+      getReceptionNotifications(req, res);
       return true;
     }
 

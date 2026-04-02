@@ -484,6 +484,255 @@ function createPatientCoreHandlers(deps) {
     );
   }
 
+  async function submitInsuranceChangeRequest(req, patientId, data, res) {
+    const changeType = String(data?.changeType || '').toUpperCase();
+    const insuranceId = data?.insuranceId ? Number(data.insuranceId) : null;
+    const companyId = data?.companyId ? Number(data.companyId) : null;
+    const memberId = String(data?.memberId || '').trim() || null;
+    const groupNumber = String(data?.groupNumber || '').trim() || null;
+    const isPrimary = data?.isPrimary ? 1 : 0;
+    const patientNote = String(data?.patientNote || '').trim() || null;
+
+    if (!['ADD', 'UPDATE', 'REMOVE'].includes(changeType)) {
+      return sendJSON(res, 400, { error: 'Invalid change type' });
+    }
+    if (changeType !== 'REMOVE' && !companyId) {
+      return sendJSON(res, 400, { error: 'Insurance company is required' });
+    }
+    if (changeType !== 'REMOVE' && !memberId) {
+      return sendJSON(res, 400, { error: 'Member ID is required' });
+    }
+
+    try {
+      await pool.promise().query(
+        `INSERT INTO insurance_change_requests (patient_id, insurance_id, change_type, company_id, member_id, group_number, is_primary, patient_note, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PATIENT_PORTAL')`,
+        [patientId, insuranceId, changeType, companyId, memberId, groupNumber, isPrimary, patientNote]
+      );
+      sendJSON(res, 200, { message: 'Change request submitted. A receptionist will review it shortly.' });
+    } catch (error) {
+      console.error('Error submitting insurance change request:', error);
+      sendJSON(res, 500, { error: 'Database error' });
+    }
+  }
+
+  async function getInsuranceChangeRequests(req, res) {
+    try {
+      const [rows] = await pool.promise().query(
+        `SELECT
+          icr.request_id,
+          icr.change_type,
+          icr.request_status,
+          icr.member_id,
+          icr.group_number,
+          icr.is_primary,
+          icr.patient_note,
+          icr.created_at,
+          CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+          p.patient_id,
+          ic.company_name AS new_company_name,
+          ic2.company_name AS current_company_name,
+          i.member_id AS current_member_id,
+          i.group_number AS current_group_number
+        FROM insurance_change_requests icr
+        JOIN patients p ON p.patient_id = icr.patient_id
+        LEFT JOIN insurance_companies ic ON ic.company_id = icr.company_id
+        LEFT JOIN insurance i ON i.insurance_id = icr.insurance_id
+        LEFT JOIN insurance_companies ic2 ON ic2.company_id = i.company_id
+        WHERE icr.request_status = 'PENDING'
+        ORDER BY icr.created_at ASC`
+      );
+      sendJSON(res, 200, rows || []);
+    } catch (error) {
+      console.error('Error fetching insurance change requests:', error);
+      sendJSON(res, 500, { error: 'Database error' });
+    }
+  }
+
+  async function submitPharmacyChangeRequest(req, patientId, data, res) {
+    const changeType = String(data?.changeType || '').toUpperCase();
+    const patientPharmacyId = data?.patientPharmacyId ? Number(data.patientPharmacyId) : null;
+    const pharmId = data?.pharmId ? Number(data.pharmId) : null;
+    const isPrimary = data?.isPrimary ? 1 : 0;
+    const patientNote = String(data?.patientNote || '').trim() || null;
+
+    if (!['ADD', 'REMOVE'].includes(changeType)) {
+      return sendJSON(res, 400, { error: 'Invalid change type' });
+    }
+    if (changeType === 'ADD' && !pharmId) {
+      return sendJSON(res, 400, { error: 'Pharmacy is required' });
+    }
+
+    try {
+      await pool.promise().query(
+        `INSERT INTO pharmacy_change_requests (patient_id, patient_pharmacy_id, change_type, pharm_id, is_primary, patient_note, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, 'PATIENT_PORTAL')`,
+        [patientId, patientPharmacyId, changeType, pharmId, isPrimary, patientNote]
+      );
+      sendJSON(res, 200, { message: 'Change request submitted. A receptionist will review it shortly.' });
+    } catch (error) {
+      console.error('Error submitting pharmacy change request:', error);
+      sendJSON(res, 500, { error: 'Database error' });
+    }
+  }
+
+  async function getPharmacyChangeRequests(req, res) {
+    try {
+      const [rows] = await pool.promise().query(
+        `SELECT
+          pcr.request_id,
+          pcr.change_type,
+          pcr.request_status,
+          pcr.is_primary,
+          pcr.patient_note,
+          pcr.created_at,
+          pcr.patient_pharmacy_id,
+          CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+          p.patient_id,
+          ph.pharm_name AS new_pharm_name,
+          ph.ph_city AS new_pharm_city,
+          ph.ph_state AS new_pharm_state,
+          ph2.pharm_name AS current_pharm_name,
+          ph2.ph_city AS current_pharm_city
+        FROM pharmacy_change_requests pcr
+        JOIN patients p ON p.patient_id = pcr.patient_id
+        LEFT JOIN pharmacies ph ON ph.pharm_id = pcr.pharm_id
+        LEFT JOIN patient_pharmacies pp ON pp.patient_pharmacy_id = pcr.patient_pharmacy_id
+        LEFT JOIN pharmacies ph2 ON ph2.pharm_id = pp.pharm_id
+        WHERE pcr.request_status = 'PENDING'
+        ORDER BY pcr.created_at ASC`
+      );
+      sendJSON(res, 200, rows || []);
+    } catch (error) {
+      console.error('Error fetching pharmacy change requests:', error);
+      sendJSON(res, 500, { error: 'Database error' });
+    }
+  }
+
+  async function resolvePharmacyChangeRequest(req, requestId, action, res) {
+    if (!['APPROVED', 'DENIED'].includes(action)) {
+      return sendJSON(res, 400, { error: 'Invalid action' });
+    }
+    try {
+      const [[request]] = await pool.promise().query(
+        `SELECT * FROM pharmacy_change_requests WHERE request_id = ? AND request_status = 'PENDING'`,
+        [requestId]
+      );
+      if (!request) return sendJSON(res, 404, { error: 'Request not found or already resolved' });
+
+      if (action === 'APPROVED') {
+        const { change_type, patient_id, patient_pharmacy_id, pharm_id, is_primary } = request;
+        if (change_type === 'ADD') {
+          if (is_primary) {
+            await pool.promise().query(
+              `UPDATE patient_pharmacies SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1`,
+              [patient_id]
+            );
+          }
+          await pool.promise().query(
+            `INSERT INTO patient_pharmacies (patient_id, pharm_id, is_primary, created_by, updated_by)
+             VALUES (?, ?, ?, 'RECEPTION', 'RECEPTION')
+             ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary), updated_by = 'RECEPTION'`,
+            [patient_id, pharm_id, is_primary]
+          );
+        } else if (change_type === 'REMOVE') {
+          const pp = await pool.promise().query(
+            `SELECT pharm_id FROM patient_pharmacies WHERE patient_pharmacy_id = ? AND patient_id = ?`,
+            [patient_pharmacy_id, patient_id]
+          );
+          if (pp[0].length) {
+            await pool.promise().query(
+              `DELETE FROM patient_pharmacies WHERE patient_pharmacy_id = ? AND patient_id = ?`,
+              [patient_pharmacy_id, patient_id]
+            );
+          }
+        }
+      }
+
+      await pool.promise().query(
+        `UPDATE pharmacy_change_requests SET request_status = ?, updated_by = 'RECEPTION' WHERE request_id = ?`,
+        [action, requestId]
+      );
+
+      await pool.promise().query(
+        `UPDATE receptionist_notifications
+         SET is_read = TRUE, read_at = NOW(), updated_by = 'RECEPTION'
+         WHERE source_table = 'pharmacy_change_requests' AND source_request_id = ?`,
+        [requestId]
+      );
+
+      sendJSON(res, 200, { message: `Request ${action.toLowerCase()}.` });
+    } catch (error) {
+      console.error('Error resolving pharmacy change request:', error);
+      sendJSON(res, 500, { error: 'Database error' });
+    }
+  }
+
+  async function resolveInsuranceChangeRequest(req, requestId, action, res) {
+    if (!['APPROVED', 'DENIED'].includes(action)) {
+      return sendJSON(res, 400, { error: 'Invalid action' });
+    }
+    try {
+      const [[request]] = await pool.promise().query(
+        `SELECT * FROM insurance_change_requests WHERE request_id = ? AND request_status = 'PENDING'`,
+        [requestId]
+      );
+      if (!request) return sendJSON(res, 404, { error: 'Request not found or already resolved' });
+
+      if (action === 'APPROVED') {
+        const { change_type, patient_id, insurance_id, company_id, member_id, group_number, is_primary } = request;
+
+        if (change_type === 'ADD') {
+          if (is_primary) {
+            await pool.promise().query(
+              `UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1`,
+              [patient_id]
+            );
+          }
+          await pool.promise().query(
+            `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, effective_date, created_by, updated_by)
+             VALUES (?, ?, ?, ?, ?, CURDATE(), 'RECEPTION', 'RECEPTION')`,
+            [patient_id, company_id, member_id, group_number || null, is_primary]
+          );
+        } else if (change_type === 'UPDATE') {
+          if (is_primary) {
+            await pool.promise().query(
+              `UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1 AND insurance_id != ?`,
+              [patient_id, insurance_id]
+            );
+          }
+          await pool.promise().query(
+            `UPDATE insurance SET company_id = ?, member_id = ?, group_number = ?, is_primary = ?, updated_by = 'RECEPTION'
+             WHERE insurance_id = ? AND patient_id = ?`,
+            [company_id, member_id, group_number || null, is_primary, insurance_id, patient_id]
+          );
+        } else if (change_type === 'REMOVE') {
+          await pool.promise().query(
+            `DELETE FROM insurance WHERE insurance_id = ? AND patient_id = ?`,
+            [insurance_id, patient_id]
+          );
+        }
+      }
+
+      await pool.promise().query(
+        `UPDATE insurance_change_requests SET request_status = ?, updated_by = 'RECEPTION' WHERE request_id = ?`,
+        [action, requestId]
+      );
+
+      await pool.promise().query(
+        `UPDATE receptionist_notifications
+         SET is_read = TRUE, read_at = NOW(), updated_by = 'RECEPTION'
+         WHERE source_table = 'insurance_change_requests' AND source_request_id = ?`,
+        [requestId]
+      );
+
+      sendJSON(res, 200, { message: `Request ${action.toLowerCase()}.` });
+    } catch (error) {
+      console.error('Error resolving insurance change request:', error);
+      sendJSON(res, 500, { error: 'Database error' });
+    }
+  }
+
   return {
     getPatientById,
     getDoctorAppointments,
@@ -503,7 +752,13 @@ function createPatientCoreHandlers(deps) {
     addPatientInsurance,
     setPrimaryInsurance,
     removePatientInsurance,
-    changeUserPassword
+    changeUserPassword,
+    submitInsuranceChangeRequest,
+    getInsuranceChangeRequests,
+    resolveInsuranceChangeRequest,
+    submitPharmacyChangeRequest,
+    getPharmacyChangeRequests,
+    resolvePharmacyChangeRequest
   };
 }
 
