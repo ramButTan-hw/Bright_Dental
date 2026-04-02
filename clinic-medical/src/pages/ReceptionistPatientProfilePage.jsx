@@ -743,9 +743,14 @@ function ReceptionistPatientProfilePage() {
   (snapshot?.tobacco?.currentUses || []).forEach((entry) => {
     tobaccoSummary.push(`${entry.type || 'Tobacco'} - ${entry.amount || 'N/A'} (${entry.frequency || 'N/A'})`);
   });
-  (snapshot?.tobacco?.quitHistory || []).forEach((entry) => {
-    tobaccoSummary.push(`${entry.type || 'Tobacco'} quit on ${entry.quitDate || 'unknown date'}`);
-  });
+  if (snapshot?.tobacco?.quit) {
+    (snapshot?.tobacco?.quitHistory || []).forEach((entry) => {
+      const quitType = String(entry?.type || '').trim();
+      const quitDate = String(entry?.quitDate || '').trim();
+      if (!quitType && !quitDate) return;
+      tobaccoSummary.push(`${quitType || 'Tobacco'} quit on ${quitDate || 'unknown date'}`);
+    });
+  }
 
   const dentalFindings = Array.isArray(patientData?.dentalFindings) ? patientData.dentalFindings : [];
   const treatments = Array.isArray(patientData?.treatments) ? patientData.treatments : [];

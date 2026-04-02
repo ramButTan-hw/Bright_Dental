@@ -471,6 +471,55 @@
   background: #fff;
 }
 
+.reception-report-preview {
+  border: 1px solid #d6e7e4;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.reception-report-preview-header h3 {
+  margin: 0;
+}
+
+.reception-report-preview-header p {
+  margin: 0.2rem 0 0;
+  color: #4b6966;
+}
+
+.reception-report-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.55rem;
+}
+
+.reception-report-summary-grid > div {
+  border: 1px solid #d7e8e5;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  background: #f8fdfc;
+}
+
+.reception-report-summary-grid span {
+  display: block;
+  color: #4b6966;
+  font-size: 0.78rem;
+}
+
+.reception-report-summary-grid strong {
+  display: block;
+  margin-top: 0.15rem;
+  color: #103634;
+}
+
+.reception-report-keyline {
+  margin: 0;
+  color: #275553;
+  font-size: 0.88rem;
+}
+
 .reception-report-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

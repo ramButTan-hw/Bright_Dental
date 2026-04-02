@@ -1,6 +1,12 @@
 function createPatientCoreHandlers(deps) {
   const { pool, queries, sendJSON, crypto } = deps;
   
+    function normalizePhoneForStorage(value) {
+      const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+      if (!digits) return null;
+      if (digits.length !== 10) return '';
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
   function getPatientById(req, patientId, res) {
     pool.query(queries.getPatientById, [patientId], (err, results) => {
       if (err) {
@@ -312,14 +318,32 @@ function createPatientCoreHandlers(deps) {
     const fields = {};
     if (data.firstName !== undefined) fields.p_first_name = String(data.firstName).trim();
     if (data.lastName !== undefined) fields.p_last_name = String(data.lastName).trim();
-    if (data.phone !== undefined) fields.p_phone = String(data.phone).trim() || null;
+    if (data.phone !== undefined) {
+      const normalizedPhone = normalizePhoneForStorage(data.phone);
+      if (normalizedPhone === '') {
+        return sendJSON(res, 400, { error: 'Phone number must contain exactly 10 digits' });
+      }
+      fields.p_phone = normalizedPhone;
+    }
     if (data.email !== undefined) fields.p_email = String(data.email).trim();
     if (data.address !== undefined) fields.p_address = String(data.address).trim() || null;
     if (data.city !== undefined) fields.p_city = String(data.city).trim() || null;
     if (data.state !== undefined) fields.p_state = String(data.state).trim().toUpperCase() || null;
-    if (data.zipcode !== undefined) fields.p_zipcode = String(data.zipcode).trim() || null;
+    if (data.zipcode !== undefined) {
+      const zipDigits = String(data.zipcode || '').replace(/\D/g, '');
+      if (zipDigits.length && zipDigits.length !== 5) {
+        return sendJSON(res, 400, { error: 'ZIP code must contain exactly 5 digits' });
+      }
+      fields.p_zipcode = zipDigits || null;
+    }
     if (data.emergencyContactName !== undefined) fields.p_emergency_contact_name = String(data.emergencyContactName).trim() || null;
-    if (data.emergencyContactPhone !== undefined) fields.p_emergency_contact_phone = String(data.emergencyContactPhone).trim() || null;
+    if (data.emergencyContactPhone !== undefined) {
+      const normalizedEmergencyPhone = normalizePhoneForStorage(data.emergencyContactPhone);
+      if (normalizedEmergencyPhone === '') {
+        return sendJSON(res, 400, { error: 'Emergency contact phone must contain exactly 10 digits' });
+      }
+      fields.p_emergency_contact_phone = normalizedEmergencyPhone;
+    }
 
     const keys = Object.keys(fields);
     if (!keys.length) {
