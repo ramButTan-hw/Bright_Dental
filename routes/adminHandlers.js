@@ -1171,6 +1171,7 @@ function createAdminHandlers(deps) {
     const parsedUrl = url.parse(req.url, true);
     const dateFrom = String(parsedUrl.query.dateFrom || '').trim();
     const dateTo = String(parsedUrl.query.dateTo || '').trim();
+    const status = String(parsedUrl.query.status || 'ALL').trim().toUpperCase();
     const zipCode = String(parsedUrl.query.zipCode || '').trim();
     const locationId = Number(parsedUrl.query.locationId || 0);
     const patientCity = String(parsedUrl.query.patientCity || '').trim();
@@ -1183,8 +1184,17 @@ function createAdminHandlers(deps) {
       return sendJSON(res, 400, { error: 'dateFrom and dateTo are required in YYYY-MM-DD format' });
     }
 
-    const conditions = ['a.appointment_date BETWEEN ? AND ?', "s.status_name = 'COMPLETED'"];
+    const conditions = ['a.appointment_date BETWEEN ? AND ?'];
     const params = [dateFrom, dateTo];
+
+    if (status && status !== 'ALL') {
+      if (status === 'CANCELED' || status === 'CANCELLED') {
+        conditions.push("UPPER(s.status_name) IN ('CANCELED', 'CANCELLED')");
+      } else {
+        conditions.push('UPPER(s.status_name) = ?');
+        params.push(status);
+      }
+    }
 
     if (zipCode) {
       conditions.push('p.p_zipcode = ?');
@@ -1239,9 +1249,14 @@ function createAdminHandlers(deps) {
         GROUP_CONCAT(DISTINCT CONCAT(apc.procedure_code, ' - ', apc.description) SEPARATOR '; ') AS treatment_name,
         GROUP_CONCAT(DISTINCT apc.category SEPARATOR ', ') AS treatment_category,
         COALESCE(apr.appointment_reason, GROUP_CONCAT(DISTINCT dep.department_name SEPARATOR ', ')) AS department_name,
+        i.invoice_id,
         COALESCE(i.payment_status, 'No Invoice') AS payment_status,
         COALESCE(i.amount, 0) AS invoice_total,
-        COALESCE(i.patient_amount, 0) AS patient_amount
+        COALESCE(i.patient_amount, 0) AS patient_amount,
+        COALESCE(pay.total_paid, 0) AS total_paid,
+        COALESCE(ref.total_refunded, 0) AS total_refunded,
+        ROUND(COALESCE(pay.total_paid, 0) - COALESCE(ref.total_refunded, 0), 2) AS net_collected,
+        ROUND(COALESCE(i.patient_amount, 0) - (COALESCE(pay.total_paid, 0) - COALESCE(ref.total_refunded, 0)), 2) AS patient_outstanding
       FROM appointments a
       JOIN appointment_statuses s ON s.status_id = a.status_id
       JOIN patients p ON p.patient_id = a.patient_id
@@ -1249,6 +1264,16 @@ function createAdminHandlers(deps) {
       JOIN staff st ON st.staff_id = d.staff_id
       LEFT JOIN locations l ON l.location_id = a.location_id
       LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
+      LEFT JOIN (
+        SELECT invoice_id, SUM(payment_amount) AS total_paid
+        FROM payments
+        GROUP BY invoice_id
+      ) pay ON pay.invoice_id = i.invoice_id
+      LEFT JOIN (
+        SELECT invoice_id, SUM(refund_amount) AS total_refunded
+        FROM refunds
+        GROUP BY invoice_id
+      ) ref ON ref.invoice_id = i.invoice_id
       LEFT JOIN appointment_preference_requests apr ON apr.patient_id = a.patient_id
         AND apr.assigned_doctor_id = a.doctor_id
         AND apr.assigned_date = a.appointment_date
@@ -1264,7 +1289,8 @@ function createAdminHandlers(deps) {
                p.patient_id, p.p_first_name, p.p_last_name, p.p_address, p.p_city, p.p_state, p.p_zipcode,
                st.first_name, st.last_name, d.doctor_id,
                l.loc_street_no, l.loc_street_name, l.location_city, l.location_state, l.loc_zip_code,
-               i.payment_status, i.amount, i.patient_amount,
+               i.invoice_id, i.payment_status, i.amount, i.patient_amount,
+               pay.total_paid, ref.total_refunded,
                apr.appointment_reason
       ORDER BY a.appointment_date ASC, a.appointment_time ASC`;
 
@@ -1273,13 +1299,59 @@ function createAdminHandlers(deps) {
         console.error('Error generating admin report:', err);
         return sendJSON(res, 500, { error: 'Database error' });
       }
+
+      const reportRows = rows || [];
+      const uniquePatients = new Set(reportRows.map((row) => row.patient_id));
+      const uniqueDoctors = new Set(reportRows.map((row) => row.doctor_id));
+      const statusBreakdown = reportRows.reduce((acc, row) => {
+        const key = String(row.status_name || 'UNKNOWN').toUpperCase();
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+
+      const totalAppointments = reportRows.length;
+      const completedAppointments = statusBreakdown.COMPLETED || 0;
+      const noShowAppointments = statusBreakdown.NO_SHOW || 0;
+      const cancelledAppointments = (statusBreakdown.CANCELED || 0) + (statusBreakdown.CANCELLED || 0);
+      const totalRevenue = reportRows.reduce((sum, row) => sum + Number(row.invoice_total || 0), 0);
+      const totalPatientResponsibility = reportRows.reduce((sum, row) => sum + Number(row.patient_amount || 0), 0);
+      const totalCollected = reportRows.reduce((sum, row) => sum + Number(row.net_collected || 0), 0);
+      const totalOutstanding = reportRows.reduce((sum, row) => sum + Math.max(Number(row.patient_outstanding || 0), 0), 0);
+
+      const summary = {
+        totalAppointments,
+        uniquePatients: uniquePatients.size,
+        uniqueDoctors: uniqueDoctors.size,
+        completedAppointments,
+        cancelledAppointments,
+        noShowAppointments,
+        completionRate: totalAppointments ? Number(((completedAppointments / totalAppointments) * 100).toFixed(2)) : 0,
+        noShowRate: totalAppointments ? Number(((noShowAppointments / totalAppointments) * 100).toFixed(2)) : 0,
+        totalRevenue,
+        totalPatientResponsibility,
+        totalCollected,
+        totalOutstanding,
+        avgRevenuePerAppointment: totalAppointments ? Number((totalRevenue / totalAppointments).toFixed(2)) : 0,
+        statusBreakdown
+      };
+
       sendJSON(res, 200, {
         dateFrom,
         dateTo,
-        filters: { zipCode: zipCode || null, locationId: locationId || null, patientCity: patientCity || null, patientState: patientState || null, treatmentCode: treatmentCode || null, departmentId: departmentId || null, doctorId: doctorId || null },
+        filters: {
+          status: status || 'ALL',
+          zipCode: zipCode || null,
+          locationId: locationId || null,
+          patientCity: patientCity || null,
+          patientState: patientState || null,
+          treatmentCode: treatmentCode || null,
+          departmentId: departmentId || null,
+          doctorId: doctorId || null
+        },
         generatedAt: new Date().toISOString(),
-        totalRows: (rows || []).length,
-        rows: rows || []
+        summary,
+        totalRows: reportRows.length,
+        rows: reportRows
       });
     });
   }
@@ -1446,6 +1518,197 @@ function createAdminHandlers(deps) {
     );
   }
 
+  function getClinicPerformanceReport(req, res) {
+    const parsedUrl = url.parse(req.url, true);
+    const dateFrom = String(parsedUrl.query.dateFrom || '').trim();
+    const dateTo = String(parsedUrl.query.dateTo || '').trim();
+
+    if (!dateFrom || !dateTo || !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+      return sendJSON(res, 400, { error: 'dateFrom and dateTo are required in YYYY-MM-DD format' });
+    }
+
+    (async () => {
+      const db = pool.promise();
+
+      const [[summaryRow]] = await db.query(
+        `SELECT
+          COUNT(*) AS total_appointments,
+          COUNT(DISTINCT a.patient_id) AS active_patients,
+          SUM(CASE WHEN UPPER(s.status_name) = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) IN ('CANCELED', 'CANCELLED') THEN 1 ELSE 0 END) AS cancelled_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) = 'NO_SHOW' THEN 1 ELSE 0 END) AS no_show_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED') THEN 1 ELSE 0 END) AS scheduled_appointments,
+          COALESCE(SUM(i.amount), 0) AS total_production,
+          COALESCE(SUM(i.patient_amount), 0) AS total_patient_responsibility,
+          COALESCE(SUM(COALESCE(pay.total_paid, 0)), 0) AS total_collected,
+          COALESCE(SUM(COALESCE(ref.total_refunded, 0)), 0) AS total_refunded,
+          COALESCE(SUM(GREATEST(COALESCE(i.patient_amount, 0) - (COALESCE(pay.total_paid, 0) - COALESCE(ref.total_refunded, 0)), 0)), 0) AS total_outstanding
+         FROM appointments a
+         JOIN appointment_statuses s ON s.status_id = a.status_id
+         JOIN patients p ON p.patient_id = a.patient_id
+         LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
+         LEFT JOIN (
+           SELECT invoice_id, SUM(payment_amount) AS total_paid
+           FROM payments
+           GROUP BY invoice_id
+         ) pay ON pay.invoice_id = i.invoice_id
+         LEFT JOIN (
+           SELECT invoice_id, SUM(refund_amount) AS total_refunded
+           FROM refunds
+           GROUP BY invoice_id
+         ) ref ON ref.invoice_id = i.invoice_id
+         WHERE a.appointment_date BETWEEN ? AND ?`,
+        [dateFrom, dateTo]
+      );
+
+      const [[newPatientsRow]] = await db.query(
+        `SELECT COUNT(*) AS total_new_patients
+         FROM patients
+         WHERE DATE(created_at) BETWEEN ? AND ?`,
+        [dateFrom, dateTo]
+      );
+
+      const [monthlyTrends] = await db.query(
+        `SELECT
+          DATE_FORMAT(a.appointment_date, '%Y-%m-01') AS period_key,
+          DATE_FORMAT(a.appointment_date, '%b %Y') AS period_label,
+          COUNT(*) AS total_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) IN ('CANCELED', 'CANCELLED') THEN 1 ELSE 0 END) AS cancelled_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) = 'NO_SHOW' THEN 1 ELSE 0 END) AS no_show_appointments,
+          COALESCE(SUM(i.amount), 0) AS total_production,
+          COALESCE(SUM(COALESCE(pay.total_paid, 0) - COALESCE(ref.total_refunded, 0)), 0) AS total_collected,
+          COALESCE(SUM(GREATEST(COALESCE(i.patient_amount, 0) - (COALESCE(pay.total_paid, 0) - COALESCE(ref.total_refunded, 0)), 0)), 0) AS total_outstanding
+         FROM appointments a
+         JOIN appointment_statuses s ON s.status_id = a.status_id
+         LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
+         LEFT JOIN (
+           SELECT invoice_id, SUM(payment_amount) AS total_paid
+           FROM payments
+           GROUP BY invoice_id
+         ) pay ON pay.invoice_id = i.invoice_id
+         LEFT JOIN (
+           SELECT invoice_id, SUM(refund_amount) AS total_refunded
+           FROM refunds
+           GROUP BY invoice_id
+         ) ref ON ref.invoice_id = i.invoice_id
+         WHERE a.appointment_date BETWEEN ? AND ?
+         GROUP BY period_key, period_label
+         ORDER BY period_key ASC`,
+        [dateFrom, dateTo]
+      );
+
+      const [providerPerformance] = await db.query(
+        `SELECT
+          d.doctor_id,
+          CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+          st.phone_number,
+          COUNT(*) AS total_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) IN ('CANCELED', 'CANCELLED') THEN 1 ELSE 0 END) AS cancelled_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) = 'NO_SHOW' THEN 1 ELSE 0 END) AS no_show_appointments,
+          COALESCE(SUM(i.amount), 0) AS total_production,
+          COALESCE(SUM(COALESCE(pay.total_paid, 0) - COALESCE(ref.total_refunded, 0)), 0) AS total_collected,
+          COALESCE(SUM(GREATEST(COALESCE(i.patient_amount, 0) - (COALESCE(pay.total_paid, 0) - COALESCE(ref.total_refunded, 0)), 0)), 0) AS total_outstanding
+         FROM appointments a
+         JOIN appointment_statuses s ON s.status_id = a.status_id
+         JOIN doctors d ON d.doctor_id = a.doctor_id
+         JOIN staff st ON st.staff_id = d.staff_id
+         LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
+         LEFT JOIN (
+           SELECT invoice_id, SUM(payment_amount) AS total_paid
+           FROM payments
+           GROUP BY invoice_id
+         ) pay ON pay.invoice_id = i.invoice_id
+         LEFT JOIN (
+           SELECT invoice_id, SUM(refund_amount) AS total_refunded
+           FROM refunds
+           GROUP BY invoice_id
+         ) ref ON ref.invoice_id = i.invoice_id
+         WHERE a.appointment_date BETWEEN ? AND ?
+         GROUP BY d.doctor_id, st.first_name, st.last_name, st.phone_number
+         ORDER BY total_production DESC, total_appointments DESC, st.last_name ASC`,
+        [dateFrom, dateTo]
+      );
+
+      const [newPatientsTrend] = await db.query(
+        `SELECT
+          DATE_FORMAT(p.created_at, '%Y-%m-01') AS period_key,
+          DATE_FORMAT(p.created_at, '%b %Y') AS period_label,
+          COUNT(*) AS new_patients
+         FROM patients p
+         WHERE DATE(p.created_at) BETWEEN ? AND ?
+         GROUP BY period_key, period_label
+         ORDER BY period_key ASC`,
+        [dateFrom, dateTo]
+      );
+
+      const [outstandingPatients] = await db.query(
+        `SELECT
+          patient_id,
+          patient_name,
+          p_phone,
+          total_invoices,
+          total_charged,
+          insurance_covered,
+          patient_responsibility,
+          patient_paid,
+          patient_due,
+          patient_since
+         FROM vw_report_patient_billing
+         WHERE patient_due > 0
+         ORDER BY patient_due DESC, patient_name ASC
+         LIMIT 10`
+      );
+
+      const totalAppointments = Number(summaryRow?.total_appointments || 0);
+      const completedAppointments = Number(summaryRow?.completed_appointments || 0);
+      const cancelledAppointments = Number(summaryRow?.cancelled_appointments || 0);
+      const noShowAppointments = Number(summaryRow?.no_show_appointments || 0);
+      const totalProduction = Number(summaryRow?.total_production || 0);
+      const totalCollected = Number(summaryRow?.total_collected || 0);
+      const totalRefunded = Number(summaryRow?.total_refunded || 0);
+      const totalOutstanding = Number(summaryRow?.total_outstanding || 0);
+      const totalPatientResponsibility = Number(summaryRow?.total_patient_responsibility || 0);
+      const netCollectionRate = totalPatientResponsibility > 0
+        ? Number((((totalCollected - totalRefunded) / totalPatientResponsibility) * 100).toFixed(2))
+        : 0;
+
+      sendJSON(res, 200, {
+        dateFrom,
+        dateTo,
+        generatedAt: new Date().toISOString(),
+        summary: {
+          totalAppointments,
+          activePatients: Number(summaryRow?.active_patients || 0),
+          newPatients: Number(newPatientsRow?.total_new_patients || 0),
+          completedAppointments,
+          cancelledAppointments,
+          noShowAppointments,
+          scheduledAppointments: Number(summaryRow?.scheduled_appointments || 0),
+          totalProduction,
+          totalCollected,
+          totalRefunded,
+          netCollected: totalCollected - totalRefunded,
+          totalPatientResponsibility,
+          totalOutstanding,
+          completionRate: totalAppointments > 0 ? Number(((completedAppointments / totalAppointments) * 100).toFixed(2)) : 0,
+          cancellationRate: totalAppointments > 0 ? Number(((cancelledAppointments / totalAppointments) * 100).toFixed(2)) : 0,
+          noShowRate: totalAppointments > 0 ? Number(((noShowAppointments / totalAppointments) * 100).toFixed(2)) : 0,
+          collectionRate: netCollectionRate,
+          avgProductionPerAppointment: totalAppointments > 0 ? Number((totalProduction / totalAppointments).toFixed(2)) : 0
+        },
+        monthlyTrends: monthlyTrends || [],
+        providerPerformance: providerPerformance || [],
+        newPatientsTrend: newPatientsTrend || [],
+        outstandingPatients: outstandingPatients || []
+      });
+    })().catch((err) => {
+      console.error('Error generating clinic performance report:', err);
+      sendJSON(res, 500, { error: 'Database error' });
+    });
+  }
+
   function getCancelledAppointments(req, res) {
     pool.query(
       `SELECT
@@ -1514,6 +1777,7 @@ function createAdminHandlers(deps) {
     getAdminScheduledPatients,
     getAdminPatientsReport,
     getAdminStaffReport,
+    getClinicPerformanceReport,
     getAdminDoctors,
     createAdminDoctor,
     getAdminLocations,
