@@ -1365,59 +1365,14 @@ BEGIN
     END IF;
 END $$
 
--- Trigger: Auto-unset existing primary insurance when a new primary is inserted
+-- NOTE:
+-- Do not create one-primary insurance/pharmacy triggers that update the same table
+-- during INSERT/UPDATE. MySQL rejects those with ER 1442 in production.
+-- Primary switching is handled in application transactions.
 DROP TRIGGER IF EXISTS before_insurance_insert_one_primary $$
-CREATE TRIGGER before_insurance_insert_one_primary
-BEFORE INSERT ON insurance
-FOR EACH ROW
-BEGIN
-    IF NEW.is_primary = TRUE THEN
-        UPDATE insurance
-        SET is_primary = FALSE
-        WHERE patient_id = NEW.patient_id AND is_primary = TRUE;
-    END IF;
-END $$
-
--- Trigger: Auto-unset existing primary insurance when a different one is updated to primary
 DROP TRIGGER IF EXISTS before_insurance_update_one_primary $$
-CREATE TRIGGER before_insurance_update_one_primary
-BEFORE UPDATE ON insurance
-FOR EACH ROW
-BEGIN
-    IF NEW.is_primary = TRUE AND OLD.is_primary = FALSE THEN
-        UPDATE insurance
-        SET is_primary = FALSE
-        WHERE patient_id = NEW.patient_id AND is_primary = TRUE
-          AND insurance_id != OLD.insurance_id;
-    END IF;
-END $$
-
--- Trigger: Auto-unset existing primary pharmacy when a new primary is inserted
 DROP TRIGGER IF EXISTS before_patient_pharmacy_insert_one_primary $$
-CREATE TRIGGER before_patient_pharmacy_insert_one_primary
-BEFORE INSERT ON patient_pharmacies
-FOR EACH ROW
-BEGIN
-    IF NEW.is_primary = 1 THEN
-        UPDATE patient_pharmacies
-        SET is_primary = 0
-        WHERE patient_id = NEW.patient_id AND is_primary = 1;
-    END IF;
-END $$
-
--- Trigger: Auto-unset existing primary pharmacy when a different one is updated to primary
 DROP TRIGGER IF EXISTS before_patient_pharmacy_update_one_primary $$
-CREATE TRIGGER before_patient_pharmacy_update_one_primary
-BEFORE UPDATE ON patient_pharmacies
-FOR EACH ROW
-BEGIN
-    IF NEW.is_primary = 1 AND OLD.is_primary = 0 THEN
-        UPDATE patient_pharmacies
-        SET is_primary = 0
-        WHERE patient_id = NEW.patient_id AND is_primary = 1
-          AND patient_pharmacy_id != OLD.patient_pharmacy_id;
-    END IF;
-END $$
 
 -- Trigger: Auto-update invoice payment_status when a payment is recorded
 DROP TRIGGER IF EXISTS after_payment_insert_update_invoice_status $$
