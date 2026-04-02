@@ -6,6 +6,15 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
   }
 
+  function normalizeDateValue(value) {
+    const raw = String(value || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+  }
+
+  function normalizeBooleanValue(value) {
+    return value === true || value === 1 || String(value).toLowerCase() === 'true';
+  }
+
   function normalizeOptionalFilter(value) {
     return String(value || '').trim();
   }
@@ -588,6 +597,8 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                 tp.tooth_number,
                 tp.surface,
                 tp.priority,
+                tp.follow_up_required,
+                tp.follow_up_date,
                 tp.start_date,
                 tp.created_at,
                 tp.notes,
@@ -859,7 +870,13 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     const hasManualEstimatedCost = Number.isFinite(estimatedCostInput) && estimatedCostInput > 0;
     const priority = data?.priority ? String(data.priority).trim() : null;
     const notes = data?.notes ? String(data.notes).trim() : null;
+    const followUpRequired = normalizeBooleanValue(data?.followUpRequired);
+    const followUpDate = followUpRequired ? normalizeDateValue(data?.followUpDate) : null;
     const requestedStatus = data?.statusName ? String(data.statusName).trim().toUpperCase() : 'COMPLETED';
+
+    if (followUpRequired && !followUpDate) {
+      return sendJSON(res, 400, { error: 'Follow-up date is required when follow-up is enabled' });
+    }
 
     getAppointmentContext(appointmentId, doctorId, (ctxErr, context) => {
       if (ctxErr) {
@@ -924,12 +941,14 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                 tooth_number,
                 estimated_cost,
                 priority,
+                follow_up_required,
+                follow_up_date,
                 start_date,
                 notes,
                 created_by,
                 updated_by
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DENTIST_PORTAL', 'DENTIST_PORTAL')`,
-              [context.patient_id, doctorId, surface, safeProcedureCode, statusId, toothNumber, autoEstimatedCost, priority, context.appointment_date || null, notes],
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DENTIST_PORTAL', 'DENTIST_PORTAL')`,
+              [context.patient_id, doctorId, surface, safeProcedureCode, statusId, toothNumber, autoEstimatedCost, priority, followUpRequired ? 1 : 0, followUpDate, context.appointment_date || null, notes],
               (insertErr, insertResult) => {
                 if (insertErr) {
                   conn.release();
@@ -1193,6 +1212,12 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
         if (data.estimatedCost !== undefined) updates.estimated_cost = Number(data.estimatedCost) || 0;
         if (data.priority !== undefined) updates.priority = String(data.priority).trim() || null;
         if (data.notes !== undefined) updates.notes = String(data.notes).trim() || null;
+        if (data.followUpRequired !== undefined) updates.follow_up_required = normalizeBooleanValue(data.followUpRequired) ? 1 : 0;
+        if (data.followUpRequired !== undefined) updates.follow_up_date = normalizeBooleanValue(data.followUpRequired) ? normalizeDateValue(data.followUpDate) : null;
+
+        if (updates.follow_up_required && !updates.follow_up_date) {
+          return sendJSON(res, 400, { error: 'Follow-up date is required when follow-up is enabled' });
+        }
 
         if (Object.keys(updates).length === 0) {
           return sendJSON(res, 400, { error: 'No fields to update' });

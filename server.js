@@ -172,6 +172,61 @@ ensureDoctorNpiPrimaryKey();
   });
 })();
 
+(function ensureTreatmentFollowUpColumns() {
+  const db = pool.promise();
+
+  (async () => {
+    try {
+      const [columns] = await db.query(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'treatment_plans'
+           AND COLUMN_NAME IN ('follow_up_required', 'follow_up_date', 'follow_up_contacted_at', 'follow_up_contacted_by', 'follow_up_contact_note')`
+      );
+
+      const existingColumns = new Set(columns.map((row) => row.COLUMN_NAME));
+
+      if (!existingColumns.has('follow_up_required')) {
+        await db.query(
+          `ALTER TABLE treatment_plans
+             ADD COLUMN follow_up_required TINYINT(1) NOT NULL DEFAULT 0 AFTER priority`
+        );
+      }
+
+      if (!existingColumns.has('follow_up_date')) {
+        await db.query(
+          `ALTER TABLE treatment_plans
+             ADD COLUMN follow_up_date DATE NULL AFTER follow_up_required`
+        );
+      }
+
+      if (!existingColumns.has('follow_up_contacted_at')) {
+        await db.query(
+          `ALTER TABLE treatment_plans
+             ADD COLUMN follow_up_contacted_at DATETIME NULL AFTER follow_up_date`
+        );
+      }
+
+      if (!existingColumns.has('follow_up_contacted_by')) {
+        await db.query(
+          `ALTER TABLE treatment_plans
+             ADD COLUMN follow_up_contacted_by VARCHAR(50) NULL AFTER follow_up_contacted_at`
+        );
+      }
+
+      if (!existingColumns.has('follow_up_contact_note')) {
+        await db.query(
+          `ALTER TABLE treatment_plans
+             ADD COLUMN follow_up_contact_note TEXT NULL AFTER follow_up_contacted_by`
+        );
+      }
+    } catch (err) {
+      console.error('Error ensuring treatment follow-up columns:', err.message);
+    }
+  })();
+})();
+
 pool.query(
   `INSERT INTO appointment_statuses (status_name, display_name, created_by) VALUES
    ('SCHEDULED',   'Scheduled',   'SYSTEM'),

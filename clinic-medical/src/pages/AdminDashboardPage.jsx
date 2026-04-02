@@ -113,6 +113,9 @@ function AdminDashboardPage() {
 
   const [summary, setSummary] = useState(null);
   const [queue, setQueue] = useState({ scheduledAppointments: [], pendingRequests: [], notificationCount: 0 });
+  const [followUpQueue, setFollowUpQueue] = useState({ summary: { overdue: 0, dueToday: 0, upcoming: 0, scheduled: 0, unscheduled: 0 }, items: [] });
+  const [includeScheduledFollowUps, setIncludeScheduledFollowUps] = useState(false);
+
   const [patientReport, setPatientReport] = useState({ summary: null, rows: [] });
   const [doctors, setDoctors] = useState([]);
 
@@ -200,9 +203,10 @@ function AdminDashboardPage() {
     setError('');
 
     try {
-      const [summaryData, queueData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData, refundData, cancelledApptData] = await Promise.all([
+      const [summaryData, queueData, followUpData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData, refundData, cancelledApptData] = await Promise.all([
         fetch(`${API_BASE_URL}/api/admin/dashboard/summary?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/appointments/queue?date=${selectedDate}`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/follow-ups/queue?windowDays=365&includeScheduled=${includeScheduledFollowUps}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/doctors`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff/receptionists`).then(safeJson),
@@ -218,6 +222,10 @@ function AdminDashboardPage() {
 
       setSummary(summaryData);
       setQueue(queueData);
+      setFollowUpQueue({
+        summary: followUpData?.summary || { overdue: 0, dueToday: 0, upcoming: 0, scheduled: 0, unscheduled: 0 },
+        items: Array.isArray(followUpData?.items) ? followUpData.items : []
+      });
       setPatientReport(reportData);
       setDoctors(Array.isArray(doctorData) ? doctorData : []);
       setReceptionists(Array.isArray(receptionistData) ? receptionistData : []);
@@ -321,7 +329,7 @@ function AdminDashboardPage() {
 
   useEffect(() => {
     loadAdminData();
-  }, [selectedDate, reportStatus]);
+  }, [selectedDate, reportStatus, includeScheduledFollowUps]);
 
   useEffect(() => {
     if (reportType === 'staff') {
@@ -717,6 +725,69 @@ function AdminDashboardPage() {
                           <td>{appt.cancelled_by || '—'}</td>
                         </tr>
                       )) : <tr><td colSpan="7">No cancelled appointments.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
+                <h2>Follow-Up Recall Queue</h2>
+                <p className="muted">
+                  Overdue: {followUpQueue.summary?.overdue || 0} | Due Today: {followUpQueue.summary?.dueToday || 0} | Upcoming: {followUpQueue.summary?.upcoming || 0} | Unscheduled: {followUpQueue.summary?.unscheduled || 0}
+                </p>
+                <label className="admin-inline-filter" style={{ marginBottom: '0.6rem', display: 'inline-flex' }}>
+                  <input
+                    type="checkbox"
+                    checked={includeScheduledFollowUps}
+                    onChange={(e) => setIncludeScheduledFollowUps(e.target.checked)}
+                    style={{ marginRight: '0.45rem' }}
+                  />
+                  Include already scheduled patients
+                </label>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Patient</th>
+                        <th>Phone</th>
+                        <th>Follow-Up Date</th>
+                        <th>Status</th>
+                        <th>Procedures</th>
+                        <th>Suggested Dentist</th>
+                        <th>Next Appointment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {followUpQueue.items?.length ? followUpQueue.items.map((item) => (
+                        <tr key={`${item.patientId}-${item.followUpDate}`}>
+                          <td>{item.patientName}</td>
+                          <td>{item.phone || 'N/A'}</td>
+                          <td>{formatDate(item.followUpDate)}</td>
+                          <td>
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                padding: '0.15rem 0.45rem',
+                                borderRadius: '999px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                background: item.dueState === 'OVERDUE' ? '#f8d7da' : item.dueState === 'DUE_TODAY' ? '#fff3cd' : '#e7f1ff',
+                                color: item.dueState === 'OVERDUE' ? '#721c24' : item.dueState === 'DUE_TODAY' ? '#856404' : '#1f4d7a'
+                              }}
+                            >
+                              {item.dueState === 'OVERDUE' ? `Overdue (${Math.abs(Number(item.daysUntilDue || 0))}d)` : item.dueState === 'DUE_TODAY' ? 'Due Today' : `Upcoming (${Number(item.daysUntilDue || 0)}d)`}
+                            </span>
+                            {item.isAlreadyScheduled && (
+                              <span style={{ marginLeft: '0.4rem', fontSize: '0.75rem', color: '#155724', fontWeight: 700 }}>
+                                Scheduled
+                              </span>
+                            )}
+                          </td>
+                          <td>{Array.isArray(item.procedureCodes) && item.procedureCodes.length ? item.procedureCodes.join(', ') : 'N/A'}</td>
+                          <td>{item.suggestedDoctorName || 'Any available dentist'}</td>
+                          <td>{item.nextAppointmentDate ? formatDate(item.nextAppointmentDate) : 'Not booked'}</td>
+                        </tr>
+                      )) : <tr><td colSpan="7">No follow-ups due in the selected recall window.</td></tr>}
                     </tbody>
                   </table>
                 </div>
