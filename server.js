@@ -146,14 +146,79 @@ ensureDoctorNpiPrimaryKey();
     if (completed === totalCols) {
       // All location columns ready — seed contact data
       const contactData = [
-        { zip: '77004', phone: '(832) 461-3355', email: 'houston@brightdental.com', fax: '(832) 461-3356' },
-        { zip: '77479', phone: '(281) 555-0199', email: 'sugarland@brightdental.com', fax: '(281) 555-0200' },
-        { zip: '77002', phone: '(713) 555-0142', email: 'downtown@brightdental.com', fax: '(713) 555-0143' }
+        {
+          city: 'Houston',
+          state: 'TX',
+          streetNo: '4302',
+          streetName: 'University Dr',
+          zip: '77004',
+          phone: '(832) 461-3355',
+          email: 'houston-university@brightdental.com',
+          fax: '(832) 461-3356'
+        },
+        {
+          city: 'Sugar Land',
+          state: 'TX',
+          streetNo: '14000',
+          streetName: 'University Blvd',
+          zip: '77479',
+          phone: '(281) 555-0199',
+          email: 'sugarland-university@brightdental.com',
+          fax: '(281) 555-0200'
+        },
+        {
+          city: 'Houston',
+          state: 'TX',
+          streetNo: '1',
+          streetName: 'Main St',
+          zip: '77002',
+          phone: '(713) 555-0142',
+          email: 'houston-main@brightdental.com',
+          fax: '(713) 555-0143'
+        },
+        {
+          city: 'Houston',
+          state: 'TX',
+          streetNo: '3412',
+          streetName: 'Fannin St',
+          zip: '77004',
+          phone: '(832) 461-4455',
+          email: 'houston-fannin@brightdental.com',
+          fax: '(832) 461-4456'
+        },
+        {
+          city: 'Sugar Land',
+          state: 'TX',
+          streetNo: '1540',
+          streetName: 'Main St',
+          zip: '77479',
+          phone: '(281) 555-1299',
+          email: 'sugarland-main@brightdental.com',
+          fax: '(281) 555-1300'
+        },
+        {
+          city: 'Houston',
+          state: 'TX',
+          streetNo: '1001',
+          streetName: 'Congress Ave',
+          zip: '77002',
+          phone: '(713) 555-2242',
+          email: 'houston-congress@brightdental.com',
+          fax: '(713) 555-2243'
+        }
       ];
-      contactData.forEach(({ zip, phone, email, fax }) => {
+      contactData.forEach(({ city, state, streetNo, streetName, zip, phone, email, fax }) => {
         pool.query(
-          `UPDATE locations SET loc_phone = COALESCE(loc_phone, ?), loc_email = COALESCE(loc_email, ?), loc_fax = COALESCE(loc_fax, ?) WHERE loc_zip_code = ?`,
-          [phone, email, fax, zip],
+          `UPDATE locations
+             SET loc_phone = COALESCE(loc_phone, ?),
+                 loc_email = COALESCE(loc_email, ?),
+                 loc_fax = COALESCE(loc_fax, ?)
+           WHERE location_city = ?
+             AND location_state = ?
+             AND loc_street_no = ?
+             AND loc_street_name = ?
+             AND loc_zip_code = ?`,
+          [phone, email, fax, city, state, streetNo, streetName, zip],
           (err) => {
             if (err) console.error('Error seeding location contact info:', err.message);
           }
