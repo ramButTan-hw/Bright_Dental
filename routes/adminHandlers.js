@@ -778,20 +778,80 @@ function createAdminHandlers(deps) {
 
 
   function approveAdminDoctorTimeOff(req, timeOffId, res) {
-    pool.query(
-      `UPDATE doctor_time_off SET is_approved = TRUE, updated_by = 'ADMIN_PORTAL' WHERE time_off_id = ?`,
-      [timeOffId],
-      (err, result) => {
-        if (err) {
-          console.error('Error approving time off:', err);
-          return sendJSON(res, 500, { error: 'Database error' });
-        }
-        if (result.affectedRows === 0) {
-          return sendJSON(res, 404, { error: 'Time-off entry not found' });
-        }
-        sendJSON(res, 200, { message: 'Time-off approved' });
+    pool.promise().query(
+      `SELECT dto.time_off_id, dto.doctor_id, dto.start_datetime, dto.end_datetime,
+              CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, '')) AS doctor_name
+       FROM doctor_time_off dto
+       JOIN doctors d ON d.doctor_id = dto.doctor_id
+       JOIN staff st ON st.staff_id = d.staff_id
+       WHERE dto.time_off_id = ?
+       LIMIT 1`,
+      [timeOffId]
+    ).then(async ([rows]) => {
+      const request = rows?.[0] || null;
+      if (!request) {
+        sendJSON(res, 404, { error: 'Time-off entry not found' });
+        return;
       }
-    );
+
+      const [updateResult] = await pool.promise().query(
+        `UPDATE doctor_time_off SET is_approved = TRUE, updated_by = 'ADMIN_PORTAL' WHERE time_off_id = ?`,
+        [timeOffId]
+      );
+
+      if (!updateResult.affectedRows) {
+        sendJSON(res, 404, { error: 'Time-off entry not found' });
+        return;
+      }
+
+      const [[countRow]] = await pool.promise().query(
+        `SELECT COUNT(*) AS affected_count, MIN(a.patient_id) AS patient_id
+         FROM appointments a
+         JOIN appointment_statuses s ON s.status_id = a.status_id
+         WHERE a.doctor_id = ?
+           AND s.status_name NOT IN ('CANCELLED', 'COMPLETED')
+           AND TIMESTAMP(a.appointment_date, a.appointment_time) >= ?
+           AND TIMESTAMP(a.appointment_date, a.appointment_time) < ?`,
+        [request.doctor_id, request.start_datetime, request.end_datetime]
+      );
+
+      const affectedCount = Number(countRow?.affected_count || 0);
+      const patientId = Number(countRow?.patient_id || 0);
+
+      if (affectedCount > 0 && patientId > 0) {
+        await pool.promise().query(
+          `INSERT INTO receptionist_notifications (
+             source_table,
+             source_request_id,
+             patient_id,
+             notification_type,
+             message,
+             is_read,
+             read_at,
+             created_by,
+             updated_by
+           ) VALUES (?, ?, ?, 'DOCTOR_TIME_OFF', ?, FALSE, NULL, 'ADMIN_PORTAL', 'ADMIN_PORTAL')
+           ON DUPLICATE KEY UPDATE
+             patient_id = VALUES(patient_id),
+             notification_type = VALUES(notification_type),
+             message = VALUES(message),
+             is_read = FALSE,
+             read_at = NULL,
+             updated_by = VALUES(updated_by)`,
+          [
+            'doctor_time_off',
+            timeOffId,
+            patientId,
+            `Doctor time off approved for ${request.doctor_name || `doctor #${request.doctor_id}`}. ${affectedCount} appointment${affectedCount === 1 ? '' : 's'} were cancelled and need rescheduling.`
+          ]
+        );
+      }
+
+      sendJSON(res, 200, { message: 'Time-off approved' });
+    }).catch((err) => {
+      console.error('Error approving time off:', err);
+      sendJSON(res, 500, { error: 'Database error' });
+    });
   }
 
   function denyAdminDoctorTimeOff(req, timeOffId, res) {
