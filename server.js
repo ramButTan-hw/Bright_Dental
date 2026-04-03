@@ -538,52 +538,6 @@ pool.query(
   }
 );
 
-pool.query(
-  `CREATE TABLE IF NOT EXISTS insurance_change_requests (
-    request_id INT AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT NOT NULL,
-    insurance_id INT,
-    change_type ENUM('ADD', 'UPDATE', 'REMOVE') NOT NULL,
-    company_id INT,
-    member_id VARCHAR(50),
-    group_number VARCHAR(50),
-    is_primary BOOLEAN DEFAULT FALSE,
-    request_status ENUM('PENDING', 'APPROVED', 'DENIED') NOT NULL DEFAULT 'PENDING',
-    patient_note TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50),
-    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
-    FOREIGN KEY (insurance_id) REFERENCES insurance(insurance_id) ON DELETE SET NULL,
-    FOREIGN KEY (company_id) REFERENCES insurance_companies(company_id)
-  )`,
-  (err) => {
-    if (err && !err.message.includes('already exists')) console.error('Create insurance_change_requests table:', err.message);
-  }
-);
-
-pool.query(
-  `CREATE TABLE IF NOT EXISTS pharmacy_change_requests (
-    request_id INT AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT NOT NULL,
-    patient_pharmacy_id INT,
-    change_type ENUM('ADD', 'REMOVE') NOT NULL,
-    pharm_id INT,
-    is_primary TINYINT(1) DEFAULT 0,
-    request_status ENUM('PENDING', 'APPROVED', 'DENIED') NOT NULL DEFAULT 'PENDING',
-    patient_note TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50),
-    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
-    FOREIGN KEY (patient_pharmacy_id) REFERENCES patient_pharmacies(patient_pharmacy_id) ON DELETE SET NULL,
-    FOREIGN KEY (pharm_id) REFERENCES pharmacies(pharm_id) ON DELETE SET NULL
-  )`,
-  (err) => {
-    if (err && !err.message.includes('already exists')) console.error('Create pharmacy_change_requests table:', err.message);
-  }
-);
-
 pool.query('DROP TRIGGER IF EXISTS insurance_change_requests_create_notification', () => {
   pool.query(`CREATE TRIGGER insurance_change_requests_create_notification
 AFTER INSERT ON insurance_change_requests

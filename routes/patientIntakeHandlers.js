@@ -558,6 +558,46 @@ function createPatientIntakeHandlers(deps) {
             }
           };
 
+        const clearDoctorTimeOffNotificationTask = (callback) => {
+          if (!isReschedule || !appointmentId) {
+            return callback();
+          }
+
+          conn.query(
+            `SELECT COUNT(*) AS remaining_count
+             FROM appointments a
+             JOIN appointment_statuses ast ON ast.status_id = a.status_id
+             WHERE a.patient_id = ?
+               AND ast.status_name = 'CANCELLED'
+               AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
+               AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)`,
+            [patientId],
+            (countErr, countRows) => {
+              if (countErr) {
+                return callback(countErr);
+              }
+
+              const remainingCount = Number(countRows?.[0]?.remaining_count || 0);
+              if (remainingCount > 0) {
+                return callback();
+              }
+
+              conn.query(
+                `UPDATE receptionist_notifications
+                 SET is_read = TRUE,
+                     read_at = NOW(),
+                     updated_by = 'PATIENT_PORTAL'
+                 WHERE patient_id = ?
+                   AND notification_type = 'DOCTOR_TIME_OFF'
+                   AND source_table = 'doctor_time_off'
+                   AND is_read = FALSE`,
+                [patientId],
+                (notificationErr) => callback(notificationErr)
+              );
+            }
+          );
+        };
+
         enforceCreateRulesTask((ruleErr) => {
           if (ruleErr) {
             return conn.rollback(() => {
@@ -579,85 +619,95 @@ function createPatientIntakeHandlers(deps) {
                 });
             }
 
-            saveIntakeData(
-                conn,
-                patientId,
-                medicalHistory,
-                medicalHistoryOtherText,
-                adverseReactions,
-                medications,
-                dentalFindings,
-                dentalHistory,
-                sleepSocial,
-                tobacco,
-                caffeine,
-                painAssessment,
-                (intakeErr) => {
-                  if (intakeErr) {
-                    return conn.rollback(() => {
-                      conn.release();
-                      console.error('Error saving updated intake data:', intakeErr);
-                      sendJSON(res, 500, { error: 'Failed to save updated medical information' });
-                    });
-                  }
-      
-                  conn.query(
-                    `INSERT INTO appointment_preference_requests (
-                      patient_id,
-                      preferred_date,
-                      preferred_time,
-                      preferred_location,
-                      available_days,
-                      available_times,
-                      appointment_reason,
-                      request_status,
-                      created_by,
-                      updated_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
-                    [
-                      patientId,
-                      preferredDate,
-                      preferredTime,
-                      normalizedPreferredLocation,
-                      preferredWeekdays.join(', '),
-                      preferredTimes.join(', '),
-                      String(reason).trim()
-                    ],
-                    (preferenceErr, preferenceResult) => {
-                      if (preferenceErr) {
-                        return conn.rollback(() => {
-                          conn.release();
-                          console.error('Error saving new appointment preference request:', preferenceErr);
-                          sendJSON(res, 500, { error: 'Failed to save appointment preference' });
-                        });
-                      }
-      
-                      conn.commit((commitErr) => {
+            clearDoctorTimeOffNotificationTask((notificationErr) => {
+              if (notificationErr) {
+                return conn.rollback(() => {
+                  conn.release();
+                  console.error('Error clearing doctor time off notification:', notificationErr);
+                  sendJSON(res, 500, { error: 'Failed to update doctor time off notification' });
+                });
+              }
+
+              saveIntakeData(
+                  conn,
+                  patientId,
+                  medicalHistory,
+                  medicalHistoryOtherText,
+                  adverseReactions,
+                  medications,
+                  dentalFindings,
+                  dentalHistory,
+                  sleepSocial,
+                  tobacco,
+                  caffeine,
+                  painAssessment,
+                  (intakeErr) => {
+                    if (intakeErr) {
+                      return conn.rollback(() => {
                         conn.release();
-                        if (commitErr) {
+                        console.error('Error saving updated intake data:', intakeErr);
+                        sendJSON(res, 500, { error: 'Failed to save updated medical information' });
+                      });
+                    }
+      
+                    conn.query(
+                      `INSERT INTO appointment_preference_requests (
+                        patient_id,
+                        preferred_date,
+                        preferred_time,
+                        preferred_location,
+                        available_days,
+                        available_times,
+                        appointment_reason,
+                        request_status,
+                        created_by,
+                        updated_by
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
+                      [
+                        patientId,
+                        preferredDate,
+                        preferredTime,
+                        normalizedPreferredLocation,
+                        preferredWeekdays.join(', '),
+                        preferredTimes.join(', '),
+                        String(reason).trim()
+                      ],
+                      (preferenceErr, preferenceResult) => {
+                        if (preferenceErr) {
                           return conn.rollback(() => {
-                            console.error('Commit failed:', commitErr);
-                            sendJSON(res, 500, { error: 'Failed to submit new appointment request' });
+                            conn.release();
+                            console.error('Error saving new appointment preference request:', preferenceErr);
+                            sendJSON(res, 500, { error: 'Failed to save appointment preference' });
                           });
                         }
       
-                        sendJSON(res, 201, {
-                          message: 'New appointment request submitted successfully.',
-                          appointmentPreferenceRequestId: preferenceResult.insertId,
-                          appointmentConfirmation: {
-                            date: preferredDate,
-                            startTime: preferredTime,
-                            availabilityDays: preferredWeekdays,
-                            availabilityTimes: preferredTimes,
-                            status: 'PREFERRED_PENDING',
-                            note: 'Your updated medical details and availability were received. Our receptionist will contact you to finalize your appointment.'
+                        conn.commit((commitErr) => {
+                          conn.release();
+                          if (commitErr) {
+                            return conn.rollback(() => {
+                              console.error('Commit failed:', commitErr);
+                              sendJSON(res, 500, { error: 'Failed to submit new appointment request' });
+                            });
                           }
+      
+                          sendJSON(res, 201, {
+                            message: 'New appointment request submitted successfully.',
+                            appointmentPreferenceRequestId: preferenceResult.insertId,
+                            appointmentConfirmation: {
+                              date: preferredDate,
+                              startTime: preferredTime,
+                              availabilityDays: preferredWeekdays,
+                              availabilityTimes: preferredTimes,
+                              status: 'PREFERRED_PENDING',
+                              note: 'Your updated medical details and availability were received. Our receptionist will contact you to finalize your appointment.'
+                            }
+                          });
                         });
-                      });
-                    }
-                  );
-                }
-              );
+                      }
+                    );
+                  }
+                );
+            });
           });
         });
       });
