@@ -2349,35 +2349,39 @@ function createAdminHandlers(deps) {
     ).then(async ([rows]) => {
       const cancelledRows = rows || [];
 
-      const [cancelledCounts] = await pool.promise().query(
-        `SELECT a.patient_id, COUNT(*) AS cancelled_count
+      const [activeAppointments] = await pool.promise().query(
+        `SELECT a.patient_id, a.created_at, TIMESTAMP(a.appointment_date, a.appointment_time) AS active_datetime
          FROM appointments a
          JOIN appointment_statuses ast ON ast.status_id = a.status_id
-         WHERE ast.status_name = 'CANCELLED'
-           AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
-           AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-         GROUP BY a.patient_id`
+         WHERE ast.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')`
       );
 
-      const [activeCounts] = await pool.promise().query(
-        `SELECT a.patient_id, COUNT(*) AS active_count
-         FROM appointments a
-         JOIN appointment_statuses ast ON ast.status_id = a.status_id
-         WHERE ast.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
-         GROUP BY a.patient_id`
-      );
-
-      const activeCountByPatient = new Map((activeCounts || []).map((row) => [Number(row.patient_id), Number(row.active_count || 0)]));
-      const unresolvedCount = (cancelledCounts || []).reduce((total, row) => {
+      const activeByPatient = new Map();
+      (activeAppointments || []).forEach((row) => {
         const patientId = Number(row.patient_id);
-        const cancelledCount = Number(row.cancelled_count || 0);
-        const activeCount = activeCountByPatient.get(patientId) || 0;
-        return total + Math.max(cancelledCount - activeCount, 0);
-      }, 0);
+        const activeDateTime = new Date(String(row.active_datetime || ''));
+        const activeCreatedAt = new Date(String(row.created_at || ''));
+        if (!activeByPatient.has(patientId)) {
+          activeByPatient.set(patientId, []);
+        }
+        activeByPatient.get(patientId).push({ activeDateTime, activeCreatedAt });
+      });
+
+      const unresolvedRows = cancelledRows.filter((row) => {
+        const patientId = Number(row.patient_id);
+        const cancelledDateTime = new Date(`${String(row.appointment_date).slice(0, 10)}T${String(row.appointment_time).slice(0, 8)}`);
+        const cancelledCreatedAt = new Date(String(row.cancelled_at || row.updated_at || row.created_at || ''));
+        const replacements = activeByPatient.get(patientId) || [];
+        return !replacements.some((activeRow) => {
+          const activeDateTime = activeRow.activeDateTime;
+          const activeCreatedAt = activeRow.activeCreatedAt;
+          return activeDateTime >= cancelledDateTime && activeCreatedAt >= cancelledCreatedAt;
+        });
+      });
 
       sendJSON(res, 200, {
         items: cancelledRows,
-        unresolvedCount
+        unresolvedCount: unresolvedRows.length
       });
     }).catch((err) => {
       console.error('Error fetching system-cancelled appointments:', err);
