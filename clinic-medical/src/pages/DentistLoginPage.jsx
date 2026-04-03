@@ -160,12 +160,7 @@ function DentistLoginPage() {
   today.setHours(0, 0, 0, 0);
   
   const pastAppointments = allAppointments.filter((appt) => {
-    const status = getAppointmentStatus(appt);
-    if (status !== 'COMPLETED') {
-      return false;
-    }
-    const apptDate = new Date(`${String(appt.appointment_date || '').slice(0, 10)}T00:00:00`);
-    return !Number.isNaN(apptDate.getTime()) && apptDate.getTime() < today.getTime();
+    return getAppointmentStatus(appt) === 'COMPLETED';
   }).sort((a, b) => {
     return toAppointmentTimestamp(b) - toAppointmentTimestamp(a);
   });
