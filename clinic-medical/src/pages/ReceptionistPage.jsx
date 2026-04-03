@@ -182,6 +182,7 @@ function ReceptionistPage() {
   const [isSubmittingTimeOff, setIsSubmittingTimeOff] = useState(false);
   const [mySchedule, setMySchedule] = useState([]);
   const [systemCancelledAppts, setSystemCancelledAppts] = useState([]);
+  const [systemCancelledUnresolvedCount, setSystemCancelledUnresolvedCount] = useState(0);
   const [dismissFallbackDoctorToast, setDismissFallbackDoctorToast] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState(() => {
@@ -570,7 +571,7 @@ function ReceptionistPage() {
   };
 
   const loadCore = async () => {
-    const [requestsData, timeOffData, locationData, departmentsData, scheduleData, notificationsData, insuranceChangeData, pharmacyChangeData, followUpData] = await Promise.all([
+    const [requestsData, timeOffData, locationData, departmentsData, scheduleData, notificationsData, insuranceChangeData, pharmacyChangeData, followUpData, systemCancelledData] = await Promise.all([
       fetchWithTimeout(`${API_BASE_URL}/api/appointments/preference-requests`).then(safeJson),
       session?.staffId
         ? fetchWithTimeout(`${API_BASE_URL}/api/staff/time-off-requests?staffId=${encodeURIComponent(session.staffId)}`).then(safeJson)
@@ -583,7 +584,8 @@ function ReceptionistPage() {
       fetchWithTimeout(`${API_BASE_URL}/api/reception/notifications`).then(safeJson),
       fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson),
       fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson),
-      fetchWithTimeout(`${API_BASE_URL}/api/reception/follow-ups/queue?windowDays=365&includeScheduled=${includeScheduledFollowUps}`).then(safeJson)
+      fetchWithTimeout(`${API_BASE_URL}/api/reception/follow-ups/queue?windowDays=365&includeScheduled=${includeScheduledFollowUps}`).then(safeJson),
+      fetchWithTimeout(`${API_BASE_URL}/api/admin/system-cancelled-appointments`).then(safeJson)
     ]);
 
     setRequests(Array.isArray(requestsData) ? requestsData : []);
@@ -598,6 +600,8 @@ function ReceptionistPage() {
       summary: followUpData?.summary || { overdue: 0, dueToday: 0, upcoming: 0, scheduled: 0, unscheduled: 0 },
       items: Array.isArray(followUpData?.items) ? followUpData.items : []
     });
+    setSystemCancelledAppts(Array.isArray(systemCancelledData?.items) ? systemCancelledData.items : (Array.isArray(systemCancelledData) ? systemCancelledData : []));
+    setSystemCancelledUnresolvedCount(Number(systemCancelledData?.unresolvedCount ?? (Array.isArray(systemCancelledData) ? systemCancelledData.length : 0)));
     await loadAppointmentsForDate(selectedDate);
   };
 
@@ -605,11 +609,11 @@ function ReceptionistPage() {
   const unreadNotificationCount = visibleNotifications.length;
   const latestNotification = visibleNotifications[0] || null;
   const doctorTimeOffNotification = visibleNotifications.find((notification) => notification.notification_type === 'DOCTOR_TIME_OFF') || null;
-  const shouldShowFallbackDoctorToast = !doctorTimeOffNotification && !dismissFallbackDoctorToast && systemCancelledAppts.length > 0;
+  const shouldShowFallbackDoctorToast = !doctorTimeOffNotification && !dismissFallbackDoctorToast && systemCancelledUnresolvedCount > 0;
   const fallbackDoctorTimeOffToast = shouldShowFallbackDoctorToast
     ? {
       notification_id: null,
-      message: `${systemCancelledAppts.length} appointment${systemCancelledAppts.length === 1 ? '' : 's'} were cancelled by doctor time off in the last 30 days. Review cancellations to reschedule patients.`
+      message: `${systemCancelledUnresolvedCount} appointment${systemCancelledUnresolvedCount === 1 ? '' : 's'} were cancelled by doctor time off and still need rescheduling.`
     }
     : null;
   const activeDoctorTimeOffToast = doctorTimeOffNotification || fallbackDoctorTimeOffToast;
@@ -783,15 +787,8 @@ function ReceptionistPage() {
   }, [API_BASE_URL, session?.staffId, includeScheduledFollowUps]);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/admin/system-cancelled-appointments`)
-      .then((res) => res.ok ? res.json() : Promise.resolve([]))
-      .then((data) => setSystemCancelledAppts(Array.isArray(data) ? data : []))
-      .catch(() => {});
-  }, [API_BASE_URL]);
-
-  useEffect(() => {
     setDismissFallbackDoctorToast(false);
-  }, [systemCancelledAppts.length]);
+  }, [systemCancelledUnresolvedCount]);
 
   const checkInPatient = async (appointmentId) => {
     await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/check-in`, {

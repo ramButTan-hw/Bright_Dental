@@ -2326,9 +2326,10 @@ function createAdminHandlers(deps) {
   }
 
   function getSystemCancelledAppointments(req, res) {
-    pool.query(
+    pool.promise().query(
       `SELECT
          a.appointment_id,
+         a.patient_id,
          a.appointment_date,
          a.appointment_time,
          CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
@@ -2344,15 +2345,44 @@ function createAdminHandlers(deps) {
        WHERE ast.status_name = 'CANCELLED'
          AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
          AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-       ORDER BY a.updated_at DESC`,
-      (err, rows) => {
-        if (err) {
-          console.error('Error fetching system-cancelled appointments:', err);
-          return sendJSON(res, 500, { error: 'Database error' });
-        }
-        sendJSON(res, 200, rows || []);
-      }
-    );
+       ORDER BY a.updated_at DESC`
+    ).then(async ([rows]) => {
+      const cancelledRows = rows || [];
+
+      const [cancelledCounts] = await pool.promise().query(
+        `SELECT a.patient_id, COUNT(*) AS cancelled_count
+         FROM appointments a
+         JOIN appointment_statuses ast ON ast.status_id = a.status_id
+         WHERE ast.status_name = 'CANCELLED'
+           AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
+           AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+         GROUP BY a.patient_id`
+      );
+
+      const [activeCounts] = await pool.promise().query(
+        `SELECT a.patient_id, COUNT(*) AS active_count
+         FROM appointments a
+         JOIN appointment_statuses ast ON ast.status_id = a.status_id
+         WHERE ast.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
+         GROUP BY a.patient_id`
+      );
+
+      const activeCountByPatient = new Map((activeCounts || []).map((row) => [Number(row.patient_id), Number(row.active_count || 0)]));
+      const unresolvedCount = (cancelledCounts || []).reduce((total, row) => {
+        const patientId = Number(row.patient_id);
+        const cancelledCount = Number(row.cancelled_count || 0);
+        const activeCount = activeCountByPatient.get(patientId) || 0;
+        return total + Math.max(cancelledCount - activeCount, 0);
+      }, 0);
+
+      sendJSON(res, 200, {
+        items: cancelledRows,
+        unresolvedCount
+      });
+    }).catch((err) => {
+      console.error('Error fetching system-cancelled appointments:', err);
+      sendJSON(res, 500, { error: 'Database error' });
+    });
   }
 
   return {
