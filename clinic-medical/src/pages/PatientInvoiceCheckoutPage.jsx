@@ -342,7 +342,7 @@ function PatientInvoiceCheckoutPage() {
                       const raw = val.replace(/\//g, '');
                       if (raw.length >= 3) {
                         val = raw.slice(0, 2) + '/' + raw.slice(2, 4);
-                      } else if (raw.length === 2 && cardExpiry.length < val.length) {
+                      } else if (raw.length === 2 && !val.includes('/')) {
                         val = raw + '/';
                       }
                       setCardExpiry(val.slice(0, 5));

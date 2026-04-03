@@ -34,8 +34,13 @@ function createAdminHandlers(deps) {
         SELECT COALESCE(SUM(insurance_covered_amount), 0) AS value FROM invoices
       `);
       
-      // Patient collections = actual payments from patients
-      const [[patientPayments]] = await db.query('SELECT COALESCE(SUM(payment_amount), 0) AS value FROM payments');
+      // Patient collections = payments applied toward patient invoice balances (capped at patient_amount per invoice)
+      const [[patientPayments]] = await db.query(`
+        SELECT COALESCE(SUM(LEAST(COALESCE(pay.total_paid, 0), COALESCE(i.patient_amount, 0))), 0) AS value
+        FROM invoices i
+        LEFT JOIN (SELECT invoice_id, SUM(payment_amount) AS total_paid FROM payments GROUP BY invoice_id) pay
+          ON pay.invoice_id = i.invoice_id
+      `);
       
       const collected = parseFloat(actualPayments?.value) || 0;
       const insuranceCollected = parseFloat(insuranceCoverageTotal?.value) || 0;

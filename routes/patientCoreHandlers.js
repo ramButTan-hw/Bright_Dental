@@ -161,7 +161,9 @@ function createPatientCoreHandlers(deps) {
         return sendJSON(res, 401, { error: 'Invalid credentials' });
       }
 
-      pool.query(queries.updateLastLogin, [user.user_id]);
+      pool.query(queries.updateLastLogin, [user.user_id], (err) => {
+        if (err) console.error('Failed to update last login for user', user.user_id, ':', err.message);
+      });
 
       const token = crypto.randomBytes(32).toString('hex');
 
@@ -244,13 +246,17 @@ function createPatientCoreHandlers(deps) {
           const [updateResult] = await conn.promise().query(
             `UPDATE appointments
              SET status_id = ?, reason_id = ?, updated_by = 'PATIENT_PORTAL'
-             WHERE appointment_id = ? AND patient_id = ?`,
+             WHERE appointment_id = ? AND patient_id = ?
+               AND status_id NOT IN (
+                 SELECT status_id FROM appointment_statuses
+                 WHERE status_name IN ('CANCELLED', 'COMPLETED')
+               )`,
             [cancelledStatusId, reasonId, appointmentId, patientId]
           );
 
           if (!updateResult.affectedRows) {
             conn.release();
-            return sendJSON(res, 404, { error: 'Appointment not found' });
+            return sendJSON(res, 404, { error: 'Appointment not found or cannot be cancelled' });
           }
 
           // Also cancel any ASSIGNED preference requests linked to this appointment

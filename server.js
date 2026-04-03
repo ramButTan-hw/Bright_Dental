@@ -354,7 +354,7 @@ BEGIN
               AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
         END IF;
     END IF;
-END`, (err) => { if (err) console.error('Create after_doctor_time_off_insert trigger error:', err.message); });
+END`, (err) => { if (err) console.error('[CRITICAL] after_doctor_time_off_insert trigger failed to create — doctor time-off will NOT auto-cancel appointments:', err.message); });
 });
 
 // Doctor time-off update trigger: cancel appointments when time-off is explicitly approved
@@ -380,7 +380,7 @@ BEGIN
               AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
         END IF;
     END IF;
-END`, (err) => { if (err) console.error('Create after_doctor_time_off_update trigger error:', err.message); });
+END`, (err) => { if (err) console.error('[CRITICAL] after_doctor_time_off_update trigger failed to create — approving time-off will NOT auto-cancel appointments:', err.message); });
 });
 
 // Appointment status state machine: block invalid status transitions
@@ -403,7 +403,7 @@ BEGIN
                 SET MESSAGE_TEXT = 'A checked-in appointment can only be marked Completed or Cancelled';
         END IF;
     END IF;
-END`, (err) => { if (err) console.error('Create appointments_enforce_status_transition trigger error:', err.message); });
+END`, (err) => { if (err) console.error('[CRITICAL] appointments_enforce_status_transition trigger failed to create — invalid status transitions will NOT be blocked:', err.message); });
 });
 
 // Staff time-off approval trigger: cancel a doctor's appointments when their staff request is approved
@@ -433,7 +433,7 @@ BEGIN
             END IF;
         END IF;
     END IF;
-END`, (err) => { if (err) console.error('Create after_staff_time_off_approved trigger error:', err.message); });
+END`, (err) => { if (err) console.error('[CRITICAL] after_staff_time_off_approved trigger failed to create — approving staff time-off will NOT auto-cancel doctor appointments:', err.message); });
 });
 
 // Doctor hidden trigger: cancel future appointments when a doctor's account is deactivated
@@ -470,7 +470,7 @@ BEGIN
             END IF;
         END IF;
     END IF;
-END`, (err) => { if (err) console.error('Create after_staff_hidden_cancel_appointments trigger error:', err.message); });
+END`, (err) => { if (err) console.error('[CRITICAL] after_staff_hidden_cancel_appointments trigger failed to create — deactivating a doctor will NOT auto-cancel their appointments:', err.message); });
 });
 
 
@@ -595,7 +595,7 @@ pool.query(
     source_table VARCHAR(50) NOT NULL,
     source_request_id INT NOT NULL,
     patient_id INT NOT NULL,
-    notification_type ENUM('INSURANCE_CHANGE_REQUEST', 'PHARMACY_CHANGE_REQUEST') NOT NULL,
+    notification_type ENUM('INSURANCE_CHANGE_REQUEST', 'PHARMACY_CHANGE_REQUEST', 'DOCTOR_TIME_OFF') NOT NULL,
     message VARCHAR(255) NOT NULL,
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     read_at TIMESTAMP NULL DEFAULT NULL,

@@ -1329,8 +1329,10 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
               ? lookupRows[0].start_date.toISOString().slice(0, 10)
               : String(lookupRows[0].start_date || '').slice(0, 10);
 
-            const setClauses = Object.keys(updates).map((col) => `${col} = ?`).join(', ');
-            const values = [...Object.values(updates), planId, doctorId];
+            const ALLOWED_COLS = new Set(['procedure_code', 'tooth_number', 'surface', 'estimated_cost', 'priority', 'notes', 'follow_up_required', 'follow_up_date', 'updated_by']);
+            const safeKeys = Object.keys(updates).filter((col) => ALLOWED_COLS.has(col));
+            const setClauses = safeKeys.map((col) => `${col} = ?`).join(', ');
+            const values = [...safeKeys.map((col) => updates[col]), planId, doctorId];
 
             pool.query(
               `UPDATE treatment_plans SET ${setClauses} WHERE plan_id = ? AND doctor_id = ?`,
