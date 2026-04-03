@@ -558,43 +558,18 @@ function createPatientIntakeHandlers(deps) {
             }
           };
 
-        const clearDoctorTimeOffNotificationTask = (callback) => {
+        const deleteDoctorTimeOffNotificationTask = (callback) => {
           if (!isReschedule || !appointmentId) {
             return callback();
           }
 
           conn.query(
-            `SELECT COUNT(*) AS remaining_count
-             FROM appointments a
-             JOIN appointment_statuses ast ON ast.status_id = a.status_id
-             WHERE a.patient_id = ?
-               AND ast.status_name = 'CANCELLED'
-               AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
-               AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)`,
+            `DELETE FROM receptionist_notifications
+             WHERE patient_id = ?
+               AND notification_type = 'DOCTOR_TIME_OFF'
+               AND source_table = 'doctor_time_off'`,
             [patientId],
-            (countErr, countRows) => {
-              if (countErr) {
-                return callback(countErr);
-              }
-
-              const remainingCount = Number(countRows?.[0]?.remaining_count || 0);
-              if (remainingCount > 0) {
-                return callback();
-              }
-
-              conn.query(
-                `UPDATE receptionist_notifications
-                 SET is_read = TRUE,
-                     read_at = NOW(),
-                     updated_by = 'PATIENT_PORTAL'
-                 WHERE patient_id = ?
-                   AND notification_type = 'DOCTOR_TIME_OFF'
-                   AND source_table = 'doctor_time_off'
-                   AND is_read = FALSE`,
-                [patientId],
-                (notificationErr) => callback(notificationErr)
-              );
-            }
+            (notificationErr) => callback(notificationErr)
           );
         };
 
@@ -619,7 +594,7 @@ function createPatientIntakeHandlers(deps) {
                 });
             }
 
-            clearDoctorTimeOffNotificationTask((notificationErr) => {
+            deleteDoctorTimeOffNotificationTask((notificationErr) => {
               if (notificationErr) {
                 return conn.rollback(() => {
                   conn.release();

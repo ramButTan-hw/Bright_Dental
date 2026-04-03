@@ -296,6 +296,14 @@ function createReceptionRoutes({ pool, sendJSON }) {
       [slotId, locationId, patientId, doctorId, appointmentTime, appointmentDate, statusId, notes, createdBy, createdBy]
     );
 
+    await conn.promise().query(
+      `DELETE FROM receptionist_notifications
+       WHERE patient_id = ?
+         AND notification_type = 'DOCTOR_TIME_OFF'
+         AND source_table = 'doctor_time_off'`,
+      [patientId]
+    );
+
     // Trigger trg_appointments_sync_slot_on_insert auto-updates current_bookings and is_available
 
     return {
