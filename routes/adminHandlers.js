@@ -2327,7 +2327,14 @@ function createAdminHandlers(deps) {
 
   function getSystemCancelledAppointments(req, res) {
     pool.promise().query(
-      `SELECT
+      `SELECT COUNT(*) AS column_count
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'appointments'
+         AND COLUMN_NAME = 'rescheduled_from_appointment_id'`
+    ).then(async ([[columnRow]]) => {
+      const hasRescheduleLinkColumn = Number(columnRow?.column_count || 0) > 0;
+      const baseSelectSql = `SELECT
          a.appointment_id,
          a.patient_id,
          a.appointment_date,
@@ -2336,26 +2343,25 @@ function createAdminHandlers(deps) {
          p.p_email,
          p.p_phone,
          CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-         a.updated_at AS cancelled_at,
-         r.appointment_id AS rescheduled_appointment_id,
-         rs.status_name AS rescheduled_status_name
+         a.updated_at AS cancelled_at${hasRescheduleLinkColumn ? ',\n         r.appointment_id AS rescheduled_appointment_id,\n         rs.status_name AS rescheduled_status_name' : ''}
        FROM appointments a
        JOIN patients p ON p.patient_id = a.patient_id
        JOIN appointment_statuses ast ON ast.status_id = a.status_id
        JOIN doctors d ON d.doctor_id = a.doctor_id
-       JOIN staff st ON st.staff_id = d.staff_id
-       LEFT JOIN appointments r ON r.rescheduled_from_appointment_id = a.appointment_id
-       LEFT JOIN appointment_statuses rs ON rs.status_id = r.status_id
+       JOIN staff st ON st.staff_id = d.staff_id${hasRescheduleLinkColumn ? '\n       LEFT JOIN appointments r ON r.rescheduled_from_appointment_id = a.appointment_id\n       LEFT JOIN appointment_statuses rs ON rs.status_id = r.status_id' : ''}
        WHERE ast.status_name = 'CANCELLED'
          AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
          AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-       ORDER BY a.updated_at DESC`
-    ).then(async ([rows]) => {
+       ORDER BY a.updated_at DESC`;
+
+      const [rows] = await pool.promise().query(baseSelectSql);
       const cancelledRows = rows || [];
-      const unresolvedRows = cancelledRows.filter((row) => {
-        const replacementStatus = String(row.rescheduled_status_name || '').toUpperCase();
-        return !row.rescheduled_appointment_id || replacementStatus === 'CANCELLED';
-      });
+      const unresolvedRows = hasRescheduleLinkColumn
+        ? cancelledRows.filter((row) => {
+            const replacementStatus = String(row.rescheduled_status_name || '').toUpperCase();
+            return !row.rescheduled_appointment_id || replacementStatus === 'CANCELLED';
+          })
+        : cancelledRows;
 
       sendJSON(res, 200, {
         items: cancelledRows,

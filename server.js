@@ -241,20 +241,10 @@ async function ensureAppointmentRescheduleTracking() {
   const db = pool.promise();
 
   try {
-    const [columnRows] = await db.query(
-      `SELECT COUNT(*) AS column_count
-       FROM information_schema.COLUMNS
-       WHERE TABLE_SCHEMA = DATABASE()
-         AND TABLE_NAME = 'appointments'
-         AND COLUMN_NAME = 'rescheduled_from_appointment_id'`
+    await db.query(
+      `ALTER TABLE appointments
+       ADD COLUMN IF NOT EXISTS rescheduled_from_appointment_id INT NULL AFTER reason_id`
     );
-
-    if (Number(columnRows?.[0]?.column_count || 0) === 0) {
-      await db.query(
-        `ALTER TABLE appointments
-         ADD COLUMN rescheduled_from_appointment_id INT NULL AFTER reason_id`
-      );
-    }
 
     try {
       await db.query(
