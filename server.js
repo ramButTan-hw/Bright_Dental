@@ -574,6 +574,21 @@ pool.query(`ALTER TABLE staff_schedule_requests DROP CHECK chk_sched_req_time`, 
   if (err && !err.message.includes('not found') && !err.message.includes("doesn't exist") && !err.code === 'ER_CHECK_CONSTRAINT_NOT_FOUND') { /* ignore */ }
 });
 
+// Migration: make insurance.group_number nullable (it is optional on many plans)
+pool.query(`ALTER TABLE insurance MODIFY COLUMN group_number VARCHAR(50) NULL`, (err) => {
+  if (err && !err.message.includes('already exists')) console.error('Migration insurance.group_number nullable:', err.message);
+});
+
+// Seed payment_methods (safe to run every startup via INSERT IGNORE)
+pool.query(
+  `INSERT IGNORE INTO payment_methods (method_name, display_name, is_active) VALUES
+    ('CREDIT_CARD', 'Credit Card', 1),
+    ('DEBIT_CARD',  'Debit Card',  1)`,
+  (err) => {
+    if (err) console.error('Seed payment_methods:', err.message);
+  }
+);
+
 // Migration: create refunds table
 pool.query(`CREATE TABLE IF NOT EXISTS refunds (
   refund_id INT AUTO_INCREMENT PRIMARY KEY,

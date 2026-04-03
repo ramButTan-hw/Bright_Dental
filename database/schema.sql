@@ -425,7 +425,7 @@ CREATE TABLE IF NOT EXISTS insurance (
     patient_id INT NOT NULL,
     company_id INT NOT NULL,
     member_id VARCHAR(50) NOT NULL,
-    group_number VARCHAR(50) NOT NULL,
+    group_number VARCHAR(50) NULL,
     is_primary BOOLEAN DEFAULT FALSE,
     effective_date DATE NOT NULL,
     expiration_date DATE,
