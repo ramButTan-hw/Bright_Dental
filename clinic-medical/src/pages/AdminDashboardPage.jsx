@@ -196,6 +196,7 @@ function AdminDashboardPage() {
   const [refundForm, setRefundForm] = useState({ invoiceId: '', amount: '', reason: '' });
   const [invoiceLookup, setInvoiceLookup] = useState(null);
   const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
+  const [activeReportTab, setActiveReportTab] = useState('monthly');
   const [monthlyTrendsPage, setMonthlyTrendsPage] = useState(0);
   const [providerPerformancePage, setProviderPerformancePage] = useState(0);
   const [newPatientsPage, setNewPatientsPage] = useState(0);
@@ -1486,66 +1487,75 @@ function AdminDashboardPage() {
                 )}
               </section>
 
+              {!clinicPerformanceLoading && clinicPerformanceReport.summary && (
+                <section className="admin-metrics-grid">
+                  <article className="metric-card">
+                    <h2>Production</h2>
+                    <p>{formatMoney(clinicPerformanceReport.summary.totalProduction)}</p>
+                    <small>Gross charges in range</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Collected</h2>
+                    <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
+                    <small>After refunds</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Patient Collections</h2>
+                    <p>{formatMoney(summary.metrics?.patientCollected)}</p>
+                    <small>All-time from patients</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Insurance Collections</h2>
+                    <p>{formatMoney(summary.metrics?.insuranceCollected)}</p>
+                    <small>All-time from other sources</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Collection Rate</h2>
+                    <p>{formatPercent(clinicPerformanceReport.summary.collectionRate)}</p>
+                    <small>Collected vs patient responsibility</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Outstanding A/R</h2>
+                    <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
+                      {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
+                    </p>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Completed Visits</h2>
+                    <p>{clinicPerformanceReport.summary.completedAppointments}</p>
+                    <small>{formatPercent(clinicPerformanceReport.summary.completionRate)} completion rate</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>No-Shows</h2>
+                    <p>{clinicPerformanceReport.summary.noShowAppointments}</p>
+                    <small>{formatPercent(clinicPerformanceReport.summary.noShowRate)} no-show rate</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>New Patients</h2>
+                    <p>{clinicPerformanceReport.summary.newPatients}</p>
+                    <small>Registered in range</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Active Patients</h2>
+                    <p>{clinicPerformanceReport.summary.activePatients}</p>
+                    <small>Seen in range</small>
+                  </article>
+                </section>
+              )}
+
+              <div className="admin-tab-bar">
+                <button type="button" className={activeReportTab === 'monthly' ? 'is-active' : ''} onClick={() => setActiveReportTab('monthly')}>Monthly Trends</button>
+                <button type="button" className={activeReportTab === 'providers' ? 'is-active' : ''} onClick={() => setActiveReportTab('providers')}>Provider Productivity</button>
+                <button type="button" className={activeReportTab === 'growth' ? 'is-active' : ''} onClick={() => setActiveReportTab('growth')}>Patient Growth</button>
+                <button type="button" className={activeReportTab === 'outstanding' ? 'is-active' : ''} onClick={() => setActiveReportTab('outstanding')}>Outstanding A/R</button>
+              </div>
+
               {clinicPerformanceLoading && <p className="admin-loading">Loading clinic performance report...</p>}
 
               {!clinicPerformanceLoading && clinicPerformanceReport.summary && (
                 <>
-                  <section className="admin-metrics-grid">
-                    <article className="metric-card">
-                      <h2>Production</h2>
-                      <p>{formatMoney(clinicPerformanceReport.summary.totalProduction)}</p>
-                      <small>Gross charges in range</small>
-                    </article>
-                    <article className="metric-card">
-                      <h2>Collected</h2>
-                      <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
-                      <small>After refunds</small>
-                    </article>
-                    <article className="metric-card">
-                      <h2>Patient Collections</h2>
-                      <p>{formatMoney(summary.metrics?.patientCollected)}</p>
-                      <small>All-time from patients</small>
-                    </article>
-                    <article className="metric-card">
-                      <h2>Insurance Collections</h2>
-                      <p>{formatMoney(summary.metrics?.insuranceCollected)}</p>
-                      <small>All-time from other sources</small>
-                    </article>
-                    <article className="metric-card">
-                      <h2>Collection Rate</h2>
-                      <p>{formatPercent(clinicPerformanceReport.summary.collectionRate)}</p>
-                      <small>Collected vs patient responsibility</small>
-                    </article>
-                    <article className="metric-card">
-                      <h2>Outstanding A/R</h2>
-                      <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
-                        {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
-                      </p>
-                    </article>
-                    <article className="metric-card">
-                      <h2>Completed Visits</h2>
-                      <p>{clinicPerformanceReport.summary.completedAppointments}</p>
-                      <small>{formatPercent(clinicPerformanceReport.summary.completionRate)} completion rate</small>
-                    </article>
-                    <article className="metric-card">
-                      <h2>No-Shows</h2>
-                      <p>{clinicPerformanceReport.summary.noShowAppointments}</p>
-                      <small>{formatPercent(clinicPerformanceReport.summary.noShowRate)} no-show rate</small>
-                    </article>
-                    <article className="metric-card">
-                      <h2>New Patients</h2>
-                      <p>{clinicPerformanceReport.summary.newPatients}</p>
-                      <small>Registered in range</small>
-                    </article>
-                    <article className="metric-card">
-                      <h2>Active Patients</h2>
-                      <p>{clinicPerformanceReport.summary.activePatients}</p>
-                      <small>Seen in range</small>
-                    </article>
-                  </section>
-
-                  <section className="admin-grid-two">
-                    <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
+                  {activeReportTab === 'monthly' && (
+                    <article className="admin-panel">
                       <h2>Production & Collections by Month</h2>
                       <div className="table-wrap report-table-wrap">
                         <table>
@@ -1583,8 +1593,10 @@ function AdminDashboardPage() {
                       </div>
                       {renderTablePager(clinicPerformanceReport.monthlyTrends.length, monthlyTrendsPage, setMonthlyTrendsPage)}
                     </article>
+                  )}
 
-                    <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
+                  {activeReportTab === 'providers' && (
+                    <article className="admin-panel">
                       <h2>Provider Productivity</h2>
                       <div className="table-wrap report-table-wrap">
                         <table>
@@ -1629,7 +1641,9 @@ function AdminDashboardPage() {
                       </div>
                       {renderTablePager(clinicPerformanceReport.providerPerformance.length, providerPerformancePage, setProviderPerformancePage)}
                     </article>
+                  )}
 
+                  {activeReportTab === 'growth' && (
                     <article className="admin-panel">
                       <h2>Patient Growth</h2>
                       <div className="table-wrap report-table-wrap">
@@ -1652,7 +1666,9 @@ function AdminDashboardPage() {
                       </div>
                       {renderTablePager(clinicPerformanceReport.newPatientsTrend.length, newPatientsPage, setNewPatientsPage)}
                     </article>
+                  )}
 
+                  {activeReportTab === 'outstanding' && (
                     <article className="admin-panel">
                       <h2>Outstanding Accounts</h2>
                       <div className="table-wrap report-table-wrap">
@@ -1687,7 +1703,7 @@ function AdminDashboardPage() {
                       </div>
                       {renderTablePager(clinicPerformanceReport.outstandingPatients.length, outstandingAccountsPage, setOutstandingAccountsPage)}
                     </article>
-                  </section>
+                  )}
                 </>
               )}
             </>

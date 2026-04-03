@@ -91,6 +91,39 @@
   border-color: #0f6965;
 }
 
+.admin-tab-bar {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0.75rem 0 1rem;
+  border-bottom: 2px solid #dce8e7;
+  padding-bottom: 0.5rem;
+}
+
+.admin-tab-bar button {
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: #4a6c6a;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.admin-tab-bar button:hover {
+  background: #f0f8f7;
+  color: #0f6965;
+}
+
+.admin-tab-bar button.is-active {
+  background: #fff;
+  color: #0f6965;
+  border-color: #dce8e7 #dce8e7 #fff;
+  margin-bottom: -2px;
+}
+
 .admin-error,
 .admin-message,
 .admin-loading {
