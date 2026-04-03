@@ -239,15 +239,51 @@ ensureDoctorNpiPrimaryKey();
 
 async function ensureAppointmentRescheduleTracking() {
   const db = pool.promise();
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const runWithRetry = async (query, params = [], attempts = 3) => {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await db.query(query, params);
+      } catch (error) {
+        lastError = error;
+        const isRetryable = error?.code === 'ER_LOCK_DEADLOCK' || error?.code === 'ER_LOCK_WAIT_TIMEOUT';
+        if (!isRetryable || attempt === attempts) {
+          throw error;
+        }
+        await wait(150 * attempt);
+      }
+    }
+
+    throw lastError;
+  };
 
   try {
-    await db.query(
-      `ALTER TABLE appointments
-       ADD COLUMN IF NOT EXISTS rescheduled_from_appointment_id INT NULL AFTER reason_id`
+    const [columnRows] = await runWithRetry(
+      `SELECT COUNT(*) AS column_count
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'appointments'
+         AND COLUMN_NAME = 'rescheduled_from_appointment_id'`
     );
 
+    if (Number(columnRows?.[0]?.column_count || 0) === 0) {
+      try {
+        await runWithRetry(
+          `ALTER TABLE appointments
+           ADD COLUMN rescheduled_from_appointment_id INT NULL AFTER reason_id`
+        );
+      } catch (alterErr) {
+        if (alterErr.code !== 'ER_DUP_FIELDNAME') {
+          throw alterErr;
+        }
+      }
+    }
+
     try {
-      await db.query(
+      await runWithRetry(
         `CREATE INDEX idx_appointments_rescheduled_from
          ON appointments (rescheduled_from_appointment_id)`
       );
@@ -258,7 +294,7 @@ async function ensureAppointmentRescheduleTracking() {
     }
 
     try {
-      await db.query(
+      await runWithRetry(
         `ALTER TABLE appointments
          ADD CONSTRAINT fk_appointments_rescheduled_from
          FOREIGN KEY (rescheduled_from_appointment_id) REFERENCES appointments(appointment_id)
@@ -271,7 +307,7 @@ async function ensureAppointmentRescheduleTracking() {
       }
     }
 
-    const [cancelledRows] = await db.query(
+    const [cancelledRows] = await runWithRetry(
       `SELECT
          a.appointment_id,
          a.patient_id,
@@ -284,7 +320,7 @@ async function ensureAppointmentRescheduleTracking() {
        ORDER BY a.updated_at ASC, a.appointment_id ASC`
     );
 
-    const [activeRows] = await db.query(
+    const [activeRows] = await runWithRetry(
       `SELECT
          a.appointment_id,
          a.patient_id,
@@ -328,7 +364,7 @@ async function ensureAppointmentRescheduleTracking() {
       }
 
       candidate.linked = true;
-      await db.query(
+      await runWithRetry(
         `UPDATE appointments
          SET rescheduled_from_appointment_id = ?
          WHERE appointment_id = ?
