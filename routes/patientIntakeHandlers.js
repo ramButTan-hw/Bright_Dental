@@ -374,8 +374,8 @@ function createPatientIntakeHandlers(deps) {
 
                       if (Number.isInteger(insuranceCompanyId) && insuranceCompanyId > 0 && insuranceMemberId) {
                         conn.query(
-                          `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, created_by, updated_by)
-                           VALUES (?, ?, ?, ?, TRUE, 'PORTAL', 'PORTAL')`,
+                          `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, effective_date, created_by, updated_by)
+                           VALUES (?, ?, ?, ?, TRUE, CURDATE(), 'PORTAL', 'PORTAL')`,
                           [patientId, insuranceCompanyId, insuranceMemberId, String(insurance.groupNumber || '').trim() || null],
                           (insuranceErr) => {
                             if (insuranceErr) {
