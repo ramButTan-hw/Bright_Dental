@@ -809,7 +809,8 @@ function createAdminHandlers(deps) {
          FROM appointments a
          JOIN appointment_statuses s ON s.status_id = a.status_id
          WHERE a.doctor_id = ?
-           AND s.status_name NOT IN ('CANCELLED', 'COMPLETED')
+           AND s.status_name = 'CANCELLED'
+           AND a.updated_by = 'SYSTEM_TIME_OFF'
            AND TIMESTAMP(a.appointment_date, a.appointment_time) >= ?
            AND TIMESTAMP(a.appointment_date, a.appointment_time) < ?`,
         [request.doctor_id, request.start_datetime, request.end_datetime]

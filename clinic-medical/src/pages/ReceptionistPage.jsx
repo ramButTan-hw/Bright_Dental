@@ -182,6 +182,7 @@ function ReceptionistPage() {
   const [isSubmittingTimeOff, setIsSubmittingTimeOff] = useState(false);
   const [mySchedule, setMySchedule] = useState([]);
   const [systemCancelledAppts, setSystemCancelledAppts] = useState([]);
+  const [dismissFallbackDoctorToast, setDismissFallbackDoctorToast] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState(() => {
     try {
@@ -604,6 +605,14 @@ function ReceptionistPage() {
   const unreadNotificationCount = visibleNotifications.length;
   const latestNotification = visibleNotifications[0] || null;
   const doctorTimeOffNotification = visibleNotifications.find((notification) => notification.notification_type === 'DOCTOR_TIME_OFF') || null;
+  const shouldShowFallbackDoctorToast = !doctorTimeOffNotification && !dismissFallbackDoctorToast && systemCancelledAppts.length > 0;
+  const fallbackDoctorTimeOffToast = shouldShowFallbackDoctorToast
+    ? {
+      notification_id: null,
+      message: `${systemCancelledAppts.length} appointment${systemCancelledAppts.length === 1 ? '' : 's'} were cancelled by doctor time off in the last 30 days. Review cancellations to reschedule patients.`
+    }
+    : null;
+  const activeDoctorTimeOffToast = doctorTimeOffNotification || fallbackDoctorTimeOffToast;
 
   const requestAlerts = [
     ...(insuranceChangeRequests.length > 0 ? [{
@@ -780,6 +789,10 @@ function ReceptionistPage() {
       .catch(() => {});
   }, [API_BASE_URL]);
 
+  useEffect(() => {
+    setDismissFallbackDoctorToast(false);
+  }, [systemCancelledAppts.length]);
+
   const checkInPatient = async (appointmentId) => {
     await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/check-in`, {
       method: 'PUT',
@@ -888,7 +901,7 @@ function ReceptionistPage() {
 
       {message && <p className="reception-message">{message}</p>}
 
-      {doctorTimeOffNotification && (
+      {activeDoctorTimeOffToast && (
         <aside className="reception-request-alert-stack reception-request-alert-stack--timeoff" aria-live="polite" aria-label="Doctor time off notification">
           <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
             <div className="reception-request-alert-card__top">
@@ -900,13 +913,19 @@ function ReceptionistPage() {
                 type="button"
                 className="reception-request-alert-card__close"
                 aria-label="Dismiss doctor time off notification"
-                onClick={() => dismissNotification(doctorTimeOffNotification.notification_id)}
+                onClick={() => {
+                  if (activeDoctorTimeOffToast.notification_id) {
+                    dismissNotification(activeDoctorTimeOffToast.notification_id);
+                    return;
+                  }
+                  setDismissFallbackDoctorToast(true);
+                }}
               >
                 &times;
               </button>
             </div>
             <p className="reception-request-alert-card__message">
-              {doctorTimeOffNotification.message}
+              {activeDoctorTimeOffToast.message}
             </p>
             <button
               type="button"
