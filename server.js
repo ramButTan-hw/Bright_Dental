@@ -237,6 +237,122 @@ ensureDoctorNpiPrimaryKey();
   });
 })();
 
+async function ensureAppointmentRescheduleTracking() {
+  const db = pool.promise();
+
+  try {
+    const [columnRows] = await db.query(
+      `SELECT COUNT(*) AS column_count
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'appointments'
+         AND COLUMN_NAME = 'rescheduled_from_appointment_id'`
+    );
+
+    if (Number(columnRows?.[0]?.column_count || 0) === 0) {
+      await db.query(
+        `ALTER TABLE appointments
+         ADD COLUMN rescheduled_from_appointment_id INT NULL AFTER reason_id`
+      );
+    }
+
+    try {
+      await db.query(
+        `CREATE INDEX idx_appointments_rescheduled_from
+         ON appointments (rescheduled_from_appointment_id)`
+      );
+    } catch (indexErr) {
+      if (indexErr.code !== 'ER_DUP_KEYNAME') {
+        throw indexErr;
+      }
+    }
+
+    try {
+      await db.query(
+        `ALTER TABLE appointments
+         ADD CONSTRAINT fk_appointments_rescheduled_from
+         FOREIGN KEY (rescheduled_from_appointment_id) REFERENCES appointments(appointment_id)
+         ON DELETE SET NULL
+         ON UPDATE CASCADE`
+      );
+    } catch (constraintErr) {
+      if (constraintErr.code !== 'ER_DUP_KEYNAME' && constraintErr.code !== 'ER_FK_DUP_NAME') {
+        throw constraintErr;
+      }
+    }
+
+    const [cancelledRows] = await db.query(
+      `SELECT
+         a.appointment_id,
+         a.patient_id,
+         TIMESTAMP(a.appointment_date, a.appointment_time) AS cancelled_datetime,
+         a.updated_at AS cancelled_at
+       FROM appointments a
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       WHERE ast.status_name = 'CANCELLED'
+         AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
+       ORDER BY a.updated_at ASC, a.appointment_id ASC`
+    );
+
+    const [activeRows] = await db.query(
+      `SELECT
+         a.appointment_id,
+         a.patient_id,
+         TIMESTAMP(a.appointment_date, a.appointment_time) AS active_datetime,
+         a.created_at
+       FROM appointments a
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       WHERE ast.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
+         AND a.rescheduled_from_appointment_id IS NULL
+       ORDER BY a.created_at ASC, a.appointment_id ASC`
+    );
+
+    const cancelledByPatient = new Map();
+    (cancelledRows || []).forEach((row) => {
+      const patientId = Number(row.patient_id);
+      if (!cancelledByPatient.has(patientId)) {
+        cancelledByPatient.set(patientId, []);
+      }
+      cancelledByPatient.get(patientId).push({
+        appointmentId: Number(row.appointment_id),
+        cancelledDateTime: new Date(String(row.cancelled_datetime || '')),
+        cancelledAt: new Date(String(row.cancelled_at || '')),
+        linked: false
+      });
+    });
+
+    for (const row of (activeRows || [])) {
+      const patientId = Number(row.patient_id);
+      const activeDateTime = new Date(String(row.active_datetime || ''));
+      const activeCreatedAt = new Date(String(row.created_at || ''));
+      const candidateRows = cancelledByPatient.get(patientId) || [];
+
+      const candidate = candidateRows.find((item) => (
+        !item.linked
+        && item.cancelledDateTime <= activeDateTime
+        && item.cancelledAt <= activeCreatedAt
+      ));
+
+      if (!candidate) {
+        continue;
+      }
+
+      candidate.linked = true;
+      await db.query(
+        `UPDATE appointments
+         SET rescheduled_from_appointment_id = ?
+         WHERE appointment_id = ?
+           AND rescheduled_from_appointment_id IS NULL`,
+        [candidate.appointmentId, Number(row.appointment_id)]
+      );
+    }
+  } catch (error) {
+    console.error('Error ensuring appointment reschedule tracking:', error.message);
+  }
+}
+
+ensureAppointmentRescheduleTracking();
+
 
 pool.query(
   `INSERT INTO appointment_statuses (status_name, display_name, created_by) VALUES

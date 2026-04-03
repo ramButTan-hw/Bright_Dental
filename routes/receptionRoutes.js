@@ -242,6 +242,31 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
     const statusId = await getAppointmentStatusId(conn, 'SCHEDULED');
     const appointmentEndTime = addMinutesToTime(appointmentTime, 30);
+    let rescheduledFromAppointmentId = null;
+
+    const [rescheduleSourceRows] = await conn.promise().query(
+      `SELECT a.appointment_id
+       FROM appointments a
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       WHERE a.patient_id = ?
+         AND ast.status_name = 'CANCELLED'
+         AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
+         AND NOT EXISTS (
+           SELECT 1
+           FROM appointments replacement
+           JOIN appointment_statuses replacement_status ON replacement_status.status_id = replacement.status_id
+           WHERE replacement.rescheduled_from_appointment_id = a.appointment_id
+             AND replacement_status.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
+         )
+       ORDER BY a.updated_at DESC, a.appointment_id DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [patientId]
+    );
+
+    if (rescheduleSourceRows?.length) {
+      rescheduledFromAppointmentId = Number(rescheduleSourceRows[0].appointment_id);
+    }
 
     const [existingAppointmentRows] = await conn.promise().query(
       `SELECT a.appointment_id
@@ -304,11 +329,12 @@ function createReceptionRoutes({ pool, sendJSON }) {
         appointment_time,
         appointment_date,
         status_id,
+        rescheduled_from_appointment_id,
         notes,
         created_by,
         updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [slotId, locationId, patientId, doctorId, appointmentTime, appointmentDate, statusId, notes, createdBy, createdBy]
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [slotId, locationId, patientId, doctorId, appointmentTime, appointmentDate, statusId, rescheduledFromAppointmentId, notes, createdBy, createdBy]
     );
 
     await conn.promise().query(

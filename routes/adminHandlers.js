@@ -2336,47 +2336,25 @@ function createAdminHandlers(deps) {
          p.p_email,
          p.p_phone,
          CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-         a.updated_at AS cancelled_at
+         a.updated_at AS cancelled_at,
+         r.appointment_id AS rescheduled_appointment_id,
+         rs.status_name AS rescheduled_status_name
        FROM appointments a
        JOIN patients p ON p.patient_id = a.patient_id
        JOIN appointment_statuses ast ON ast.status_id = a.status_id
        JOIN doctors d ON d.doctor_id = a.doctor_id
        JOIN staff st ON st.staff_id = d.staff_id
+       LEFT JOIN appointments r ON r.rescheduled_from_appointment_id = a.appointment_id
+       LEFT JOIN appointment_statuses rs ON rs.status_id = r.status_id
        WHERE ast.status_name = 'CANCELLED'
          AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
          AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
        ORDER BY a.updated_at DESC`
     ).then(async ([rows]) => {
       const cancelledRows = rows || [];
-
-      const [activeAppointments] = await pool.promise().query(
-        `SELECT a.patient_id, a.created_at, TIMESTAMP(a.appointment_date, a.appointment_time) AS active_datetime
-         FROM appointments a
-         JOIN appointment_statuses ast ON ast.status_id = a.status_id
-         WHERE ast.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')`
-      );
-
-      const activeByPatient = new Map();
-      (activeAppointments || []).forEach((row) => {
-        const patientId = Number(row.patient_id);
-        const activeDateTime = new Date(String(row.active_datetime || ''));
-        const activeCreatedAt = new Date(String(row.created_at || ''));
-        if (!activeByPatient.has(patientId)) {
-          activeByPatient.set(patientId, []);
-        }
-        activeByPatient.get(patientId).push({ activeDateTime, activeCreatedAt });
-      });
-
       const unresolvedRows = cancelledRows.filter((row) => {
-        const patientId = Number(row.patient_id);
-        const cancelledDateTime = new Date(`${String(row.appointment_date).slice(0, 10)}T${String(row.appointment_time).slice(0, 8)}`);
-        const cancelledCreatedAt = new Date(String(row.cancelled_at || row.updated_at || row.created_at || ''));
-        const replacements = activeByPatient.get(patientId) || [];
-        return !replacements.some((activeRow) => {
-          const activeDateTime = activeRow.activeDateTime;
-          const activeCreatedAt = activeRow.activeCreatedAt;
-          return activeDateTime >= cancelledDateTime && activeCreatedAt >= cancelledCreatedAt;
-        });
+        const replacementStatus = String(row.rescheduled_status_name || '').toUpperCase();
+        return !row.rescheduled_appointment_id || replacementStatus === 'CANCELLED';
       });
 
       sendJSON(res, 200, {
