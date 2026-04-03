@@ -237,60 +237,6 @@ ensureDoctorNpiPrimaryKey();
   });
 })();
 
-(function ensureTreatmentFollowUpColumns() {
-  const db = pool.promise();
-
-  (async () => {
-    try {
-      const [columns] = await db.query(
-        `SELECT COLUMN_NAME
-         FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'treatment_plans'
-           AND COLUMN_NAME IN ('follow_up_required', 'follow_up_date', 'follow_up_contacted_at', 'follow_up_contacted_by', 'follow_up_contact_note')`
-      );
-
-      const existingColumns = new Set(columns.map((row) => row.COLUMN_NAME));
-
-      if (!existingColumns.has('follow_up_required')) {
-        await db.query(
-          `ALTER TABLE treatment_plans
-             ADD COLUMN follow_up_required TINYINT(1) NOT NULL DEFAULT 0 AFTER priority`
-        );
-      }
-
-      if (!existingColumns.has('follow_up_date')) {
-        await db.query(
-          `ALTER TABLE treatment_plans
-             ADD COLUMN follow_up_date DATE NULL AFTER follow_up_required`
-        );
-      }
-
-      if (!existingColumns.has('follow_up_contacted_at')) {
-        await db.query(
-          `ALTER TABLE treatment_plans
-             ADD COLUMN follow_up_contacted_at DATETIME NULL AFTER follow_up_date`
-        );
-      }
-
-      if (!existingColumns.has('follow_up_contacted_by')) {
-        await db.query(
-          `ALTER TABLE treatment_plans
-             ADD COLUMN follow_up_contacted_by VARCHAR(50) NULL AFTER follow_up_contacted_at`
-        );
-      }
-
-      if (!existingColumns.has('follow_up_contact_note')) {
-        await db.query(
-          `ALTER TABLE treatment_plans
-             ADD COLUMN follow_up_contact_note TEXT NULL AFTER follow_up_contacted_by`
-        );
-      }
-    } catch (err) {
-      console.error('Error ensuring treatment follow-up columns:', err.message);
-    }
-  })();
-})();
 
 pool.query(
   `INSERT INTO appointment_statuses (status_name, display_name, created_by) VALUES
@@ -474,17 +420,6 @@ END`, (err) => { if (err) console.error('[CRITICAL] after_staff_hidden_cancel_ap
 });
 
 
-// Migration: drop unused color_code column from appointment_statuses
-pool.query(`ALTER TABLE appointment_statuses DROP COLUMN color_code`, (err) => {
-  if (err && !err.message.includes("check that column/key exists")) { /* column already dropped */ }
-});
-
-// Remove dead triggers — app never updates/deletes payments or hard-deletes appointments
-['payments_update_invoice_status_on_update', 'payments_update_invoice_status_on_delete', 'appointments_sync_slot_on_delete'].forEach((name) => {
-  pool.query(`DROP TRIGGER IF EXISTS ${name}`, (err) => {
-    if (err) console.error(`Error dropping trigger ${name}:`, err.message);
-  });
-});
 
 // Ensure staff time-off request storage exists for non-doctor staff workflows.
 pool.query(
@@ -552,32 +487,6 @@ pool.query(
   }
 );
 
-// Migration: add is_off column to existing schedule tables
-pool.query(`ALTER TABLE staff_schedules ADD COLUMN is_off TINYINT(1) NOT NULL DEFAULT 0`, (err) => {
-  if (err && !err.message.includes('Duplicate column')) console.error('Migration staff_schedules.is_off:', err.message);
-});
-pool.query(`ALTER TABLE staff_schedule_requests ADD COLUMN is_off TINYINT(1) NOT NULL DEFAULT 0`, (err) => {
-  if (err && !err.message.includes('Duplicate column')) console.error('Migration staff_schedule_requests.is_off:', err.message);
-});
-// Migration: allow NULL times for OFF days
-pool.query(`ALTER TABLE staff_schedules MODIFY start_time TIME NULL, MODIFY end_time TIME NULL`, (err) => {
-  if (err) console.error('Migration staff_schedules nullable times:', err.message);
-});
-pool.query(`ALTER TABLE staff_schedule_requests MODIFY start_time TIME NULL, MODIFY end_time TIME NULL`, (err) => {
-  if (err) console.error('Migration staff_schedule_requests nullable times:', err.message);
-});
-// Migration: drop CHECK constraints that block NULL times for OFF days
-pool.query(`ALTER TABLE staff_schedules DROP CHECK chk_sched_time`, (err) => {
-  if (err && !err.message.includes('not found') && !err.message.includes("doesn't exist") && !err.code === 'ER_CHECK_CONSTRAINT_NOT_FOUND') { /* ignore */ }
-});
-pool.query(`ALTER TABLE staff_schedule_requests DROP CHECK chk_sched_req_time`, (err) => {
-  if (err && !err.message.includes('not found') && !err.message.includes("doesn't exist") && !err.code === 'ER_CHECK_CONSTRAINT_NOT_FOUND') { /* ignore */ }
-});
-
-// Migration: make insurance.group_number nullable (it is optional on many plans)
-pool.query(`ALTER TABLE insurance MODIFY COLUMN group_number VARCHAR(50) NULL`, (err) => {
-  if (err && !err.message.includes('already exists')) console.error('Migration insurance.group_number nullable:', err.message);
-});
 
 // Seed payment_methods (safe to run every startup via INSERT IGNORE)
 pool.query(

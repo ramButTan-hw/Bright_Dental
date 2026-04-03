@@ -407,10 +407,7 @@ function createPatientCoreHandlers(deps) {
         try {
           // If setting as primary, unset any existing primary first
           if (isPrimary) {
-            await conn.promise().query(
-              `UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1`,
-              [patientId]
-            );
+            await conn.promise().query(queries.clearPrimaryInsurance, [patientId]);
           }
 
           await conn.promise().query(
@@ -441,10 +438,7 @@ function createPatientCoreHandlers(deps) {
 
   async function setPrimaryInsurance(req, patientId, insuranceId, res) {
     try {
-      await pool.promise().query(
-        `UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1`,
-        [patientId]
-      );
+      await pool.promise().query(queries.clearPrimaryInsurance, [patientId]);
       const [result] = await pool.promise().query(
         `UPDATE insurance SET is_primary = 1, updated_by = 'RECEPTION' WHERE insurance_id = ? AND patient_id = ?`,
         [insuranceId, patientId]
@@ -714,10 +708,7 @@ function createPatientCoreHandlers(deps) {
 
         if (change_type === 'ADD') {
           if (is_primary) {
-            await pool.promise().query(
-              `UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1`,
-              [patient_id]
-            );
+            await pool.promise().query(queries.clearPrimaryInsurance, [patient_id]);
           }
           await pool.promise().query(
             `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, effective_date, created_by, updated_by)
@@ -726,10 +717,7 @@ function createPatientCoreHandlers(deps) {
           );
         } else if (change_type === 'UPDATE') {
           if (is_primary) {
-            await pool.promise().query(
-              `UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1 AND insurance_id != ?`,
-              [patient_id, insurance_id]
-            );
+            await pool.promise().query(queries.clearPrimaryInsuranceExcept, [patient_id, insurance_id]);
           }
           await pool.promise().query(
             `UPDATE insurance SET company_id = ?, member_id = ?, group_number = ?, is_primary = ?, updated_by = 'RECEPTION'

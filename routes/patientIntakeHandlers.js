@@ -10,8 +10,8 @@ function createPatientIntakeHandlers(deps) {
 
   function normalizeTenDigitPhone(value) {
     const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
-    if (!digits) return '';
-    if (digits.length !== 10) return null;
+    if (!digits) return null;
+    if (digits.length !== 10) return '';
     return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
 

@@ -455,6 +455,16 @@ const queries = {
     WHERE patient_id = ?
     ORDER BY created_at DESC
     LIMIT 1
+  `,
+
+  // Clear all primary insurance flags for a patient
+  clearPrimaryInsurance: `
+    UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1
+  `,
+
+  // Clear primary insurance flags for a patient, excluding a specific insurance record (used during UPDATE)
+  clearPrimaryInsuranceExcept: `
+    UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1 AND insurance_id != ?
   `
 };
 
