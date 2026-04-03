@@ -354,6 +354,11 @@ function ReceptionistPatientProfilePage() {
 
   const pendingRequests = Array.isArray(patientData?.pendingRequests) ? patientData.pendingRequests : [];
   const hasPendingRequest = pendingRequests.some((r) => r.request_status === 'PREFERRED_PENDING');
+  const hasActiveAppointment = appointments.some((appt) => {
+    const status = String(appt?.appointment_status || appt?.status_name || '').toUpperCase();
+    return ['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(status);
+  });
+  const canCreateAppointment = !hasPendingRequest && !hasActiveAppointment;
   const [revertingId, setRevertingId] = useState(null);
 
   const revertAppointmentRequest = async (preferenceRequestId) => {
@@ -1034,21 +1039,33 @@ function ReceptionistPatientProfilePage() {
         </section>
       )}
 
-      {/* Create Appointment — expandable, disabled if pending request exists */}
+      {/* Create Appointment — expandable unless a pending request or active appointment exists */}
       <section className="reception-panel">
-        <button
-          type="button"
-          className="reception-expand-btn"
-          onClick={() => {
-            if (!hasPendingRequest) setCreateOpen((prev) => !prev);
-          }}
-          disabled={hasPendingRequest}
-          title={hasPendingRequest ? 'This patient already has a pending appointment request. Confirm it above instead.' : ''}
-        >
-          <span>{createOpen ? '▾' : '▸'} Create Appointment</span>
-          {hasPendingRequest && <span className="reception-expand-hint">Pending request exists</span>}
-        </button>
-        {createOpen && !hasPendingRequest && (
+        {hasActiveAppointment ? (
+          <div className="reception-readonly-notice">
+            <div className="reception-readonly-notice__header">
+              <span>Create Appointment</span>
+              <span className="reception-readonly-notice__badge">Active appointment exists</span>
+            </div>
+            <p>
+              This patient already has an active appointment. Reschedule or cancel the existing appointment before creating a new one.
+            </p>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="reception-expand-btn"
+              onClick={() => {
+                if (canCreateAppointment) setCreateOpen((prev) => !prev);
+              }}
+              disabled={!canCreateAppointment}
+              title={hasPendingRequest ? 'This patient already has a pending appointment request. Confirm it above instead.' : ''}
+            >
+              <span>{createOpen ? '▾' : '▸'} Create Appointment</span>
+              {hasPendingRequest && <span className="reception-expand-hint">Pending request exists</span>}
+            </button>
+            {createOpen && canCreateAppointment && (
           <form className="reception-form" style={{ marginTop: '0.75rem' }} onSubmit={createAppointment}>
             <label>
               Location
@@ -1140,6 +1157,8 @@ function ReceptionistPatientProfilePage() {
               {isCreating ? 'Creating...' : 'Create Appointment'}
             </button>
           </form>
+            )}
+          </>
         )}
       </section>
 
