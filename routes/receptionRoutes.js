@@ -243,6 +243,21 @@ function createReceptionRoutes({ pool, sendJSON }) {
     const statusId = await getAppointmentStatusId(conn, 'SCHEDULED');
     const appointmentEndTime = addMinutesToTime(appointmentTime, 30);
 
+    const [existingAppointmentRows] = await conn.promise().query(
+      `SELECT a.appointment_id
+       FROM appointments a
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       WHERE a.patient_id = ?
+         AND ast.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
+       LIMIT 1
+       FOR UPDATE`,
+      [patientId]
+    );
+
+    if (existingAppointmentRows?.length) {
+      throw new Error('This patient already has an active appointment. Please reschedule or cancel the existing appointment before creating a new one.');
+    }
+
     const [slotRows] = await conn.promise().query(
       `SELECT slot_id, current_bookings, max_patients, is_available
        FROM appointment_slots
