@@ -407,12 +407,19 @@ function DentistPatientProfilePage() {
   const tobaccoSummary = [];
   if (snapshot?.tobacco?.never) tobaccoSummary.push('Never used tobacco');
   if (snapshot?.tobacco?.quit) tobaccoSummary.push('Patient reports quitting tobacco');
-  (snapshot?.tobacco?.currentUses || []).forEach((entry) => {
-    tobaccoSummary.push(`${entry.type || 'Tobacco'} - ${entry.amount || 'N/A'} (${entry.frequency || 'N/A'})`);
-  });
-  (snapshot?.tobacco?.quitHistory || []).forEach((entry) => {
-    tobaccoSummary.push(`${entry.type || 'Tobacco'} quit on ${entry.quitDate || 'unknown date'}`);
-  });
+  if (!snapshot?.tobacco?.never) {
+    (snapshot?.tobacco?.currentUses || []).forEach((entry) => {
+      tobaccoSummary.push(`${entry.type || 'Tobacco'} - ${entry.amount || 'N/A'} (${entry.frequency || 'N/A'})`);
+    });
+  }
+  if (snapshot?.tobacco?.quit && !snapshot?.tobacco?.never) {
+    (snapshot?.tobacco?.quitHistory || []).forEach((entry) => {
+      const quitType = String(entry?.type || '').trim();
+      const quitDate = String(entry?.quitDate || '').trim();
+      if (!quitType && !quitDate) return;
+      tobaccoSummary.push(`${quitType || 'Tobacco'} quit on ${quitDate || 'unknown date'}`);
+    });
+  }
 
   const completedTreatments = Array.isArray(detail.completedTreatments) ? detail.completedTreatments : [];
   const dentalFindings = Array.isArray(detail.dentalFindings) ? detail.dentalFindings : [];
