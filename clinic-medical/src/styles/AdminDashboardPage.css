@@ -95,7 +95,7 @@
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
-  margin: 0.75rem 0 1rem;
+  margin: 0.25rem 0 1rem;
   border-bottom: 2px solid #dce8e7;
   padding-bottom: 0.5rem;
 }
@@ -217,6 +217,10 @@
 
 .recall-generated-at {
   margin-top: 0.65rem;
+}
+
+.clinic-generated-at {
+  margin: 0.4rem 0 0;
 }
 
 .admin-error {
@@ -364,6 +368,82 @@
 
 .notification-list li {
   color: #5a2500;
+}
+
+.admin-toast-stack {
+  position: fixed;
+  right: clamp(1rem, 2.5vw, 2rem);
+  bottom: clamp(1rem, 2.5vw, 2rem);
+  z-index: 1200;
+  width: min(360px, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-toast-card {
+  border-radius: 14px;
+  border: 1px solid #d7dee8;
+  background: #ffffff;
+  box-shadow: 0 14px 28px rgba(9, 30, 66, 0.14);
+  padding: 0.8rem 0.9rem;
+}
+
+.admin-toast-card--info {
+  border-left: 4px solid #2563eb;
+}
+
+.admin-toast-card--warning {
+  border-left: 4px solid #d97706;
+}
+
+.admin-toast-card--critical {
+  border-left: 4px solid #dc2626;
+}
+
+.admin-toast-card__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.admin-toast-card__eyebrow {
+  margin: 0;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7280;
+}
+
+.admin-toast-card h3 {
+  margin: 0.1rem 0 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.admin-toast-card__message {
+  margin: 0.55rem 0 0.6rem;
+  color: #334155;
+  font-size: 0.92rem;
+}
+
+.admin-toast-card__close {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.admin-toast-card__action {
+  border: none;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  cursor: pointer;
 }
 
 .overview-grid {
@@ -518,6 +598,12 @@ th {
 @media (max-width: 640px) {
   .admin-page {
     padding-top: 8rem;
+  }
+
+  .admin-toast-stack {
+    right: 0.7rem;
+    left: 0.7rem;
+    width: auto;
   }
 
   .clinic-filter-grid {

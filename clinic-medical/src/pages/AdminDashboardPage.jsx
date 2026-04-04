@@ -154,6 +154,13 @@ function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
+  const [dismissedAdminAlertIds, setDismissedAdminAlertIds] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('dismissedAdminAlerts') || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
 
   const [scheduleRequests, setScheduleRequests] = useState([]);
   const [allStaffSchedules, setAllStaffSchedules] = useState([]);
@@ -196,7 +203,7 @@ function AdminDashboardPage() {
   const [refundForm, setRefundForm] = useState({ invoiceId: '', amount: '', reason: '' });
   const [invoiceLookup, setInvoiceLookup] = useState(null);
   const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
-  const [activeReportTab, setActiveReportTab] = useState('overview');
+  const [activeReportTab, setActiveReportTab] = useState('monthly');
   const [monthlyTrendsPage, setMonthlyTrendsPage] = useState(0);
   const [providerPerformancePage, setProviderPerformancePage] = useState(0);
   const [newPatientsPage, setNewPatientsPage] = useState(0);
@@ -658,23 +665,83 @@ function AdminDashboardPage() {
     (sum, row) => sum + Number(row.total_outstanding || 0), 0
   );
 
-  const pendingStaffOffDayNotifications = (staffTimeOffRequests || [])
-    .filter((item) => !item.is_approved)
-    .map((item) => {
-      const role = String(item.requester_role || 'staff').replace('_', ' ');
-      const dateLabel = item.start_datetime ? new Date(item.start_datetime).toLocaleDateString() : 'an upcoming date';
-      return {
-        message: `${item.requester_name} (${role}) submitted an off-day request for ${dateLabel}.`
-      };
-    });
-
-  const combinedNotifications = pendingStaffOffDayNotifications;
-
   const todaysCancelledCount = useMemo(() => {
     return (Array.isArray(cancelledAppointments) ? cancelledAppointments : []).filter((appt) => {
       return String(appt.appointment_date || '').slice(0, 10) === selectedDate;
     }).length;
   }, [cancelledAppointments, selectedDate]);
+
+  const pendingTimeOffCount = Number(summary?.metrics?.pendingTimeOffCount || 0);
+  const waitingRequestsCount = Number(summary?.metrics?.waitingToSchedule || queue?.pendingRequests?.length || 0);
+  const overdueRecallCount = Number(followUpQueue?.summary?.overdue || 0);
+  const pendingScheduleRequestCount = Array.isArray(scheduleRequests)
+    ? scheduleRequests.filter((item) => String(item.request_status || '').toUpperCase() === 'PENDING').length
+    : 0;
+
+  const adminToastNotifications = useMemo(() => {
+    const alerts = [];
+
+    if (pendingTimeOffCount > 0) {
+      alerts.push({
+        id: 'pending-timeoff',
+        tone: 'warning',
+        title: 'Pending Time-Off Approvals',
+        message: `${pendingTimeOffCount} staff off-day request${pendingTimeOffCount === 1 ? '' : 's'} need admin review.`,
+        section: 'staff-scheduling',
+        action: 'Review Requests'
+      });
+    }
+
+    if (overdueRecallCount > 0) {
+      alerts.push({
+        id: 'overdue-recall',
+        tone: 'critical',
+        title: 'Overdue Recall Patients',
+        message: `${overdueRecallCount} patient${overdueRecallCount === 1 ? '' : 's'} are overdue for recall follow-up.`,
+        section: 'recall',
+        action: 'Open Recall Queue'
+      });
+    }
+
+    if (pendingScheduleRequestCount > 0) {
+      alerts.push({
+        id: 'pending-schedule-requests',
+        tone: 'warning',
+        title: 'Pending Staff Schedule Requests',
+        message: `${pendingScheduleRequestCount} shift update request${pendingScheduleRequestCount === 1 ? '' : 's'} are waiting for approval.`,
+        section: 'staff-scheduling',
+        action: 'Review Schedule Requests'
+      });
+    }
+
+    if (todaysCancelledCount >= 3) {
+      alerts.push({
+        id: 'high-cancellations',
+        tone: 'critical',
+        title: 'High Same-Day Cancellations',
+        message: `${todaysCancelledCount} appointments were cancelled today. Consider opening additional outreach and recall follow-up.`,
+        section: 'scheduling',
+        action: 'View Cancellations'
+      });
+    }
+
+    return alerts;
+  }, [pendingTimeOffCount, waitingRequestsCount, overdueRecallCount, pendingScheduleRequestCount, todaysCancelledCount]);
+
+  const visibleAdminToastNotifications = adminToastNotifications.filter((item) => !dismissedAdminAlertIds.has(item.id));
+
+  const dismissAdminToast = (alertId) => {
+    setDismissedAdminAlertIds((prev) => {
+      const next = new Set(prev);
+      next.add(alertId);
+      try {
+        localStorage.setItem('dismissedAdminAlerts', JSON.stringify([...next]));
+      } catch {
+        // Ignore storage failures.
+      }
+      return next;
+    });
+  };
 
   const nextFiveAppointments = useMemo(() => {
     const rows = Array.isArray(queue?.scheduledAppointments) ? queue.scheduledAppointments : [];
@@ -839,6 +906,37 @@ function AdminDashboardPage() {
 
       {!loading && summary && (
         <>
+          {visibleAdminToastNotifications.length > 0 && (
+            <aside className="admin-toast-stack" aria-live="polite" aria-label="Admin critical notifications">
+              {visibleAdminToastNotifications.map((alert) => (
+                <article key={alert.id} className={`admin-toast-card admin-toast-card--${alert.tone}`}>
+                  <div className="admin-toast-card__top">
+                    <div>
+                      <p className="admin-toast-card__eyebrow">Admin Alert</p>
+                      <h3>{alert.title}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      className="admin-toast-card__close"
+                      aria-label="Dismiss admin notification"
+                      onClick={() => dismissAdminToast(alert.id)}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <p className="admin-toast-card__message">{alert.message}</p>
+                  <button
+                    type="button"
+                    className="admin-toast-card__action"
+                    onClick={() => setActiveSection(alert.section)}
+                  >
+                    {alert.action} &rarr;
+                  </button>
+                </article>
+              ))}
+            </aside>
+          )}
+
           {activeSection === 'overview' && (
             <>
               <section className="admin-metrics-grid">
@@ -918,18 +1016,6 @@ function AdminDashboardPage() {
                   </div>
                 </article>
 
-                <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
-                  <h2>Notifications</h2>
-                  {combinedNotifications.length ? (
-                    <ul className="notification-list">
-                      {combinedNotifications.map((note, idx) => (
-                        <li key={`${note.message}-${idx}`}>{note.message}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p>No scheduling alerts right now.</p>
-                  )}
-                </article>
               </section>
             </>
           )}
@@ -1483,12 +1569,67 @@ function AdminDashboardPage() {
 
                 {clinicPerformanceError && <p className="admin-error">{clinicPerformanceError}</p>}
                 {clinicPerformanceReport.generatedAt && (
-                  <p className="muted">Generated {new Date(clinicPerformanceReport.generatedAt).toLocaleString()}</p>
+                  <p className="muted clinic-generated-at">Generated {new Date(clinicPerformanceReport.generatedAt).toLocaleString()}</p>
                 )}
               </section>
 
+              {!clinicPerformanceLoading && clinicPerformanceReport.summary && (
+                <section className="admin-metrics-grid">
+                  <article className="metric-card">
+                    <h2>Production</h2>
+                    <p>{formatMoney(clinicPerformanceReport.summary.totalProduction)}</p>
+                    <small>Gross charges in range</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Collected</h2>
+                    <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
+                    <small>After refunds</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Patient Collections</h2>
+                    <p>{formatMoney(summary.metrics?.patientCollected)}</p>
+                    <small>All-time from patients</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Insurance Collections</h2>
+                    <p>{formatMoney(summary.metrics?.insuranceCollected)}</p>
+                    <small>All-time from other sources</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Collection Rate</h2>
+                    <p>{formatPercent(clinicPerformanceReport.summary.collectionRate)}</p>
+                    <small>Collected vs patient responsibility</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Outstanding A/R</h2>
+                    <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
+                      {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
+                    </p>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Completed Visits</h2>
+                    <p>{clinicPerformanceReport.summary.completedAppointments}</p>
+                    <small>{formatPercent(clinicPerformanceReport.summary.completionRate)} completion rate</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>No-Shows</h2>
+                    <p>{clinicPerformanceReport.summary.noShowAppointments}</p>
+                    <small>{formatPercent(clinicPerformanceReport.summary.noShowRate)} no-show rate</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>New Patients</h2>
+                    <p>{clinicPerformanceReport.summary.newPatients}</p>
+                    <small>Registered in range</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Active Patients</h2>
+                    <p>{clinicPerformanceReport.summary.activePatients}</p>
+                    <small>Seen in range</small>
+                  </article>
+                </section>
+              )}
+
               <div className="admin-tab-bar">
-                <button type="button" className={activeReportTab === 'overview' ? 'is-active' : ''} onClick={() => setActiveReportTab('overview')}>Overview</button>
                 <button type="button" className={activeReportTab === 'monthly' ? 'is-active' : ''} onClick={() => setActiveReportTab('monthly')}>Monthly Trends</button>
                 <button type="button" className={activeReportTab === 'providers' ? 'is-active' : ''} onClick={() => setActiveReportTab('providers')}>Provider Productivity</button>
                 <button type="button" className={activeReportTab === 'growth' ? 'is-active' : ''} onClick={() => setActiveReportTab('growth')}>Patient Growth</button>
@@ -1499,62 +1640,6 @@ function AdminDashboardPage() {
 
               {!clinicPerformanceLoading && clinicPerformanceReport.summary && (
                 <>
-                  {activeReportTab === 'overview' && (
-                    <section className="admin-metrics-grid">
-                      <article className="metric-card">
-                        <h2>Production</h2>
-                        <p>{formatMoney(clinicPerformanceReport.summary.totalProduction)}</p>
-                        <small>Gross charges in range</small>
-                      </article>
-                      <article className="metric-card">
-                        <h2>Collected</h2>
-                        <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
-                        <small>After refunds</small>
-                      </article>
-                      <article className="metric-card">
-                        <h2>Patient Collections</h2>
-                        <p>{formatMoney(summary.metrics?.patientCollected)}</p>
-                        <small>All-time from patients</small>
-                      </article>
-                      <article className="metric-card">
-                        <h2>Insurance Collections</h2>
-                        <p>{formatMoney(summary.metrics?.insuranceCollected)}</p>
-                        <small>All-time from other sources</small>
-                      </article>
-                      <article className="metric-card">
-                        <h2>Collection Rate</h2>
-                        <p>{formatPercent(clinicPerformanceReport.summary.collectionRate)}</p>
-                        <small>Collected vs patient responsibility</small>
-                      </article>
-                      <article className="metric-card">
-                        <h2>Outstanding A/R</h2>
-                        <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
-                          {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
-                        </p>
-                      </article>
-                      <article className="metric-card">
-                        <h2>Completed Visits</h2>
-                        <p>{clinicPerformanceReport.summary.completedAppointments}</p>
-                        <small>{formatPercent(clinicPerformanceReport.summary.completionRate)} completion rate</small>
-                      </article>
-                      <article className="metric-card">
-                        <h2>No-Shows</h2>
-                        <p>{clinicPerformanceReport.summary.noShowAppointments}</p>
-                        <small>{formatPercent(clinicPerformanceReport.summary.noShowRate)} no-show rate</small>
-                      </article>
-                      <article className="metric-card">
-                        <h2>New Patients</h2>
-                        <p>{clinicPerformanceReport.summary.newPatients}</p>
-                        <small>Registered in range</small>
-                      </article>
-                      <article className="metric-card">
-                        <h2>Active Patients</h2>
-                        <p>{clinicPerformanceReport.summary.activePatients}</p>
-                        <small>Seen in range</small>
-                      </article>
-                    </section>
-                  )}
-
                   {activeReportTab === 'monthly' && (
                     <article className="admin-panel">
                       <h2>Production & Collections by Month</h2>
