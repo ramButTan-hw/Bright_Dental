@@ -2356,16 +2356,31 @@ function createAdminHandlers(deps) {
 
       const [rows] = await pool.promise().query(baseSelectSql);
       const cancelledRows = rows || [];
-      const unresolvedRows = hasRescheduleLinkColumn
-        ? cancelledRows.filter((row) => {
-            const replacementStatus = String(row.rescheduled_status_name || '').toUpperCase();
-            return !row.rescheduled_appointment_id || replacementStatus === 'CANCELLED';
-          })
-        : cancelledRows;
+      const [activePatientRows] = await pool.promise().query(
+        `SELECT DISTINCT a.patient_id
+         FROM appointments a
+         JOIN appointment_statuses ast ON ast.status_id = a.status_id
+         WHERE ast.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')`
+      );
+
+      const activePatientIds = new Set((activePatientRows || []).map((row) => Number(row.patient_id)));
+      const unresolvedPatientIds = new Set();
+
+      cancelledRows.forEach((row) => {
+        const patientId = Number(row.patient_id);
+        const replacementStatus = String(row.rescheduled_status_name || '').toUpperCase();
+        const hasLinkedActiveReplacement = Boolean(row.rescheduled_appointment_id)
+          && replacementStatus
+          && !['CANCELLED', 'COMPLETED'].includes(replacementStatus);
+
+        if (!hasLinkedActiveReplacement && !activePatientIds.has(patientId)) {
+          unresolvedPatientIds.add(patientId);
+        }
+      });
 
       sendJSON(res, 200, {
         items: cancelledRows,
-        unresolvedCount: unresolvedRows.length
+        unresolvedCount: unresolvedPatientIds.size
       });
     }).catch((err) => {
       console.error('Error fetching system-cancelled appointments:', err);

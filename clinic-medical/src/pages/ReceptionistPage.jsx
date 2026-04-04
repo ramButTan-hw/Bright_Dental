@@ -613,7 +613,7 @@ function ReceptionistPage() {
   const fallbackDoctorTimeOffToast = shouldShowFallbackDoctorToast
     ? {
       notification_id: null,
-      message: `${systemCancelledUnresolvedCount} appointment${systemCancelledUnresolvedCount === 1 ? '' : 's'} were cancelled by doctor time off and still need rescheduling.`
+      message: `${systemCancelledUnresolvedCount} patient${systemCancelledUnresolvedCount === 1 ? '' : 's'} still need rescheduling after doctor time off cancellations.`
     }
     : null;
   const activeDoctorTimeOffToast = doctorTimeOffNotification || fallbackDoctorTimeOffToast;
