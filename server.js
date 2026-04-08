@@ -768,6 +768,31 @@ function parseJSON(req, callback) {
       const data = raw ? JSON.parse(raw) : {};
       callback(null, data);
     } catch (err) {
+      if (raw) {
+        // If a JSON payload is wrapped in extra transport noise, salvage the JSON segment.
+        const objectStart = raw.indexOf('{');
+        const objectEnd = raw.lastIndexOf('}');
+        if (objectStart >= 0 && objectEnd > objectStart) {
+          try {
+            const objectSlice = raw.slice(objectStart, objectEnd + 1);
+            return callback(null, JSON.parse(objectSlice));
+          } catch (_objectSliceErr) {
+            // Continue to additional fallbacks.
+          }
+        }
+
+        const arrayStart = raw.indexOf('[');
+        const arrayEnd = raw.lastIndexOf(']');
+        if (arrayStart >= 0 && arrayEnd > arrayStart) {
+          try {
+            const arraySlice = raw.slice(arrayStart, arrayEnd + 1);
+            return callback(null, JSON.parse(arraySlice));
+          } catch (_arraySliceErr) {
+            // Continue to additional fallbacks.
+          }
+        }
+      }
+
       // Some proxies/clients send URL-encoded JSON payload strings.
       if (raw && /^%7B|%5B/i.test(raw)) {
         try {
@@ -816,6 +841,10 @@ function parseJSON(req, callback) {
         bodyPreview: raw.slice(0, 200)
       });
 
+      err.message = `parseJSON failed: ${err.message}`;
+      err.contentType = contentType;
+      err.bodyLength = raw.length;
+      err.bodyPreview = raw.slice(0, 200);
       callback(err, null);
     }
   });

@@ -298,7 +298,7 @@ function createAdminRoutes(handlers) {
         if (err) {
           return sendJSON(res, 400, {
             error: 'Invalid JSON (SCHEDULE_REQ_V2)',
-            detail: 'Schedule request body could not be parsed'
+            detail: err.message || 'Schedule request body could not be parsed'
           });
         }
         submitScheduleRequest(req, data, res);
