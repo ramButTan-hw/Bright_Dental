@@ -1,3 +1,4 @@
+
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
     user_username VARCHAR(50) UNIQUE NOT NULL,
@@ -405,7 +406,6 @@ CREATE TABLE IF NOT EXISTS staff_schedule_requests (
     INDEX idx_sched_req_status (request_status)
 );
 
--- Active approved schedules for staff
 CREATE TABLE IF NOT EXISTS staff_schedules (
     schedule_id INT AUTO_INCREMENT PRIMARY KEY,
     staff_id INT NOT NULL,
@@ -418,7 +418,6 @@ CREATE TABLE IF NOT EXISTS staff_schedules (
     UNIQUE KEY uq_staff_day (staff_id, day_of_week),
     INDEX idx_sched_staff (staff_id)
 );
-
 
 CREATE TABLE IF NOT EXISTS insurance (
     insurance_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -800,9 +799,6 @@ CREATE TABLE IF NOT EXISTS intake_medication_rows (
     INDEX idx_intake_medications_submission (submission_id)
 );
 
-
-
-
 CREATE TABLE IF NOT EXISTS insurance_change_requests (
     request_id INT AUTO_INCREMENT PRIMARY KEY,
     patient_id INT NOT NULL,
@@ -861,6 +857,7 @@ CREATE TABLE IF NOT EXISTS receptionist_notifications (
     INDEX idx_reception_notification_type (notification_type),
     INDEX idx_reception_notification_patient (patient_id)
 );
+
 
 -- TRIGGERS
 
@@ -947,256 +944,6 @@ BEGIN
         'SYSTEM_TRIGGER'
     );
 END $$
-
--- Trigger 1: Enforce cancel_reason when appointment is cancelled
-DROP TRIGGER IF EXISTS appointments_require_cancel_reason_on_insert $$
-CREATE TRIGGER appointments_require_cancel_reason_on_insert
-BEFORE INSERT ON appointments
-FOR EACH ROW
-BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-    SELECT status_id INTO cancelled_status_id FROM appointment_statuses
-    WHERE status_name = 'CANCELLED' LIMIT 1;
-    IF NEW.status_id = cancelled_status_id AND NEW.reason_id IS NULL THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'reason_id is required when appointment status is Cancelled';
-    END IF;
-END $$
-
-DROP TRIGGER IF EXISTS appointments_require_cancel_reason $$
-CREATE TRIGGER appointments_require_cancel_reason
-BEFORE UPDATE ON appointments
-FOR EACH ROW
-BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-    SELECT status_id INTO cancelled_status_id FROM appointment_statuses 
-    WHERE status_name = 'CANCELLED' LIMIT 1;
-    IF NEW.status_id = cancelled_status_id AND NEW.reason_id IS NULL THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'reason_id is required when appointment status is Cancelled';
-    END IF;
-END $$
-
--- Trigger: Enforce valid appointment status transitions (state machine)
-DROP TRIGGER IF EXISTS appointments_enforce_status_transition $$
-CREATE TRIGGER appointments_enforce_status_transition
-BEFORE UPDATE ON appointments
-FOR EACH ROW
-BEGIN
-    DECLARE old_status VARCHAR(50) DEFAULT NULL;
-    DECLARE new_status VARCHAR(50) DEFAULT NULL;
-
-    IF OLD.status_id <> NEW.status_id THEN
-        SELECT status_name INTO old_status FROM appointment_statuses WHERE status_id = OLD.status_id LIMIT 1;
-        SELECT status_name INTO new_status FROM appointment_statuses WHERE status_id = NEW.status_id LIMIT 1;
-
-        -- Terminal states: no transitions out allowed
-        IF old_status IN ('COMPLETED', 'CANCELLED') THEN
-            SIGNAL SQLSTATE '45000'
-                SET MESSAGE_TEXT = 'Appointment status cannot be changed once it is Completed or Cancelled';
-        END IF;
-
-        -- CHECKED_IN can only move to COMPLETED or CANCELLED
-        IF old_status = 'CHECKED_IN' AND new_status NOT IN ('COMPLETED', 'CANCELLED') THEN
-            SIGNAL SQLSTATE '45000'
-                SET MESSAGE_TEXT = 'A checked-in appointment can only be marked Completed or Cancelled';
-        END IF;
-    END IF;
-END $$
-
--- Trigger 6: Enforce free text when a checklist item requires it
-DROP TRIGGER IF EXISTS patient_checklist_require_other_text_on_insert $$
-CREATE TRIGGER patient_checklist_require_other_text_on_insert
-BEFORE INSERT ON patient_checklist_responses
-FOR EACH ROW
-BEGIN
-    IF NEW.is_checked = TRUE AND EXISTS (
-        SELECT 1
-        FROM clinical_checklist_items ci
-        WHERE ci.checklist_item_id = NEW.checklist_item_id
-          AND ci.requires_free_text = TRUE
-    ) AND (NEW.other_text IS NULL OR TRIM(NEW.other_text) = '') THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'other_text is required for this checklist item';
-    END IF;
-END $$
-
-DROP TRIGGER IF EXISTS patient_checklist_require_other_text_on_update $$
-CREATE TRIGGER patient_checklist_require_other_text_on_update
-BEFORE UPDATE ON patient_checklist_responses
-FOR EACH ROW
-BEGIN
-    IF NEW.is_checked = TRUE AND EXISTS (
-        SELECT 1
-        FROM clinical_checklist_items ci
-        WHERE ci.checklist_item_id = NEW.checklist_item_id
-          AND ci.requires_free_text = TRUE
-    ) AND (NEW.other_text IS NULL OR TRIM(NEW.other_text) = '') THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'other_text is required for this checklist item';
-    END IF;
-END $$
-
--- Trigger 7: Ensure appointment details match selected slot
-DROP TRIGGER IF EXISTS appointments_validate_slot_on_insert $$
-CREATE TRIGGER appointments_validate_slot_on_insert
-BEFORE INSERT ON appointments
-FOR EACH ROW
-BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM appointment_slots s
-        WHERE s.slot_id = NEW.slot_id
-          AND s.doctor_id = NEW.doctor_id
-          AND s.slot_date = NEW.appointment_date
-          AND s.slot_start_time = NEW.appointment_time
-          AND (
-              (NEW.location_id IS NULL AND s.location_id IS NULL) OR
-              NEW.location_id = s.location_id
-          )
-    ) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Appointment must match the selected slot (doctor, location, date, and time)';
-    END IF;
-
-    IF NEW.status_id <> cancelled_status_id AND EXISTS (
-        SELECT 1
-        FROM appointments a
-        WHERE a.slot_id = NEW.slot_id
-          AND a.status_id <> cancelled_status_id
-    ) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'This slot already has an active appointment';
-    END IF;
-END $$
-
-DROP TRIGGER IF EXISTS appointments_validate_slot_on_update $$
-CREATE TRIGGER appointments_validate_slot_on_update
-BEFORE UPDATE ON appointments
-FOR EACH ROW
-BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM appointment_slots s
-        WHERE s.slot_id = NEW.slot_id
-          AND s.doctor_id = NEW.doctor_id
-          AND s.slot_date = NEW.appointment_date
-          AND s.slot_start_time = NEW.appointment_time
-          AND (
-              (NEW.location_id IS NULL AND s.location_id IS NULL) OR
-              NEW.location_id = s.location_id
-          )
-    ) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Updated appointment must match the selected slot (doctor, location, date, and time)';
-    END IF;
-
-    IF NEW.status_id <> cancelled_status_id AND EXISTS (
-        SELECT 1
-        FROM appointments a
-        WHERE a.slot_id = NEW.slot_id
-          AND a.status_id <> cancelled_status_id
-          AND a.appointment_id <> NEW.appointment_id
-    ) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'This slot already has an active appointment';
-    END IF;
-END $$
-
--- Trigger 8: Keep appointment slot counters synchronized
-DROP TRIGGER IF EXISTS appointments_sync_slot_on_insert $$
-CREATE TRIGGER appointments_sync_slot_on_insert
-AFTER INSERT ON appointments
-FOR EACH ROW
-BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
-
-    UPDATE appointment_slots s
-    SET s.current_bookings = (
-            SELECT COUNT(*)
-            FROM appointments a
-            WHERE a.slot_id = s.slot_id
-              AND a.status_id <> cancelled_status_id
-        ),
-        s.is_available = (
-            (
-                SELECT COUNT(*)
-                FROM appointments a
-                WHERE a.slot_id = s.slot_id
-                  AND a.status_id <> cancelled_status_id
-            ) < s.max_patients
-        )
-    WHERE s.slot_id = NEW.slot_id;
-END $$
-
-DROP TRIGGER IF EXISTS appointments_sync_slot_on_update $$
-CREATE TRIGGER appointments_sync_slot_on_update
-AFTER UPDATE ON appointments
-FOR EACH ROW
-BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
-
-    UPDATE appointment_slots s
-    SET s.current_bookings = (
-            SELECT COUNT(*)
-            FROM appointments a
-            WHERE a.slot_id = s.slot_id
-              AND a.status_id <> cancelled_status_id
-        ),
-        s.is_available = (
-            (
-                SELECT COUNT(*)
-                FROM appointments a
-                WHERE a.slot_id = s.slot_id
-                  AND a.status_id <> cancelled_status_id
-            ) < s.max_patients
-        )
-    WHERE s.slot_id = NEW.slot_id;
-
-    IF OLD.slot_id <> NEW.slot_id THEN
-        UPDATE appointment_slots s
-        SET s.current_bookings = (
-                SELECT COUNT(*)
-                FROM appointments a
-                WHERE a.slot_id = s.slot_id
-                  AND a.status_id <> cancelled_status_id
-            ),
-            s.is_available = (
-                (
-                    SELECT COUNT(*)
-                    FROM appointments a
-                        WHERE a.slot_id = s.slot_id
-                      AND a.status_id <> cancelled_status_id
-                ) < s.max_patients
-            )
-        WHERE s.slot_id = OLD.slot_id;
-    END IF;
-END $$
-
 
 -- Trigger: Cancel active appointments when doctor time-off is inserted (is_approved defaults TRUE)
 DROP TRIGGER IF EXISTS after_doctor_time_off_insert_cancel_appointments $$
@@ -1500,14 +1247,43 @@ BEGIN
     END IF;
 END $$
 
--- NOTE:
--- Do not create one-primary insurance/pharmacy triggers that update the same table
--- during INSERT/UPDATE. MySQL rejects those with ER 1442 in production.
--- Primary switching is handled in application transactions.
 DROP TRIGGER IF EXISTS before_insurance_insert_one_primary $$
 DROP TRIGGER IF EXISTS before_insurance_update_one_primary $$
 DROP TRIGGER IF EXISTS before_patient_pharmacy_insert_one_primary $$
 DROP TRIGGER IF EXISTS before_patient_pharmacy_update_one_primary $$
+
+
+
+-- MISC TRIGGERS
+
+-- Trigger 1: Enforce cancel_reason when appointment is cancelled
+DROP TRIGGER IF EXISTS appointments_require_cancel_reason_on_insert $$
+CREATE TRIGGER appointments_require_cancel_reason_on_insert
+BEFORE INSERT ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+    SELECT status_id INTO cancelled_status_id FROM appointment_statuses
+    WHERE status_name = 'CANCELLED' LIMIT 1;
+    IF NEW.status_id = cancelled_status_id AND NEW.reason_id IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'reason_id is required when appointment status is Cancelled';
+    END IF;
+END $$
+
+DROP TRIGGER IF EXISTS appointments_require_cancel_reason $$
+CREATE TRIGGER appointments_require_cancel_reason
+BEFORE UPDATE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+    SELECT status_id INTO cancelled_status_id FROM appointment_statuses 
+    WHERE status_name = 'CANCELLED' LIMIT 1;
+    IF NEW.status_id = cancelled_status_id AND NEW.reason_id IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'reason_id is required when appointment status is Cancelled';
+    END IF;
+END $$
 
 -- Trigger: Auto-update invoice payment_status when a payment is recorded
 DROP TRIGGER IF EXISTS after_payment_insert_update_invoice_status $$
@@ -1548,9 +1324,225 @@ END $$
 
 DELIMITER ;
 
+-- Trigger: Enforce valid appointment status transitions (state machine)
+DROP TRIGGER IF EXISTS appointments_enforce_status_transition $$
+CREATE TRIGGER appointments_enforce_status_transition
+BEFORE UPDATE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE old_status VARCHAR(50) DEFAULT NULL;
+    DECLARE new_status VARCHAR(50) DEFAULT NULL;
 
+    IF OLD.status_id <> NEW.status_id THEN
+        SELECT status_name INTO old_status FROM appointment_statuses WHERE status_id = OLD.status_id LIMIT 1;
+        SELECT status_name INTO new_status FROM appointment_statuses WHERE status_id = NEW.status_id LIMIT 1;
 
--- VIEWS - REPORTING
+        -- Terminal states: no transitions out allowed
+        IF old_status IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Appointment status cannot be changed once it is Completed or Cancelled';
+        END IF;
+
+        -- CHECKED_IN can only move to COMPLETED or CANCELLED
+        IF old_status = 'CHECKED_IN' AND new_status NOT IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'A checked-in appointment can only be marked Completed or Cancelled';
+        END IF;
+    END IF;
+END $$
+
+-- Trigger 6: Enforce free text when a checklist item requires it
+DROP TRIGGER IF EXISTS patient_checklist_require_other_text_on_insert $$
+CREATE TRIGGER patient_checklist_require_other_text_on_insert
+BEFORE INSERT ON patient_checklist_responses
+FOR EACH ROW
+BEGIN
+    IF NEW.is_checked = TRUE AND EXISTS (
+        SELECT 1
+        FROM clinical_checklist_items ci
+        WHERE ci.checklist_item_id = NEW.checklist_item_id
+          AND ci.requires_free_text = TRUE
+    ) AND (NEW.other_text IS NULL OR TRIM(NEW.other_text) = '') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'other_text is required for this checklist item';
+    END IF;
+END $$
+
+DROP TRIGGER IF EXISTS patient_checklist_require_other_text_on_update $$
+CREATE TRIGGER patient_checklist_require_other_text_on_update
+BEFORE UPDATE ON patient_checklist_responses
+FOR EACH ROW
+BEGIN
+    IF NEW.is_checked = TRUE AND EXISTS (
+        SELECT 1
+        FROM clinical_checklist_items ci
+        WHERE ci.checklist_item_id = NEW.checklist_item_id
+          AND ci.requires_free_text = TRUE
+    ) AND (NEW.other_text IS NULL OR TRIM(NEW.other_text) = '') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'other_text is required for this checklist item';
+    END IF;
+END $$
+
+-- Trigger 7: Ensure appointment details match selected slot
+DROP TRIGGER IF EXISTS appointments_validate_slot_on_insert $$
+CREATE TRIGGER appointments_validate_slot_on_insert
+BEFORE INSERT ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+
+    SELECT status_id INTO cancelled_status_id
+    FROM appointment_statuses
+    WHERE status_name = 'CANCELLED'
+    LIMIT 1;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM appointment_slots s
+        WHERE s.slot_id = NEW.slot_id
+          AND s.doctor_id = NEW.doctor_id
+          AND s.slot_date = NEW.appointment_date
+          AND s.slot_start_time = NEW.appointment_time
+          AND (
+              (NEW.location_id IS NULL AND s.location_id IS NULL) OR
+              NEW.location_id = s.location_id
+          )
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Appointment must match the selected slot (doctor, location, date, and time)';
+    END IF;
+
+    IF NEW.status_id <> cancelled_status_id AND EXISTS (
+        SELECT 1
+        FROM appointments a
+        WHERE a.slot_id = NEW.slot_id
+          AND a.status_id <> cancelled_status_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'This slot already has an active appointment';
+    END IF;
+END $$
+
+DROP TRIGGER IF EXISTS appointments_validate_slot_on_update $$
+CREATE TRIGGER appointments_validate_slot_on_update
+BEFORE UPDATE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+
+    SELECT status_id INTO cancelled_status_id
+    FROM appointment_statuses
+    WHERE status_name = 'CANCELLED'
+    LIMIT 1;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM appointment_slots s
+        WHERE s.slot_id = NEW.slot_id
+          AND s.doctor_id = NEW.doctor_id
+          AND s.slot_date = NEW.appointment_date
+          AND s.slot_start_time = NEW.appointment_time
+          AND (
+              (NEW.location_id IS NULL AND s.location_id IS NULL) OR
+              NEW.location_id = s.location_id
+          )
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Updated appointment must match the selected slot (doctor, location, date, and time)';
+    END IF;
+
+    IF NEW.status_id <> cancelled_status_id AND EXISTS (
+        SELECT 1
+        FROM appointments a
+        WHERE a.slot_id = NEW.slot_id
+          AND a.status_id <> cancelled_status_id
+          AND a.appointment_id <> NEW.appointment_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'This slot already has an active appointment';
+    END IF;
+END $$
+
+-- Trigger 8: Keep appointment slot counters synchronized
+DROP TRIGGER IF EXISTS appointments_sync_slot_on_insert $$
+CREATE TRIGGER appointments_sync_slot_on_insert
+AFTER INSERT ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+
+    SELECT status_id INTO cancelled_status_id
+    FROM appointment_statuses
+    WHERE status_name = 'CANCELLED'
+    LIMIT 1;
+
+    UPDATE appointment_slots s
+    SET s.current_bookings = (
+            SELECT COUNT(*)
+            FROM appointments a
+            WHERE a.slot_id = s.slot_id
+              AND a.status_id <> cancelled_status_id
+        ),
+        s.is_available = (
+            (
+                SELECT COUNT(*)
+                FROM appointments a
+                WHERE a.slot_id = s.slot_id
+                  AND a.status_id <> cancelled_status_id
+            ) < s.max_patients
+        )
+    WHERE s.slot_id = NEW.slot_id;
+END $$
+
+DROP TRIGGER IF EXISTS appointments_sync_slot_on_update $$
+CREATE TRIGGER appointments_sync_slot_on_update
+AFTER UPDATE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE cancelled_status_id INT DEFAULT 4;
+
+    SELECT status_id INTO cancelled_status_id
+    FROM appointment_statuses
+    WHERE status_name = 'CANCELLED'
+    LIMIT 1;
+
+    UPDATE appointment_slots s
+    SET s.current_bookings = (
+            SELECT COUNT(*)
+            FROM appointments a
+            WHERE a.slot_id = s.slot_id
+              AND a.status_id <> cancelled_status_id
+        ),
+        s.is_available = (
+            (
+                SELECT COUNT(*)
+                FROM appointments a
+                WHERE a.slot_id = s.slot_id
+                  AND a.status_id <> cancelled_status_id
+            ) < s.max_patients
+        )
+    WHERE s.slot_id = NEW.slot_id;
+
+    IF OLD.slot_id <> NEW.slot_id THEN
+        UPDATE appointment_slots s
+        SET s.current_bookings = (
+                SELECT COUNT(*)
+                FROM appointments a
+                WHERE a.slot_id = s.slot_id
+                  AND a.status_id <> cancelled_status_id
+            ),
+            s.is_available = (
+                (
+                    SELECT COUNT(*)
+                    FROM appointments a
+                        WHERE a.slot_id = s.slot_id
+                      AND a.status_id <> cancelled_status_id
+                ) < s.max_patients
+            )
+        WHERE s.slot_id = OLD.slot_id;
+    END IF;
+END $$
 
 -- Patient Billing Summary
 CREATE OR REPLACE VIEW vw_report_patient_billing AS

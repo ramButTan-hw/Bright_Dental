@@ -232,6 +232,7 @@ const queries = {
     SELECT method_id, method_name, display_name
     FROM payment_methods
     WHERE is_active = 1
+      AND method_name <> 'CARD'
     ORDER BY method_id ASC
   `,
 

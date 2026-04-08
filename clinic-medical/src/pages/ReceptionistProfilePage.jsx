@@ -126,7 +126,7 @@ function ReceptionistProfilePage() {
   const DAYS_OF_WEEK = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
   const SCHEDULE_TIME_OPTIONS = CLINIC_TIME_SELECT_OPTIONS;
   const [scheduleEntries, setScheduleEntries] = useState(
-    DAYS_OF_WEEK.map((d) => ({ day: d, startTime: '09:00', endTime: '19:00', isOff: false }))
+    DAYS_OF_WEEK.map((d) => ({ day: d, startTime: '08:00', endTime: '19:00', isOff: false }))
   );
   const [approvedSchedule, setApprovedSchedule] = useState([]);
   const [scheduleRequests, setScheduleRequests] = useState([]);
@@ -232,7 +232,7 @@ function ReceptionistProfilePage() {
       setScheduleEntries(DAYS_OF_WEEK.map((d) => {
         const s = approvedMap[d];
         if (s) return { day: d, startTime: String(s.start_time || '').slice(0, 5), endTime: String(s.end_time || '').slice(0, 5), isOff: s.is_off === 1 || s.is_off === true };
-        return { day: d, startTime: '09:00', endTime: '19:00', isOff: false };
+        return { day: d, startTime: '08:00', endTime: '19:00', isOff: false };
       }));
     };
     loadScheduleData().catch(() => {});
@@ -691,7 +691,7 @@ function ReceptionistProfilePage() {
                 onChange={(event) => setTimeOffForm((prev) => ({ ...prev, startTime: event.target.value }))}
                 required
               >
-                <option value="">Select time (e.g., 09:00 AM)</option>
+                <option value="">Select time (e.g., 08:00 AM)</option>
                 {CLINIC_TIME_SELECT_OPTIONS.map((timeOption) => (
                   <option key={`receptionist-profile-start-${timeOption.value}`} value={timeOption.value}>
                     {timeOption.label}

@@ -16,7 +16,7 @@ function CreateAppointmentPage() {
     patientId: '',
     doctorId: '',
     appointmentDate: new Date().toISOString().slice(0, 10),
-    appointmentTime: '09:00',
+    appointmentTime: '08:00',
     locationId: '',
     notes: ''
   });
