@@ -295,7 +295,12 @@ function createAdminRoutes(handlers) {
     // POST /api/staff/schedule-requests — staff submits preferred schedule
     if (method === 'POST' && parts[0] === 'api' && parts[1] === 'staff' && parts[2] === 'schedule-requests') {
       parseJSON(req, (err, data) => {
-        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        if (err) {
+          return sendJSON(res, 400, {
+            error: 'Invalid JSON (SCHEDULE_REQ_V2)',
+            detail: 'Schedule request body could not be parsed'
+          });
+        }
         submitScheduleRequest(req, data, res);
       });
       return true;

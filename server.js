@@ -763,12 +763,22 @@ function parseJSON(req, callback) {
     body += chunk.toString();
   });
   req.on('end', () => {
+    const raw = String(body || '').replace(/^\uFEFF/, '').trim();
     try {
-      const raw = String(body || '').replace(/^\uFEFF/, '').trim();
       const data = raw ? JSON.parse(raw) : {};
       callback(null, data);
     } catch (err) {
-      const raw = String(body || '').replace(/^\uFEFF/, '').trim();
+      // Some proxies/clients send URL-encoded JSON payload strings.
+      if (raw && /^%7B|%5B/i.test(raw)) {
+        try {
+          const decoded = decodeURIComponent(raw);
+          const data = JSON.parse(decoded);
+          return callback(null, data);
+        } catch (_decodeErr) {
+          // Continue to additional fallbacks below.
+        }
+      }
+
       const contentType = String(req.headers['content-type'] || '').toLowerCase();
       const looksUrlEncoded = contentType.includes('application/x-www-form-urlencoded')
         || (/^[^\s{}\[]+=[\s\S]*$/.test(raw) && raw.includes('='));
@@ -797,6 +807,14 @@ function parseJSON(req, callback) {
           // fall through to invalid JSON callback
         }
       }
+
+      console.warn('parseJSON failed', {
+        path: req.url,
+        method: req.method,
+        contentType,
+        bodyLength: raw.length,
+        bodyPreview: raw.slice(0, 200)
+      });
 
       callback(err, null);
     }
