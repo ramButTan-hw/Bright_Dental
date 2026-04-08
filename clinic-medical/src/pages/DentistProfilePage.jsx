@@ -258,7 +258,7 @@ function DentistProfilePage() {
         };
       });
 
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests?staffId=${encodeURIComponent(Number(resolvedStaffId))}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ staffId: Number(resolvedStaffId), entries: entriesPayload })

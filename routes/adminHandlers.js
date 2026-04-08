@@ -2467,9 +2467,23 @@ function createAdminHandlers(deps) {
     return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
   }
 
-  function normalizeScheduleSubmissionPayload(data) {
+  function normalizeScheduleSubmissionPayload(data, req) {
     const payload = (data && typeof data === 'object') ? data : {};
+    const queryStaffId = Number(url.parse(req.url, true)?.query?.staffId || 0);
     let source = payload.payload && typeof payload.payload === 'object' ? payload.payload : payload;
+
+    // If body is parsed as a top-level entries array, preserve it and fallback staffId to query string.
+    if (Array.isArray(payload)) {
+      return {
+        staffId: Number.isInteger(queryStaffId) && queryStaffId > 0 ? queryStaffId : 0,
+        entries: payload.map((entry) => ({
+          day: String(entry?.day || '').toUpperCase(),
+          startTime: entry?.startTime == null ? null : String(entry.startTime),
+          endTime: entry?.endTime == null ? null : String(entry.endTime),
+          isOff: coerceBoolean(entry?.isOff)
+        }))
+      };
+    }
 
     // Some parsers produce a single key where the key itself is JSON and value is ''.
     if (source && typeof source === 'object' && !Array.isArray(source)) {
@@ -2552,6 +2566,10 @@ function createAdminHandlers(deps) {
       staffId = Number(payload.staffId);
     }
 
+    if ((!Number.isInteger(staffId) || staffId <= 0) && Number.isInteger(queryStaffId) && queryStaffId > 0) {
+      staffId = queryStaffId;
+    }
+
     return {
       staffId,
       entries: normalizedEntries
@@ -2559,7 +2577,7 @@ function createAdminHandlers(deps) {
   }
 
   function submitScheduleRequest(req, data, res) {
-    const { staffId, entries } = normalizeScheduleSubmissionPayload(data);
+    const { staffId, entries } = normalizeScheduleSubmissionPayload(data, req);
     if (!Number.isInteger(staffId) || staffId <= 0 || !entries.length) {
       const source = (data && typeof data === 'object') ? data : {};
       return sendJSON(res, 400, {
