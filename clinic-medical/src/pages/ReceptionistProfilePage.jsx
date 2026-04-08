@@ -233,7 +233,14 @@ function ReceptionistProfilePage() {
         const s = approvedMap[d];
         if (s) {
           const isOff = Number(s.is_off) === 1 || s.is_off === true || String(s.is_off).toLowerCase() === 'true';
-          return { day: d, startTime: String(s.start_time || '').slice(0, 5), endTime: String(s.end_time || '').slice(0, 5), isOff };
+          const startTime = String(s.start_time || '').slice(0, 5);
+          const endTime = String(s.end_time || '').slice(0, 5);
+          return {
+            day: d,
+            startTime: isOff ? '' : (startTime || CLINIC_OPEN_TIME),
+            endTime: isOff ? '' : (endTime || CLINIC_CLOSE_TIME),
+            isOff
+          };
         }
         return { day: d, startTime: '08:00', endTime: '19:00', isOff: false };
       }));
@@ -265,7 +272,19 @@ function ReceptionistProfilePage() {
   };
 
   const updateScheduleEntry = (idx, field, value) => {
-    setScheduleEntries((prev) => prev.map((entry, i) => i === idx ? { ...entry, [field]: value } : entry));
+    setScheduleEntries((prev) => prev.map((entry, i) => {
+      if (i !== idx) return entry;
+      if (field === 'isOff') {
+        const isOff = !!value;
+        return {
+          ...entry,
+          isOff,
+          startTime: isOff ? '' : (entry.startTime || CLINIC_OPEN_TIME),
+          endTime: isOff ? '' : (entry.endTime || CLINIC_CLOSE_TIME)
+        };
+      }
+      return { ...entry, [field]: value };
+    }));
   };
 
   const updateField = (field, value) => {
