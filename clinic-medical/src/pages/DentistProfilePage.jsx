@@ -225,7 +225,10 @@ function DentistProfilePage() {
       (Array.isArray(approved) ? approved : []).forEach((s) => { approvedMap[s.day_of_week] = s; });
       setScheduleEntries(DAYS_OF_WEEK.map((d) => {
         const s = approvedMap[d];
-        if (s) return { day: d, startTime: String(s.start_time || '').slice(0, 5), endTime: String(s.end_time || '').slice(0, 5), isOff: s.is_off === 1 || s.is_off === true };
+        if (s) {
+          const isOff = Number(s.is_off) === 1 || s.is_off === true || String(s.is_off).toLowerCase() === 'true';
+          return { day: d, startTime: String(s.start_time || '').slice(0, 5), endTime: String(s.end_time || '').slice(0, 5), isOff };
+        }
         return { day: d, startTime: '08:00', endTime: '19:00', isOff: false };
       }));
     };
