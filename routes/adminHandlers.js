@@ -2438,8 +2438,13 @@ function createAdminHandlers(deps) {
 
   // ── Staff Schedule Request Handlers ──
 
-  const CLINIC_START_MINUTES = 8 * 60;
-  const CLINIC_END_MINUTES = 19 * 60;
+  function getClinicStartMinutes() {
+    return 8 * 60;
+  }
+
+  function getClinicEndMinutes() {
+    return 19 * 60;
+  }
 
   function parseScheduleTimeToMinutes(rawTime) {
     const value = String(rawTime || '').trim();
@@ -2608,8 +2613,8 @@ function createAdminHandlers(deps) {
         const endMinutes = parseScheduleTimeToMinutes(endRaw);
         const outOfBounds = startMinutes === null
           || endMinutes === null
-          || startMinutes < CLINIC_START_MINUTES
-          || endMinutes > CLINIC_END_MINUTES
+          || startMinutes < getClinicStartMinutes()
+          || endMinutes > getClinicEndMinutes()
           || startMinutes >= endMinutes;
 
         if (outOfBounds) {
@@ -2868,8 +2873,8 @@ function createAdminHandlers(deps) {
           const endMinutes = parseScheduleTimeToMinutes(endRaw);
           const outOfBounds = startMinutes === null
             || endMinutes === null
-            || startMinutes < CLINIC_START_MINUTES
-            || endMinutes > CLINIC_END_MINUTES
+            || startMinutes < getClinicStartMinutes()
+            || endMinutes > getClinicEndMinutes()
             || startMinutes >= endMinutes;
           if (outOfBounds) continue;
 

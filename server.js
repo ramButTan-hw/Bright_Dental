@@ -759,16 +759,70 @@ END`, (err) => { if (err) console.error('Create pharmacy_change_requests_create_
 
 function parseJSON(req, callback) {
   let body = '';
+
+  function tryParseFirstJsonObject(value) {
+    let start = value.indexOf('{');
+    if (start < 0) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < value.length; i++) {
+      const ch = value[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === '{') {
+        depth += 1;
+      } else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          return value.slice(start, i + 1);
+        }
+      }
+    }
+    return null;
+  }
+
   req.on('data', chunk => {
     body += chunk.toString();
   });
   req.on('end', () => {
-    const raw = String(body || '').replace(/^\uFEFF/, '').trim();
+    const raw = String(body || '')
+      .replace(/^\uFEFF/, '')
+      .replace(/\u0000/g, '')
+      .trim();
     try {
       const data = raw ? JSON.parse(raw) : {};
       callback(null, data);
     } catch (err) {
       if (raw) {
+        const firstObject = tryParseFirstJsonObject(raw);
+        if (firstObject) {
+          try {
+            return callback(null, JSON.parse(firstObject));
+          } catch (_firstObjectErr) {
+            // Continue to additional fallbacks.
+          }
+        }
+
         // If a JSON payload is wrapped in extra transport noise, salvage the JSON segment.
         const objectStart = raw.indexOf('{');
         const objectEnd = raw.lastIndexOf('}');
@@ -837,8 +891,10 @@ function parseJSON(req, callback) {
         path: req.url,
         method: req.method,
         contentType,
+        parseError: err.message,
         bodyLength: raw.length,
-        bodyPreview: raw.slice(0, 200)
+        bodyPreview: raw.slice(0, 200),
+        bodyTail: raw.slice(Math.max(0, raw.length - 200))
       });
 
       err.message = `parseJSON failed: ${err.message}`;
