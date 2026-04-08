@@ -264,7 +264,12 @@ function DentistProfilePage() {
         body: JSON.stringify({ staffId: Number(resolvedStaffId), entries: entriesPayload })
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail ? `${payload.error || 'Failed to submit schedule'}: ${payload.detail}` : (payload.error || 'Failed to submit schedule'));
+      if (!response.ok) {
+        const detailText = payload.detail
+          ? (typeof payload.detail === 'string' ? payload.detail : JSON.stringify(payload.detail))
+          : '';
+        throw new Error(detailText ? `${payload.error || 'Failed to submit schedule'}: ${detailText}` : (payload.error || 'Failed to submit schedule'));
+      }
       setScheduleStatus('Schedule preference submitted for admin approval.');
       // Reload requests
       const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests?staffId=${resolvedStaffId}`).then((r) => r.json().catch(() => []));

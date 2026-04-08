@@ -2469,9 +2469,28 @@ function createAdminHandlers(deps) {
 
   function normalizeScheduleSubmissionPayload(data) {
     const payload = (data && typeof data === 'object') ? data : {};
-    const source = payload.payload && typeof payload.payload === 'object' ? payload.payload : payload;
+    let source = payload.payload && typeof payload.payload === 'object' ? payload.payload : payload;
 
-    let staffId = Number(source.staffId || source.staff_id || 0);
+    // Some parsers produce a single key where the key itself is JSON and value is ''.
+    if (source && typeof source === 'object' && !Array.isArray(source)) {
+      const keys = Object.keys(source);
+      if (keys.length === 1 && (source[keys[0]] === '' || source[keys[0]] == null)) {
+        const onlyKey = String(keys[0] || '').trim();
+        if (onlyKey.startsWith('{') || onlyKey.startsWith('[') || /^%7B|%5B/i.test(onlyKey)) {
+          try {
+            const decoded = /^%7B|%5B/i.test(onlyKey) ? decodeURIComponent(onlyKey) : onlyKey;
+            const parsedSingleKey = JSON.parse(decoded);
+            if (parsedSingleKey && typeof parsedSingleKey === 'object') {
+              source = parsedSingleKey;
+            }
+          } catch (_singleKeyErr) {
+            // Continue with best-effort parsing below.
+          }
+        }
+      }
+    }
+
+    let staffId = Number(source.staffId || source.staff_id || source.staffid || 0);
     let entries = Array.isArray(source.entries) ? source.entries : [];
 
     // Handle URL-encoded bracket keys like entries[0][day], entries[0][startTime], etc.
@@ -2479,6 +2498,24 @@ function createAdminHandlers(deps) {
       const rebuiltByIndex = {};
       Object.keys(source).forEach((key) => {
         const match = key.match(/^entries\[(\d+)\]\[(day|startTime|endTime|isOff)\]$/);
+        if (!match) return;
+        const idx = Number(match[1]);
+        const field = match[2];
+        if (!Number.isInteger(idx)) return;
+        if (!rebuiltByIndex[idx]) rebuiltByIndex[idx] = {};
+        rebuiltByIndex[idx][field] = source[key];
+      });
+      entries = Object.keys(rebuiltByIndex)
+        .map((k) => Number(k))
+        .sort((a, b) => a - b)
+        .map((idx) => rebuiltByIndex[idx]);
+    }
+
+    // Handle dotted notation keys like entries.0.day / entries.0.startTime
+    if (!entries.length) {
+      const rebuiltByIndex = {};
+      Object.keys(source).forEach((key) => {
+        const match = key.match(/^entries\.(\d+)\.(day|startTime|endTime|isOff)$/);
         if (!match) return;
         const idx = Number(match[1]);
         const field = match[2];
@@ -2524,7 +2561,15 @@ function createAdminHandlers(deps) {
   function submitScheduleRequest(req, data, res) {
     const { staffId, entries } = normalizeScheduleSubmissionPayload(data);
     if (!Number.isInteger(staffId) || staffId <= 0 || !entries.length) {
-      return sendJSON(res, 400, { error: 'staffId and entries[] are required' });
+      const source = (data && typeof data === 'object') ? data : {};
+      return sendJSON(res, 400, {
+        error: 'staffId and entries[] are required',
+        detail: {
+          receivedKeys: Object.keys(source).slice(0, 20),
+          receivedStaffId: source.staffId ?? source.staff_id ?? source.staffid ?? null,
+          entriesType: Array.isArray(source.entries) ? 'array' : typeof source.entries
+        }
+      });
     }
 
     const VALID_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
