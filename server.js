@@ -764,9 +764,40 @@ function parseJSON(req, callback) {
   });
   req.on('end', () => {
     try {
-      const data = body ? JSON.parse(body) : {};
+      const raw = String(body || '').replace(/^\uFEFF/, '').trim();
+      const data = raw ? JSON.parse(raw) : {};
       callback(null, data);
     } catch (err) {
+      const raw = String(body || '').replace(/^\uFEFF/, '').trim();
+      const contentType = String(req.headers['content-type'] || '').toLowerCase();
+      const looksUrlEncoded = contentType.includes('application/x-www-form-urlencoded')
+        || (/^[^\s{}\[]+=[\s\S]*$/.test(raw) && raw.includes('='));
+
+      if (looksUrlEncoded) {
+        try {
+          const params = new URLSearchParams(raw);
+          const parsed = {};
+          for (const [key, value] of params.entries()) {
+            parsed[key] = value;
+          }
+
+          if (typeof parsed.staffId === 'string' && /^\d+$/.test(parsed.staffId)) {
+            parsed.staffId = Number(parsed.staffId);
+          }
+          if (typeof parsed.entries === 'string') {
+            try {
+              parsed.entries = JSON.parse(parsed.entries);
+            } catch (_innerErr) {
+              parsed.entries = [];
+            }
+          }
+
+          return callback(null, parsed);
+        } catch (_urlErr) {
+          // fall through to invalid JSON callback
+        }
+      }
+
       callback(err, null);
     }
   });

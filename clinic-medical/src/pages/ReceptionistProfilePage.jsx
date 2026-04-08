@@ -254,10 +254,20 @@ function ReceptionistProfilePage() {
     setIsSubmittingSchedule(true);
     setScheduleStatus('');
     try {
+      const entriesPayload = scheduleEntries.map((entry) => {
+        const isOff = !!entry.isOff;
+        return {
+          day: String(entry.day || '').toUpperCase(),
+          startTime: isOff ? null : (String(entry.startTime || CLINIC_OPEN_TIME)),
+          endTime: isOff ? null : (String(entry.endTime || CLINIC_CLOSE_TIME)),
+          isOff
+        };
+      });
+
       const response = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ staffId: resolvedStaffId, entries: scheduleEntries.map((e) => ({ ...e, isOff: !!e.isOff })) })
+        body: JSON.stringify({ staffId: Number(resolvedStaffId), entries: entriesPayload })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Failed to submit schedule');
