@@ -2438,6 +2438,28 @@ function createAdminHandlers(deps) {
 
   // ── Staff Schedule Request Handlers ──
 
+  const CLINIC_START_MINUTES = 8 * 60;
+  const CLINIC_END_MINUTES = 19 * 60;
+
+  function parseScheduleTimeToMinutes(rawTime) {
+    const value = String(rawTime || '').trim();
+    const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!match) return null;
+
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return null;
+    }
+    return (hour * 60) + minute;
+  }
+
+  function formatScheduleTimeHHMM(totalMinutes) {
+    const hour = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+    const minute = String(totalMinutes % 60).padStart(2, '0');
+    return `${hour}:${minute}`;
+  }
+
   function submitScheduleRequest(req, data, res) {
     const staffId = Number(data.staffId || 0);
     const entries = Array.isArray(data.entries) ? data.entries : [];
@@ -2450,14 +2472,31 @@ function createAdminHandlers(deps) {
     for (const e of entries) {
       const day = String(e.day || '').toUpperCase();
       const isOff = !!e.isOff;
-      const start = isOff ? null : String(e.startTime || '').trim();
-      const end = isOff ? null : String(e.endTime || '').trim();
+      const startRaw = isOff ? null : String(e.startTime || '').trim();
+      const endRaw = isOff ? null : String(e.endTime || '').trim();
       if (!VALID_DAYS.includes(day)) {
         return sendJSON(res, 400, { error: `Invalid day: ${day}` });
       }
-      if (!isOff && (!start || !end || start >= end)) {
-        return sendJSON(res, 400, { error: `Invalid entry: ${day} ${start}-${end}` });
+
+      let start = null;
+      let end = null;
+      if (!isOff) {
+        const startMinutes = parseScheduleTimeToMinutes(startRaw);
+        const endMinutes = parseScheduleTimeToMinutes(endRaw);
+        const outOfBounds = startMinutes === null
+          || endMinutes === null
+          || startMinutes < CLINIC_START_MINUTES
+          || endMinutes > CLINIC_END_MINUTES
+          || startMinutes >= endMinutes;
+
+        if (outOfBounds) {
+          return sendJSON(res, 400, { error: `Invalid entry: ${day} ${startRaw}-${endRaw}` });
+        }
+
+        start = formatScheduleTimeHHMM(startMinutes);
+        end = formatScheduleTimeHHMM(endMinutes);
       }
+
       rows.push([staffId, day, start, end, isOff ? 1 : 0, 'PENDING']);
     }
 
@@ -2614,9 +2653,9 @@ function createAdminHandlers(deps) {
   }
 
   function getStaffScheduleGaps(req, res) {
-    // Find days/hours where no staff are scheduled vs clinic hours (09:00-19:00, Mon-Sat)
+    // Find days/hours where no staff are scheduled vs clinic hours (08:00-19:00, Mon-Sat)
     const CLINIC_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
-    const CLINIC_START = '09:00:00';
+    const CLINIC_START = '08:00:00';
     const CLINIC_END = '19:00:00';
 
     pool.query(
@@ -2653,7 +2692,7 @@ function createAdminHandlers(deps) {
           }
 
           // Check each clinic hour for coverage
-          for (let h = 9; h < 19; h++) {
+          for (let h = 8; h < 19; h++) {
             const hourStart = `${String(h).padStart(2, '0')}:00:00`;
             const hourEnd = `${String(h + 1).padStart(2, '0')}:00:00`;
             const hasDoctorCoverage = daySchedules.some((s) =>
@@ -2696,9 +2735,25 @@ function createAdminHandlers(deps) {
         const day = String(e.day || '').toUpperCase();
         if (!VALID_DAYS.includes(day)) continue;
         const isOff = !!e.isOff;
-        const start = isOff ? null : String(e.startTime || '').trim() || null;
-        const end = isOff ? null : String(e.endTime || '').trim() || null;
-        if (!isOff && (!start || !end || start >= end)) continue;
+        const startRaw = isOff ? null : String(e.startTime || '').trim() || null;
+        const endRaw = isOff ? null : String(e.endTime || '').trim() || null;
+
+        let start = null;
+        let end = null;
+        if (!isOff) {
+          const startMinutes = parseScheduleTimeToMinutes(startRaw);
+          const endMinutes = parseScheduleTimeToMinutes(endRaw);
+          const outOfBounds = startMinutes === null
+            || endMinutes === null
+            || startMinutes < CLINIC_START_MINUTES
+            || endMinutes > CLINIC_END_MINUTES
+            || startMinutes >= endMinutes;
+          if (outOfBounds) continue;
+
+          start = formatScheduleTimeHHMM(startMinutes);
+          end = formatScheduleTimeHHMM(endMinutes);
+        }
+
         rows.push([staffId, day, start, end, isOff ? 1 : 0]);
       }
 
