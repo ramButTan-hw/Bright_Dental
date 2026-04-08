@@ -2460,9 +2460,69 @@ function createAdminHandlers(deps) {
     return `${hour}:${minute}`;
   }
 
+  function coerceBoolean(value) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+  }
+
+  function normalizeScheduleSubmissionPayload(data) {
+    const payload = (data && typeof data === 'object') ? data : {};
+    const source = payload.payload && typeof payload.payload === 'object' ? payload.payload : payload;
+
+    let staffId = Number(source.staffId || source.staff_id || 0);
+    let entries = Array.isArray(source.entries) ? source.entries : [];
+
+    // Handle URL-encoded bracket keys like entries[0][day], entries[0][startTime], etc.
+    if (!entries.length) {
+      const rebuiltByIndex = {};
+      Object.keys(source).forEach((key) => {
+        const match = key.match(/^entries\[(\d+)\]\[(day|startTime|endTime|isOff)\]$/);
+        if (!match) return;
+        const idx = Number(match[1]);
+        const field = match[2];
+        if (!Number.isInteger(idx)) return;
+        if (!rebuiltByIndex[idx]) rebuiltByIndex[idx] = {};
+        rebuiltByIndex[idx][field] = source[key];
+      });
+      entries = Object.keys(rebuiltByIndex)
+        .map((k) => Number(k))
+        .sort((a, b) => a - b)
+        .map((idx) => rebuiltByIndex[idx]);
+    }
+
+    // Handle a single JSON string blob if client sent entries as serialized text.
+    if (!entries.length && typeof source.entries === 'string') {
+      try {
+        const parsedEntries = JSON.parse(source.entries);
+        if (Array.isArray(parsedEntries)) entries = parsedEntries;
+      } catch (_err) {
+        entries = [];
+      }
+    }
+
+    const normalizedEntries = Array.isArray(entries)
+      ? entries.map((entry) => ({
+          day: String(entry?.day || '').toUpperCase(),
+          startTime: entry?.startTime == null ? null : String(entry.startTime),
+          endTime: entry?.endTime == null ? null : String(entry.endTime),
+          isOff: coerceBoolean(entry?.isOff)
+        }))
+      : [];
+
+    if ((!Number.isInteger(staffId) || staffId <= 0) && typeof payload.staffId === 'string' && /^\d+$/.test(payload.staffId)) {
+      staffId = Number(payload.staffId);
+    }
+
+    return {
+      staffId,
+      entries: normalizedEntries
+    };
+  }
+
   function submitScheduleRequest(req, data, res) {
-    const staffId = Number(data.staffId || 0);
-    const entries = Array.isArray(data.entries) ? data.entries : [];
+    const { staffId, entries } = normalizeScheduleSubmissionPayload(data);
     if (!Number.isInteger(staffId) || staffId <= 0 || !entries.length) {
       return sendJSON(res, 400, { error: 'staffId and entries[] are required' });
     }
@@ -2471,7 +2531,7 @@ function createAdminHandlers(deps) {
     const rows = [];
     for (const e of entries) {
       const day = String(e.day || '').toUpperCase();
-      const isOff = !!e.isOff;
+      const isOff = coerceBoolean(e.isOff);
       const startRaw = isOff ? null : String(e.startTime || '').trim();
       const endRaw = isOff ? null : String(e.endTime || '').trim();
       if (!VALID_DAYS.includes(day)) {
