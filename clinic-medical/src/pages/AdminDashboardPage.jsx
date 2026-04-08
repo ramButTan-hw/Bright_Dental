@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   formatDate,
   formatMoney,
@@ -89,6 +90,7 @@ const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
 
 function AdminDashboardPage() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
+  const location = useLocation();
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [activeSection, setActiveSection] = useState('overview');
   const [reportStatus, setReportStatus] = useState('ALL');
@@ -222,6 +224,13 @@ function AdminDashboardPage() {
   const sortWorkload = useSortState();
   const sortDoctorSchedule = useSortState();
   const sortRefund = useSortState();
+
+  useEffect(() => {
+    const requestedSection = String(location.state?.initialSection || '').toLowerCase();
+    if (requestedSection === 'recall' && activeSection !== 'recall') {
+      setActiveSection('recall');
+    }
+  }, [location.state, activeSection]);
 
   useEffect(() => {
     setMonthlyTrendsPage(0);
@@ -687,7 +696,7 @@ function AdminDashboardPage() {
         tone: 'warning',
         title: 'Pending Time-Off Approvals',
         message: `${pendingTimeOffCount} staff off-day request${pendingTimeOffCount === 1 ? '' : 's'} need admin review.`,
-        section: 'staff-scheduling',
+        section: 'staffing',
         action: 'Review Requests'
       });
     }
@@ -1164,68 +1173,6 @@ function AdminDashboardPage() {
                 </div>
               </article>
 
-              <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
-                <h2>Follow-Up Recall Queue</h2>
-                <p className="muted">
-                  Overdue: {followUpQueue.summary?.overdue || 0} | Due Today: {followUpQueue.summary?.dueToday || 0} | Upcoming: {followUpQueue.summary?.upcoming || 0} | Unscheduled: {followUpQueue.summary?.unscheduled || 0}
-                </p>
-                <label className="admin-inline-filter" style={{ marginBottom: '0.6rem', display: 'inline-flex' }}>
-                  <input
-                    type="checkbox"
-                    checked={includeScheduledFollowUps}
-                    onChange={(e) => setIncludeScheduledFollowUps(e.target.checked)}
-                    style={{ marginRight: '0.45rem' }}
-                  />
-                  Include already scheduled patients
-                </label>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Patient</th>
-                        <th>Phone</th>
-                        <th>Follow-Up Date</th>
-                        <th>Status</th>
-                        <th>Procedures</th>
-                        <th>Suggested Dentist</th>
-                        <th>Next Appointment</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {followUpQueue.items?.length ? followUpQueue.items.map((item) => (
-                        <tr key={`${item.patientId}-${item.followUpDate}`}>
-                          <td>{item.patientName}</td>
-                          <td>{item.phone || 'N/A'}</td>
-                          <td>{formatDate(item.followUpDate)}</td>
-                          <td>
-                            <span
-                              style={{
-                                display: 'inline-block',
-                                padding: '0.15rem 0.45rem',
-                                borderRadius: '999px',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                background: item.dueState === 'OVERDUE' ? '#f8d7da' : item.dueState === 'DUE_TODAY' ? '#fff3cd' : '#e7f1ff',
-                                color: item.dueState === 'OVERDUE' ? '#721c24' : item.dueState === 'DUE_TODAY' ? '#856404' : '#1f4d7a'
-                              }}
-                            >
-                              {item.dueState === 'OVERDUE' ? `Overdue (${Math.abs(Number(item.daysUntilDue || 0))}d)` : item.dueState === 'DUE_TODAY' ? 'Due Today' : `Upcoming (${Number(item.daysUntilDue || 0)}d)`}
-                            </span>
-                            {item.isAlreadyScheduled && (
-                              <span style={{ marginLeft: '0.4rem', fontSize: '0.75rem', color: '#155724', fontWeight: 700 }}>
-                                Scheduled
-                              </span>
-                            )}
-                          </td>
-                          <td>{Array.isArray(item.procedureCodes) && item.procedureCodes.length ? item.procedureCodes.join(', ') : 'N/A'}</td>
-                          <td>{item.suggestedDoctorName || 'Any available dentist'}</td>
-                          <td>{item.nextAppointmentDate ? formatDate(item.nextAppointmentDate) : 'Not booked'}</td>
-                        </tr>
-                      )) : <tr><td colSpan="7">No follow-ups due in the selected recall window.</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
-              </article>
             </section>
           )}
 
@@ -2050,9 +1997,9 @@ function AdminDashboardPage() {
                     const startEditing = () => {
                       const entries = ADMIN_DAYS.map((day) => {
                         const existing = staff.days.find((d) => d.day_of_week === day);
-                        if (existing && existing.is_off) return { day, startTime: '09:00', endTime: '17:00', isOff: true };
+                        if (existing && existing.is_off) return { day, startTime: '08:00', endTime: '17:00', isOff: true };
                         if (existing) return { day, startTime: String(existing.start_time || '').slice(0, 5), endTime: String(existing.end_time || '').slice(0, 5), isOff: false };
-                        return { day, startTime: '09:00', endTime: '17:00', isOff: true };
+                        return { day, startTime: '08:00', endTime: '17:00', isOff: true };
                       });
                       setEditingSchedules((prev) => ({ ...prev, [staff.staff_id]: entries }));
                     };

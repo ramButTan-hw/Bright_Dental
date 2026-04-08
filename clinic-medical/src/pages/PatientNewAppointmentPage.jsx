@@ -8,6 +8,7 @@ const MAX_QUIT_HISTORY_ROWS = 3;
 const APPOINTMENT_LOOKAHEAD_DAYS = 365;
 const WEEKDAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const TIME_PREFERENCE_OPTIONS = [
+  { value: '08:00', label: '8:00 AM' },
   { value: '09:00', label: '9:00 AM' },
   { value: '10:00', label: '10:00 AM' },
   { value: '11:00', label: '11:00 AM' },

@@ -79,6 +79,8 @@ const ALLERGIES_INITIAL_STATE = ALLERGY_OPTIONS.reduce((acc, item) => {
 
 const WEEKDAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const TIME_PREFERENCE_OPTIONS = [
+  { value: '08:00', label: '8:00 AM' },
+  { value: '08:00', label: '8:00 AM' },
   { value: '09:00', label: '9:00 AM' },
   { value: '10:00', label: '10:00 AM' },
   { value: '11:00', label: '11:00 AM' },
@@ -859,6 +861,7 @@ function RegisterPatientPage() {
                     {(() => {
                       const dayData = availability.find((d) => d.date === appointmentSelection.preferredDate);
                       const times = [
+                        { value: '08:00', label: '8:00 AM' },
                         { value: '09:00', label: '9:00 AM' }, { value: '10:00', label: '10:00 AM' },
                         { value: '11:00', label: '11:00 AM' }, { value: '12:00', label: '12:00 PM' },
                         { value: '13:00', label: '1:00 PM' }, { value: '14:00', label: '2:00 PM' },
