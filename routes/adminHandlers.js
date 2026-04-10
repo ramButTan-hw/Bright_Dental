@@ -701,6 +701,111 @@ function createAdminHandlers(deps) {
     );
   }
 
+  function deleteAdminLocation(req, locationId, res) {
+    if (!Number.isInteger(locationId) || locationId <= 0) {
+      return sendJSON(res, 400, { error: 'A valid locationId is required' });
+    }
+
+    pool.getConnection((connErr, conn) => {
+      if (connErr) {
+        console.error('Error getting DB connection for location delete:', connErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      conn.beginTransaction((beginErr) => {
+        if (beginErr) {
+          conn.release();
+          console.error('Error starting location delete transaction:', beginErr);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        conn.query(
+          'SELECT location_id FROM locations WHERE location_id = ? FOR UPDATE',
+          [locationId],
+          (locErr, locRows) => {
+            if (locErr) {
+              return conn.rollback(() => {
+                conn.release();
+                console.error('Error locking location for delete:', locErr);
+                sendJSON(res, 500, { error: 'Database error' });
+              });
+            }
+
+            if (!locRows?.length) {
+              return conn.rollback(() => {
+                conn.release();
+                sendJSON(res, 404, { error: 'Location not found' });
+              });
+            }
+
+            conn.query('DELETE FROM staff_locations WHERE location_id = ?', [locationId], (staffLocErr) => {
+              if (staffLocErr) {
+                return conn.rollback(() => {
+                  conn.release();
+                  console.error('Error deleting staff_locations for location:', staffLocErr);
+                  sendJSON(res, 500, { error: 'Failed to delete location dependencies' });
+                });
+              }
+
+              conn.query('UPDATE appointment_slots SET location_id = NULL WHERE location_id = ?', [locationId], (slotsErr) => {
+                if (slotsErr) {
+                  return conn.rollback(() => {
+                    conn.release();
+                    console.error('Error clearing appointment_slots location references:', slotsErr);
+                    sendJSON(res, 500, { error: 'Failed to delete location dependencies' });
+                  });
+                }
+
+                conn.query('UPDATE appointments SET location_id = NULL WHERE location_id = ?', [locationId], (apptErr) => {
+                  if (apptErr) {
+                    return conn.rollback(() => {
+                      conn.release();
+                      console.error('Error clearing appointments location references:', apptErr);
+                      sendJSON(res, 500, { error: 'Failed to delete location dependencies' });
+                    });
+                  }
+
+                  conn.query('DELETE FROM locations WHERE location_id = ?', [locationId], (delErr, delResult) => {
+                    if (delErr) {
+                      return conn.rollback(() => {
+                        conn.release();
+                        if (delErr.code === 'ER_ROW_IS_REFERENCED_2') {
+                          return sendJSON(res, 409, { error: 'Location is still referenced by other records and cannot be deleted' });
+                        }
+                        console.error('Error deleting location:', delErr);
+                        sendJSON(res, 500, { error: 'Failed to delete location' });
+                      });
+                    }
+
+                    if (!delResult?.affectedRows) {
+                      return conn.rollback(() => {
+                        conn.release();
+                        sendJSON(res, 404, { error: 'Location not found' });
+                      });
+                    }
+
+                    conn.commit((commitErr) => {
+                      if (commitErr) {
+                        return conn.rollback(() => {
+                          conn.release();
+                          console.error('Error committing location delete transaction:', commitErr);
+                          sendJSON(res, 500, { error: 'Failed to delete location' });
+                        });
+                      }
+
+                      conn.release();
+                      sendJSON(res, 200, { message: 'Location deleted successfully' });
+                    });
+                  });
+                });
+              });
+            });
+          }
+        );
+      });
+    });
+  }
+
   function getAdminDoctorTimeOff(req, res) {
     pool.query(
       `SELECT
@@ -2401,6 +2506,7 @@ function createAdminHandlers(deps) {
     createAdminDoctor,
     getAdminLocations,
     createAdminLocation,
+    deleteAdminLocation,
     getAdminDoctorTimeOff,
     getAdminStaffTimeOffRequests,
     createAdminDoctorTimeOff,

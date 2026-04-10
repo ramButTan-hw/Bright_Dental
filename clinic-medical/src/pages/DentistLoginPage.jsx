@@ -31,7 +31,7 @@ function DentistLoginPage() {
   const [selectedDate, setSelectedDate] = useState(() => getLocalDateString());
   const [appointments, setAppointments] = useState([]);
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
-  const [searchResultAppointments, setSearchResultAppointments] = useState([]);
+  const [searchResultPatients, setSearchResultPatients] = useState([]);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [mySchedule, setMySchedule] = useState([]);
@@ -230,7 +230,7 @@ function DentistLoginPage() {
   useEffect(() => {
     const query = String(patientSearchTerm || '').trim();
     if (!query) {
-      setSearchResultAppointments([]);
+      setSearchResultPatients([]);
       setIsSearchLoading(false);
       return;
     }
@@ -248,13 +248,13 @@ function DentistLoginPage() {
         );
         const payload = await response.json().catch(() => []);
         if (!response.ok) {
-          throw new Error(payload.error || 'Failed to search patient appointments');
+          throw new Error(payload.error || 'Failed to search patients');
         }
-        setSearchResultAppointments(Array.isArray(payload) ? payload : []);
+        setSearchResultPatients(Array.isArray(payload) ? payload : []);
       } catch (err) {
         if (err.name !== 'AbortError') {
-          setSearchResultAppointments([]);
-          setMessage(err.message || 'Unable to search patient appointments.');
+          setSearchResultPatients([]);
+          setMessage(err.message || 'Unable to search patients.');
         }
       } finally {
         setIsSearchLoading(false);
@@ -390,40 +390,36 @@ function DentistLoginPage() {
             value={patientSearchTerm}
             onChange={(event) => setPatientSearchTerm(event.target.value)}
           />
-          {patientSearchTerm.trim() && searchResultAppointments.length > 0 ? (
+          {patientSearchTerm.trim() && searchResultPatients.length > 0 ? (
             <ul className="dentist-search-results">
-              {searchResultAppointments.map((appt) => (
-                <li key={appt.appointment_id}>
+              {searchResultPatients.map((patient) => (
+                <li key={patient.patient_id}>
                   <button
                     type="button"
                     onClick={() => {
-                      const apptDate = String(appt.appointment_date || '').slice(0, 10);
-                      setSelectedDate(apptDate);
-                      if (Number(appt.doctor_id) === Number(session?.doctorId)) {
-                        navigate(`/dentist/patient/${appt.appointment_id}`);
+                      const appointmentId = Number(patient.latest_appointment_id || 0);
+                      if (appointmentId > 0) {
+                        navigate(`/dentist/patient/${appointmentId}`);
                       }
                     }}
                     className="dentist-search-result-item"
                   >
                     <div className="dentist-result-info">
-                      <div className="dentist-result-name">{appt.patient_name}</div>
+                      <div className="dentist-result-name">{patient.patient_name}</div>
                       <div className="dentist-result-date">
-                        {String(appt.appointment_date || '').slice(0, 10)} at {String(appt.appointment_time || '').slice(0, 5)}
-                        {' '}| Dr. {appt.doctor_name || 'Unassigned'}
-                        {' '}| {appt.appointment_status || appt.status_name || 'Unknown'}
+                        Patient ID: {patient.patient_id}
+                        {' '}| {patient.patient_phone || 'No phone'}
+                        {' '}| {patient.latest_appointment_status || 'Status unavailable'}
                       </div>
-                      {Number(appt.doctor_id) !== Number(session?.doctorId) && (
-                        <div className="dentist-result-date">Read-only result (assigned to another dentist).</div>
-                      )}
                     </div>
                   </button>
                 </li>
               ))}
             </ul>
           ) : patientSearchTerm.trim() && isSearchLoading ? (
-            <p className="dentist-empty">Searching appointment history...</p>
+            <p className="dentist-empty">Searching patients...</p>
           ) : patientSearchTerm.trim() ? (
-            <p className="dentist-empty">No appointments found for this patient.</p>
+            <p className="dentist-empty">No patients found for this search.</p>
           ) : null}
         </article>
       </section>

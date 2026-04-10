@@ -586,6 +586,29 @@ function AdminDashboardPage() {
     }
   };
 
+  const handleLocationDelete = async (location) => {
+    const locationId = Number(location?.location_id || 0);
+    if (!Number.isInteger(locationId) || locationId <= 0) {
+      setActionMessage('Invalid location id.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete this location?\n\n${location.full_address}\n\nThis removes the location from staff assignments and clears it from existing appointment records.`);
+    if (!confirmed) return;
+
+    setActionMessage('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/locations/${locationId}`, {
+        method: 'DELETE'
+      });
+      await safeJson(response);
+      setActionMessage('Location deleted successfully.');
+      loadAdminData();
+    } catch (err) {
+      setActionMessage(err.message || 'Failed to delete location.');
+    }
+  };
+
   const handleTimeOffDecision = async (timeOffId, requestSource, decision) => {
     setActionMessage('');
 
@@ -2227,7 +2250,17 @@ function AdminDashboardPage() {
                       </form>
                       <ul className="compact-list">
                         {locations.map((location) => (
-                          <li key={location.location_id}>{location.full_address}</li>
+                          <li key={location.location_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                            <span>{location.full_address}</span>
+                            <button
+                              type="button"
+                              className="admin-btn"
+                              style={{ padding: '0.3rem 0.6rem', backgroundColor: '#8f2d2d' }}
+                              onClick={() => handleLocationDelete(location)}
+                            >
+                              Remove
+                            </button>
+                          </li>
                         ))}
                       </ul>
                     </div>

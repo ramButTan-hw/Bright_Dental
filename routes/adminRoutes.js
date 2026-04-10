@@ -13,6 +13,7 @@ function createAdminRoutes(handlers) {
     createAdminDoctor,
     getAdminLocations,
     createAdminLocation,
+    deleteAdminLocation,
     getAdminDoctorTimeOff,
     getAdminStaffTimeOffRequests,
     createAdminDoctorTimeOff,
@@ -116,6 +117,16 @@ function createAdminRoutes(handlers) {
         }
         createAdminLocation(req, data, res);
       });
+      return true;
+    }
+
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'locations' && parts[3]) {
+      const locationId = Number(parts[3]);
+      if (!Number.isInteger(locationId) || locationId <= 0) {
+        sendJSON(res, 400, { error: 'A valid location id is required' });
+        return true;
+      }
+      deleteAdminLocation(req, locationId, res);
       return true;
     }
 

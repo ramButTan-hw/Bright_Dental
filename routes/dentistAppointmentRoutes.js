@@ -444,39 +444,44 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
 
     pool.query(
       `SELECT
-        a.appointment_id,
-        a.appointment_date,
-        a.appointment_time,
-        ast.status_name,
-        ast.display_name AS appointment_status,
-        a.patient_id,
+        p.patient_id,
         CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
-        a.doctor_id,
-        CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-        (a.doctor_id = ?) AS can_open_in_dentist_portal
-      FROM appointments a
-      LEFT JOIN appointment_statuses ast ON ast.status_id = a.status_id
-      JOIN patients p ON p.patient_id = a.patient_id
-      LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
-      LEFT JOIN staff st ON st.staff_id = d.staff_id
-      WHERE a.patient_id IN (
-        SELECT DISTINCT p2.patient_id
-        FROM patients p2
-        JOIN appointments a2 ON a2.patient_id = p2.patient_id
-        WHERE a2.doctor_id = ?
-          AND (
-            CONCAT(p2.p_first_name, ' ', p2.p_last_name) LIKE ?
-            OR p2.p_email LIKE ?
-            OR p2.p_phone LIKE ?
-            OR (? > 0 AND p2.patient_id = ?)
-          )
+        p.p_email AS patient_email,
+        p.p_phone AS patient_phone,
+        (
+          SELECT a3.appointment_id
+          FROM appointments a3
+          WHERE a3.patient_id = p.patient_id AND a3.doctor_id = ?
+          ORDER BY a3.appointment_date DESC, a3.appointment_time DESC, a3.appointment_id DESC
+          LIMIT 1
+        ) AS latest_appointment_id,
+        (
+          SELECT COALESCE(ast2.display_name, ast2.status_name)
+          FROM appointments a4
+          LEFT JOIN appointment_statuses ast2 ON ast2.status_id = a4.status_id
+          WHERE a4.patient_id = p.patient_id AND a4.doctor_id = ?
+          ORDER BY a4.appointment_date DESC, a4.appointment_time DESC, a4.appointment_id DESC
+          LIMIT 1
+        ) AS latest_appointment_status
+      FROM patients p
+      WHERE EXISTS (
+        SELECT 1
+        FROM appointments a2
+        WHERE a2.patient_id = p.patient_id
+          AND a2.doctor_id = ?
       )
-      ORDER BY a.appointment_date DESC, a.appointment_time DESC, a.appointment_id DESC
-      LIMIT 500`,
-      [doctorId, doctorId, sqlLike, sqlLike, sqlLike, numericPatientId, numericPatientId],
+        AND (
+          CONCAT(p.p_first_name, ' ', p.p_last_name) LIKE ?
+          OR p.p_email LIKE ?
+          OR p.p_phone LIKE ?
+          OR (? > 0 AND p.patient_id = ?)
+        )
+      ORDER BY p.p_last_name ASC, p.p_first_name ASC, p.patient_id ASC
+      LIMIT 100`,
+      [doctorId, doctorId, doctorId, sqlLike, sqlLike, sqlLike, numericPatientId, numericPatientId],
       (err, rows) => {
         if (err) {
-          console.error('Error searching dentist patient appointment history:', err);
+          console.error('Error searching dentist patients:', err);
           return sendJSON(res, 500, { error: 'Database error' });
         }
         return sendJSON(res, 200, rows || []);
