@@ -103,7 +103,7 @@ function createAppointmentPreferenceHandlers(deps) {
               if (!sched) return true; // Doctor doesn't work this day
               if (sched.isOff) return true; // Doctor is OFF this day
               const slotTime = hourStr.length === 2 ? `${hourStr}:00` : hourStr;
-              return slotTime < sched.start || slotTime >= sched.end;
+              return slotTime < sched.start || slotTime > sched.end;
             };
             // Helper: mysql2 returns DATE as JS Date objects — normalise to YYYY-MM-DD
             const toDateKey = (val) => {
@@ -213,7 +213,7 @@ function createAppointmentPreferenceHandlers(deps) {
               requestedLocation: hasLocationFilter ? preferredLocation : null,
               slotWindow: {
                 officeHours: '08:00-19:00',
-                patientSelectionHours: '09:00-19:00',
+                patientSelectionHours: '08:00-19:00',
                 slotDurationMinutes: 60,
                 dentistsAvailable: maxPatientsPerTime,
                 capacityPerTime: maxPatientsPerTime,

@@ -210,7 +210,7 @@ function createPatientIntakeHandlers(deps) {
     }
 
     if (preferredTimes.length === 0) {
-      return sendJSON(res, 400, { error: 'Please choose at least one available time between 9:00 AM and 7:00 PM' });
+      return sendJSON(res, 400, { error: 'Please choose at least one available time between 8:00 AM and 7:00 PM' });
     }
 
     pool.getConnection((err, conn) => {
@@ -479,7 +479,7 @@ function createPatientIntakeHandlers(deps) {
     }
 
     if (preferredTimes.length === 0) {
-      return sendJSON(res, 400, { error: 'Please choose at least one available time between 9:00 AM and 7:00 PM.' });
+      return sendJSON(res, 400, { error: 'Please choose at least one available time between 8:00 AM and 7:00 PM.' });
     }
 
     pool.getConnection((err, conn) => {
