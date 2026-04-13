@@ -34,7 +34,25 @@ const LogoutIcon = () => (
 function Navbar() {
   const [aboutDropdown, setAboutDropdown] = useState(false);
   const [loginDropdown, setLoginDropdown] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [pendingLogout, setPendingLogout] = useState(null);
   const navigate = useNavigate();
+
+  function openLogoutModal(logoutFn) {
+    setPendingLogout(() => logoutFn);
+    setShowLogoutConfirm(true);
+  }
+
+  function handleLogoutConfirm() {
+    if (pendingLogout) pendingLogout();
+    setShowLogoutConfirm(false);
+    setPendingLogout(null);
+  }
+
+  function handleLogoutCancel() {
+    setShowLogoutConfirm(false);
+    setPendingLogout(null);
+  }
   const location = useLocation();
   const [dentistAvatarUrl, setDentistAvatarUrl] = useState('');
   const [receptionAvatarUrl, setReceptionAvatarUrl] = useState('');
@@ -70,6 +88,7 @@ function Navbar() {
   }, [location.pathname]);
 
   return (
+    <>
     <nav className="navbar">
       <div className="navbar-container">
         <div className="navbar-brand">
@@ -82,26 +101,20 @@ function Navbar() {
             <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
-              className="nav-link login-btn"
-              onClick={() => {
-                clearPatientPortalSession();
-                navigate('/patient-login');
-              }}
+              className="nav-link login-btn nav-icon-btn"
+              onClick={() => openLogoutModal(() => { clearPatientPortalSession(); navigate('/patient-login'); })}
+              title="Log Out"
             >
-              Log Out
+              <LogoutIcon />
             </button>
           </div>
         ) : isAdminLoggedIn ? (
           <div className="nav-menu">
             <Link to="/admin" className="nav-link">Admin Dashboard</Link>
-            <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
-              onClick={() => {
-                clearAdminPortalSession();
-                navigate('/staff-login');
-              }}
+              onClick={() => openLogoutModal(() => { clearAdminPortalSession(); navigate('/staff-login'); })}
               title="Staff Log Out"
             >
               <LogoutIcon />
@@ -110,7 +123,6 @@ function Navbar() {
         ) : isDentistLoggedIn ? (
           <div className="nav-menu">
             <Link to="/dentist-login" className="nav-link">Dentist Page</Link>
-            <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
               className="nav-profile-photo-btn"
@@ -127,10 +139,7 @@ function Navbar() {
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
-              onClick={() => {
-                clearDentistPortalSession();
-                navigate('/staff-login');
-              }}
+              onClick={() => openLogoutModal(() => { clearDentistPortalSession(); navigate('/staff-login'); })}
               title="Dentist Log Out"
             >
               <LogoutIcon />
@@ -139,7 +148,6 @@ function Navbar() {
         ) : isReceptionLoggedIn ? (
           <div className="nav-menu">
             <Link to="/receptionist" className="nav-link">Receptionist Page</Link>
-            <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
               className="nav-profile-photo-btn"
@@ -156,10 +164,7 @@ function Navbar() {
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
-              onClick={() => {
-                clearReceptionPortalSession();
-                navigate('/staff-login');
-              }}
+              onClick={() => openLogoutModal(() => { clearReceptionPortalSession(); navigate('/staff-login'); })}
               title="Receptionist Log Out"
             >
               <LogoutIcon />
@@ -207,6 +212,24 @@ function Navbar() {
         )}
       </div>
     </nav>
+
+    {showLogoutConfirm && (
+      <div className="logout-modal-overlay" role="dialog" aria-modal="true" onClick={handleLogoutCancel}>
+        <div className="logout-modal-card" onClick={(e) => e.stopPropagation()}>
+          <h3>Log Out?</h3>
+          <p>Are you sure you want to log out?</p>
+          <div className="logout-modal-actions">
+            <button type="button" className="logout-confirm-btn" onClick={handleLogoutConfirm}>
+              Log Out
+            </button>
+            <button type="button" className="logout-cancel-btn" onClick={handleLogoutCancel}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

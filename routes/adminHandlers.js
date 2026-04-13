@@ -1523,24 +1523,55 @@ function createAdminHandlers(deps) {
 
   function resetStaffPassword(req, staffId, data, res) {
     const newPassword = String(data?.newPassword || '').trim();
-    if (!newPassword || newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
-      return sendJSON(res, 400, { error: 'Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number' });
+    if (!newPassword || newPassword.length < 8) {
+      return sendJSON(res, 400, { error: 'Must be at least 8 characters.' });
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      return sendJSON(res, 400, { error: 'Must include at least 1 uppercase letter.' });
+    }
+    if (!/[a-z]/.test(newPassword)) {
+      return sendJSON(res, 400, { error: 'Must include at least 1 lowercase letter.' });
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      return sendJSON(res, 400, { error: 'Must include at least 1 number.' });
     }
 
+    const crypto = require('crypto');
+    const newHash = crypto.createHash('sha256').update(newPassword).digest('hex');
+
     pool.query(
-      `UPDATE users u JOIN staff st ON st.user_id = u.user_id
-       SET u.password_hash = SHA2(?, 256)
-       WHERE st.staff_id = ?`,
-      [newPassword, staffId],
-      (err, result) => {
+      `SELECT u.password_hash
+       FROM users u JOIN staff st ON st.user_id = u.user_id
+       WHERE st.staff_id = ? LIMIT 1`,
+      [staffId],
+      (err, rows) => {
         if (err) {
           console.error('Error resetting staff password:', err);
           return sendJSON(res, 500, { error: 'Database error' });
         }
-        if (!result.affectedRows) {
+        if (!rows.length) {
           return sendJSON(res, 404, { error: 'Staff member not found' });
         }
-        sendJSON(res, 200, { message: 'Password reset successfully' });
+        if (newHash.toLowerCase() === String(rows[0].password_hash || '').toLowerCase()) {
+          return sendJSON(res, 400, { error: 'Password must be different from the current password.' });
+        }
+
+        pool.query(
+          `UPDATE users u JOIN staff st ON st.user_id = u.user_id
+           SET u.password_hash = SHA2(?, 256)
+           WHERE st.staff_id = ?`,
+          [newPassword, staffId],
+          (updateErr, result) => {
+            if (updateErr) {
+              console.error('Error resetting staff password:', updateErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            if (!result.affectedRows) {
+              return sendJSON(res, 404, { error: 'Staff member not found' });
+            }
+            sendJSON(res, 200, { message: 'Password reset successfully' });
+          }
+        );
       }
     );
   }
