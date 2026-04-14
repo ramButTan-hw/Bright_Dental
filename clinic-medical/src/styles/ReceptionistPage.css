@@ -207,6 +207,117 @@
   gap: 1rem;
 }
 
+/* Unpaid invoice alert panel */
+.invoice-alert-panel {
+  background: #fffbf0;
+  border: 1px solid #e8c96a;
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1rem;
+}
+
+.invoice-alert-panel__heading {
+  margin: 0 0 0.75rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #7a5100;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.invoice-alert-panel__count {
+  background: #e8c96a;
+  color: #5a3a00;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.1em 0.55em;
+  line-height: 1.4;
+}
+
+.invoice-alert-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.invoice-alert-row {
+  background: #fff;
+  border: 1px solid #e8c96a;
+  border-radius: 8px;
+  padding: 0.55rem 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  transition: background 0.15s;
+}
+
+.invoice-alert-row--contacted {
+  background: #f5f5f5;
+  border-color: #ccc;
+  opacity: 0.8;
+}
+
+.invoice-alert-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.invoice-alert-row__id {
+  font-size: 0.82rem;
+  color: #555;
+}
+
+.invoice-alert-row__amount {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #9d2e2e;
+}
+
+.invoice-alert-row__status {
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.15em 0.6em;
+  background: #fde8a0;
+  color: #7a5100;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.invoice-alert-row__status--paid {
+  background: #d4edda;
+  color: #1a6630;
+}
+
+.invoice-alert-row__contact-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: #444;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.invoice-alert-row__note {
+  flex: 1 1 200px;
+  min-width: 0;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.82rem;
+  color: #333;
+  background: #fff;
+}
+
 .reception-panel {
   background: #fff;
   border: 1px solid #d2e4e1;

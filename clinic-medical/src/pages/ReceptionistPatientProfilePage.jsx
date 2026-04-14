@@ -72,14 +72,22 @@ function ReceptionistPatientProfilePage() {
   const [confirmPrimarySwap, setConfirmPrimarySwap] = useState(false);
   const [confirmSetPrimaryId, setConfirmSetPrimaryId] = useState(null);
 
-  // Prescription state
-  const [rxFormOpen, setRxFormOpen] = useState(false);
   const [allPharmacies, setAllPharmacies] = useState([]);
-  const [rxForm, setRxForm] = useState({
-    medicationName: '', strength: '', dosage: '', frequency: '', instructions: '',
-    startDate: '', endDate: '', quantity: '', refills: '0', pharmId: '', doctorId: ''
+
+  // Unpaid invoice contact tracking (persisted per patient in localStorage)
+  const [invoiceContactLog, setInvoiceContactLog] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`invoiceContactLog_${patientId}`) || '{}');
+    } catch { return {}; }
   });
-  const [isCreatingRx, setIsCreatingRx] = useState(false);
+
+  const updateInvoiceContact = (invoiceId, patch) => {
+    setInvoiceContactLog((prev) => {
+      const next = { ...prev, [invoiceId]: { ...prev[invoiceId], ...patch } };
+      try { localStorage.setItem(`invoiceContactLog_${patientId}`, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   // Checkout state
   const [checkoutInvoice, setCheckoutInvoice] = useState(null);
@@ -206,9 +214,9 @@ function ReceptionistPatientProfilePage() {
       .catch(() => setAllInsuranceCompanies([]));
   }, [API_BASE_URL, insuranceFormOpen]);
 
-  // Load pharmacies when rx form or assign form opens
+  // Load pharmacies when pharmacy assign form opens
   useEffect(() => {
-    if (!rxFormOpen && !pharmAssignOpen) return;
+    if (!pharmAssignOpen) return;
     const loadPharmacies = async () => {
       try {
         const data = await fetch(`${API_BASE_URL}/api/pharmacies`).then(safeJson);
@@ -218,41 +226,7 @@ function ReceptionistPatientProfilePage() {
       }
     };
     loadPharmacies();
-  }, [API_BASE_URL, rxFormOpen, pharmAssignOpen]);
-
-  const handleCreatePrescription = async (e) => {
-    e.preventDefault();
-    setIsCreatingRx(true);
-    setMessage('');
-    setError('');
-    try {
-      await fetch(`${API_BASE_URL}/api/reception/patients/${patientId}/prescriptions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          medicationName: rxForm.medicationName,
-          strength: rxForm.strength,
-          dosage: rxForm.dosage,
-          frequency: rxForm.frequency,
-          instructions: rxForm.instructions,
-          startDate: rxForm.startDate || null,
-          endDate: rxForm.endDate || null,
-          quantity: Number(rxForm.quantity) || 0,
-          refills: Number(rxForm.refills) || 0,
-          pharmId: Number(rxForm.pharmId),
-          doctorId: Number(rxForm.doctorId)
-        })
-      }).then(safeJson);
-      setMessage('Prescription created successfully.');
-      setRxFormOpen(false);
-      setRxForm({ medicationName: '', strength: '', dosage: '', frequency: '', instructions: '', startDate: '', endDate: '', quantity: '', refills: '0', pharmId: '', doctorId: '' });
-      loadPatientData();
-    } catch (err) {
-      setError(err.message || 'Failed to create prescription.');
-    } finally {
-      setIsCreatingRx(false);
-    }
-  };
+  }, [API_BASE_URL, pharmAssignOpen]);
 
   const handleAssignPharmacy = async (e) => {
     e.preventDefault();
@@ -354,6 +328,11 @@ function ReceptionistPatientProfilePage() {
 
   const pendingRequests = Array.isArray(patientData?.pendingRequests) ? patientData.pendingRequests : [];
   const hasPendingRequest = pendingRequests.some((r) => r.request_status === 'PREFERRED_PENDING');
+
+  const unpaidInvoices = invoices.filter((inv) => {
+    const due = Number(inv.amount_due ?? (Number(inv.patient_amount || 0) - Number(inv.amount_paid || 0)));
+    return due > 0;
+  });
   const hasActiveAppointment = appointments.some((appt) => {
     const status = String(appt?.appointment_status || appt?.status_name || '').toUpperCase();
     return ['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(status);
@@ -909,6 +888,50 @@ function ReceptionistPatientProfilePage() {
         </article>
       </section>
 
+      {/* Unpaid Invoice Alert */}
+      {unpaidInvoices.length > 0 && (
+        <section className="invoice-alert-panel">
+          <h3 className="invoice-alert-panel__heading">
+            Outstanding Balances
+            <span className="invoice-alert-panel__count">{unpaidInvoices.length}</span>
+          </h3>
+          <div className="invoice-alert-panel__list">
+            {unpaidInvoices.map((inv) => {
+              const due = Number(inv.amount_due ?? (Number(inv.patient_amount || 0) - Number(inv.amount_paid || 0)));
+              const log = invoiceContactLog[inv.invoice_id] || {};
+              return (
+                <div key={inv.invoice_id} className={`invoice-alert-row${log.contacted ? ' invoice-alert-row--contacted' : ''}`}>
+                  <div className="invoice-alert-row__meta">
+                    <span className="invoice-alert-row__id">Invoice #{inv.invoice_id}</span>
+                    <span className="invoice-alert-row__amount">${due.toFixed(2)} due</span>
+                    <span className={`invoice-alert-row__status invoice-alert-row__status--${String(inv.payment_status || 'unpaid').toLowerCase()}`}>
+                      {inv.payment_status || 'Unpaid'}
+                    </span>
+                  </div>
+                  <label className="invoice-alert-row__contact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(log.contacted)}
+                      onChange={(e) => updateInvoiceContact(inv.invoice_id, { contacted: e.target.checked })}
+                    />
+                    Patient contacted
+                  </label>
+                  {log.contacted && (
+                    <input
+                      type="text"
+                      className="invoice-alert-row__note"
+                      placeholder="Note patient's decision or response…"
+                      value={log.note || ''}
+                      onChange={(e) => updateInvoiceContact(inv.invoice_id, { note: e.target.value })}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Appointment Requests */}
       {pendingRequests.length > 0 && (
         <section className="reception-panel">
@@ -1309,76 +1332,7 @@ function ReceptionistPatientProfilePage() {
         </article>
 
         <article className="reception-panel">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2>Prescriptions</h2>
-            <button type="button" className="reception-action-btn reception-action-btn--primary" onClick={() => setRxFormOpen(!rxFormOpen)}>
-              {rxFormOpen ? 'Cancel' : 'New Prescription'}
-            </button>
-          </div>
-
-          {rxFormOpen && (
-            <form onSubmit={handleCreatePrescription} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem 0.75rem', marginTop: '0.75rem', padding: '0.75rem', border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd' }}>
-              <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Medication Name *</span>
-                <input value={rxForm.medicationName} onChange={(e) => setRxForm((p) => ({ ...p, medicationName: e.target.value }))} required />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Strength</span>
-                <input value={rxForm.strength} onChange={(e) => setRxForm((p) => ({ ...p, strength: e.target.value }))} placeholder="e.g. 500mg" />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Dosage</span>
-                <input value={rxForm.dosage} onChange={(e) => setRxForm((p) => ({ ...p, dosage: e.target.value }))} placeholder="e.g. 1 tablet" />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Frequency</span>
-                <input value={rxForm.frequency} onChange={(e) => setRxForm((p) => ({ ...p, frequency: e.target.value }))} placeholder="e.g. Twice daily" />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Quantity</span>
-                <input type="number" min="0" value={rxForm.quantity} onChange={(e) => setRxForm((p) => ({ ...p, quantity: e.target.value }))} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Start Date</span>
-                <input type="date" value={rxForm.startDate} onChange={(e) => setRxForm((p) => ({ ...p, startDate: e.target.value }))} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>End Date</span>
-                <input type="date" value={rxForm.endDate} onChange={(e) => setRxForm((p) => ({ ...p, endDate: e.target.value }))} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Refills</span>
-                <input type="number" min="0" value={rxForm.refills} onChange={(e) => setRxForm((p) => ({ ...p, refills: e.target.value }))} />
-              </label>
-              <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Instructions</span>
-                <textarea rows="2" value={rxForm.instructions} onChange={(e) => setRxForm((p) => ({ ...p, instructions: e.target.value }))} placeholder="Patient instructions..." />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Pharmacy *</span>
-                <select value={rxForm.pharmId} onChange={(e) => setRxForm((p) => ({ ...p, pharmId: e.target.value }))} required>
-                  <option value="">Select pharmacy</option>
-                  {allPharmacies.map((ph) => (
-                    <option key={ph.pharm_id} value={ph.pharm_id}>{ph.pharm_name} — {ph.ph_city}, {ph.ph_state}</option>
-                  ))}
-                </select>
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Prescribing Doctor *</span>
-                <select value={rxForm.doctorId} onChange={(e) => setRxForm((p) => ({ ...p, doctorId: e.target.value }))} required>
-                  <option value="">Select doctor</option>
-                  {doctors.map((doc) => (
-                    <option key={doc.doctor_id} value={doc.doctor_id}>Dr. {doc.doctor_name}</option>
-                  ))}
-                </select>
-              </label>
-              <div style={{ gridColumn: '1 / -1', marginTop: '0.3rem' }}>
-                <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isCreatingRx}>
-                  {isCreatingRx ? 'Creating...' : 'Create Prescription'}
-                </button>
-              </div>
-            </form>
-          )}
+          <h2>Prescriptions</h2>
 
           {prescriptions.length > 0 ? (
             <div className="reception-table-wrap" style={{ marginTop: '0.75rem' }}>
