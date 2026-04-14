@@ -847,47 +847,6 @@ function ReceptionistPage() {
 
       {message && <p className="reception-message">{message}</p>}
 
-      {activeDoctorTimeOffToast && (
-        <aside className="reception-request-alert-stack reception-request-alert-stack--timeoff" aria-live="polite" aria-label="Doctor time off notification">
-          <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
-            <div className="reception-request-alert-card__top">
-              <div>
-                <p className="reception-request-alert-card__eyebrow">Doctor Time Off</p>
-                <h3>Doctor time off affected patient schedules</h3>
-              </div>
-              <button
-                type="button"
-                className="reception-request-alert-card__close"
-                aria-label="Dismiss doctor time off notification"
-                onClick={() => {
-                  if (activeDoctorTimeOffToast.notification_id) {
-                    dismissNotification(activeDoctorTimeOffToast.notification_id);
-                    return;
-                  }
-                  setDismissFallbackDoctorToast(true);
-                }}
-              >
-                &times;
-              </button>
-            </div>
-            <p className="reception-request-alert-card__message">
-              {activeDoctorTimeOffToast.message}
-            </p>
-            <button
-              type="button"
-              className="reception-request-alert-card__action"
-              onClick={() => {
-                const target = document.getElementById('system-cancelled-appointments');
-                if (target) {
-                  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-              }}
-            >
-              Review Cancellations &rarr;
-            </button>
-          </article>
-        </aside>
-      )}
 
       {mySchedule.length > 0 && (
         <section className="reception-panel" style={{ marginBottom: '1rem' }}>
@@ -903,8 +862,47 @@ function ReceptionistPage() {
         </section>
       )}
 
-      {requestAlerts.length > 0 && (
-        <aside className="reception-request-alert-stack" aria-live="polite" aria-label="Pending insurance and pharmacy requests">
+      {(activeDoctorTimeOffToast || requestAlerts.length > 0) && (
+        <aside className="reception-request-alert-stack" aria-live="polite" aria-label="Notifications">
+          {activeDoctorTimeOffToast && (
+            <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
+              <div className="reception-request-alert-card__top">
+                <div>
+                  <p className="reception-request-alert-card__eyebrow">Doctor Time Off</p>
+                  <h3>Doctor time off affected patient schedules</h3>
+                </div>
+                <button
+                  type="button"
+                  className="reception-request-alert-card__close"
+                  aria-label="Dismiss doctor time off notification"
+                  onClick={() => {
+                    if (activeDoctorTimeOffToast.notification_id) {
+                      dismissNotification(activeDoctorTimeOffToast.notification_id);
+                      return;
+                    }
+                    setDismissFallbackDoctorToast(true);
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+              <p className="reception-request-alert-card__message">
+                {activeDoctorTimeOffToast.message}
+              </p>
+              <button
+                type="button"
+                className="reception-request-alert-card__action"
+                onClick={() => {
+                  const target = document.getElementById('system-cancelled-appointments');
+                  if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }}
+              >
+                Review Cancellations &rarr;
+              </button>
+            </article>
+          )}
           {requestAlerts.map((alert) => (
             <article
               key={alert.alertKey}

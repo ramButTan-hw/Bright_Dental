@@ -102,11 +102,6 @@
   width: 320px;
 }
 
-.reception-request-alert-stack--timeoff {
-  bottom: 7.2rem;
-  z-index: 1300;
-}
-
 .reception-request-alert-card {
   border-radius: 12px;
   padding: 1.1rem 1.2rem 1rem;
