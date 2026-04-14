@@ -2093,6 +2093,7 @@ function createAdminHandlers(deps) {
           SUM(CASE WHEN UPPER(s.status_name) = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_appointments,
           SUM(CASE WHEN UPPER(s.status_name) IN ('CANCELED', 'CANCELLED') THEN 1 ELSE 0 END) AS cancelled_appointments,
           SUM(CASE WHEN UPPER(s.status_name) = 'NO_SHOW' THEN 1 ELSE 0 END) AS no_show_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN') THEN 1 ELSE 0 END) AS scheduled_appointments,
           COALESCE(SUM(i.amount), 0) AS total_production,
           COALESCE(SUM(COALESCE(pay.total_paid, 0)), 0) AS patient_collected,
           COALESCE(SUM(i.insurance_covered_amount), 0) AS insurance_collected,
@@ -2128,6 +2129,7 @@ function createAdminHandlers(deps) {
           SUM(CASE WHEN UPPER(s.status_name) = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_appointments,
           SUM(CASE WHEN UPPER(s.status_name) IN ('CANCELED', 'CANCELLED') THEN 1 ELSE 0 END) AS cancelled_appointments,
           SUM(CASE WHEN UPPER(s.status_name) = 'NO_SHOW' THEN 1 ELSE 0 END) AS no_show_appointments,
+          SUM(CASE WHEN UPPER(s.status_name) IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN') THEN 1 ELSE 0 END) AS scheduled_appointments,
           COALESCE(SUM(i.amount), 0) AS total_production,
           COALESCE(SUM(i.patient_amount), 0) AS total_patient_responsibility,
           COALESCE(SUM(COALESCE(pay.total_paid, 0)), 0) AS patient_collected,
@@ -2173,6 +2175,34 @@ function createAdminHandlers(deps) {
         [...newPatientsTrendFilters.params, dateFrom, dateTo]
       );
 
+      const newPatientRowFilters = buildCommonFilters();
+      const [newPatientRows] = await db.query(
+        `SELECT
+          p.patient_id,
+          CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+          DATE(p.created_at) AS registered_date,
+          DATE_FORMAT(p.created_at, '%Y-%m-01') AS period_key,
+          p.p_phone,
+          p.p_email,
+          (SELECT COUNT(*) FROM appointments a2 WHERE a2.patient_id = p.patient_id) AS total_appointments,
+          (SELECT CONCAT(st2.first_name, ' ', st2.last_name)
+           FROM appointments a2
+           JOIN doctors d2 ON d2.doctor_id = a2.doctor_id
+           JOIN staff st2 ON st2.staff_id = d2.staff_id
+           WHERE a2.patient_id = p.patient_id
+           ORDER BY a2.appointment_date DESC
+           LIMIT 1) AS doctor_name
+         FROM appointments a
+         JOIN appointment_statuses s ON s.status_id = a.status_id
+         JOIN patients p ON p.patient_id = a.patient_id
+         LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
+         WHERE ${newPatientRowFilters.whereClause}
+           AND DATE(p.created_at) BETWEEN ? AND ?
+         GROUP BY p.patient_id, p.p_first_name, p.p_last_name, p.created_at, p.p_phone, p.p_email
+         ORDER BY p.created_at ASC`,
+        [...newPatientRowFilters.params, dateFrom, dateTo]
+      );
+
       const outstandingFilters = buildCommonFilters();
       const [outstandingPatients] = await db.query(
         `SELECT
@@ -2205,6 +2235,38 @@ function createAdminHandlers(deps) {
          HAVING patient_due > 0
          ORDER BY patient_due DESC, patient_name ASC`,
         outstandingFilters.params
+      );
+
+      const apptRowFilters = buildCommonFilters();
+      const [appointmentRows] = await db.query(
+        `SELECT
+          a.appointment_id,
+          a.appointment_date,
+          a.appointment_time,
+          DATE_FORMAT(a.appointment_date, '%Y-%m-01') AS period_key,
+          UPPER(s.status_name) AS status_name,
+          CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+          d.doctor_id,
+          CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+          COALESCE(i.amount, 0) AS production,
+          COALESCE(pay.total_paid, 0) AS patient_collected,
+          COALESCE(i.insurance_covered_amount, 0) AS insurance_collected,
+          COALESCE(pay.total_paid, 0) + COALESCE(i.insurance_covered_amount, 0) AS total_collected,
+          GREATEST(COALESCE(i.patient_amount, 0) - COALESCE(pay.total_paid, 0), 0) AS outstanding
+         FROM appointments a
+         JOIN appointment_statuses s ON s.status_id = a.status_id
+         JOIN patients p ON p.patient_id = a.patient_id
+         JOIN doctors d ON d.doctor_id = a.doctor_id
+         JOIN staff st ON st.staff_id = d.staff_id
+         LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
+         LEFT JOIN (
+           SELECT invoice_id, SUM(payment_amount) AS total_paid
+           FROM payments
+           GROUP BY invoice_id
+         ) pay ON pay.invoice_id = i.invoice_id
+         WHERE ${apptRowFilters.whereClause}
+         ORDER BY a.appointment_date ASC, a.appointment_time ASC`,
+        apptRowFilters.params
       );
 
       const totalAppointments = Number(summaryRow?.total_appointments || 0);
@@ -2259,7 +2321,9 @@ function createAdminHandlers(deps) {
         monthlyTrends: monthlyTrends || [],
         providerPerformance: providerPerformance || [],
         newPatientsTrend: newPatientsTrend || [],
-        outstandingPatients: outstandingPatients || []
+        newPatientRows: newPatientRows || [],
+        outstandingPatients: outstandingPatients || [],
+        appointmentRows: appointmentRows || []
       });
     })().catch((err) => {
       console.error('Error generating clinic performance report:', err);

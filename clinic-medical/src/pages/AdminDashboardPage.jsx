@@ -111,7 +111,9 @@ function AdminDashboardPage() {
     monthlyTrends: [],
     providerPerformance: [],
     newPatientsTrend: [],
+    newPatientRows: [],
     outstandingPatients: [],
+    appointmentRows: [],
     generatedAt: null
   });
   const [clinicPerformanceLoading, setClinicPerformanceLoading] = useState(false);
@@ -208,9 +210,7 @@ function AdminDashboardPage() {
   const [invoiceLookup, setInvoiceLookup] = useState(null);
   const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
   const [activeReportTab, setActiveReportTab] = useState('monthly');
-  const [monthlyTrendsPage, setMonthlyTrendsPage] = useState(0);
-  const [providerPerformancePage, setProviderPerformancePage] = useState(0);
-  const [newPatientsPage, setNewPatientsPage] = useState(0);
+  const [monthlyTrendsSort, setMonthlyTrendsSort] = useState('date');
   const [outstandingAccountsPage, setOutstandingAccountsPage] = useState(0);
   const [docSchedPage, setDocSchedPage] = useState(0);
   const docSchedPageSize = 20;
@@ -235,27 +235,12 @@ function AdminDashboardPage() {
   }, [location.state, activeSection]);
 
   useEffect(() => {
-    setMonthlyTrendsPage(0);
-    setProviderPerformancePage(0);
-    setNewPatientsPage(0);
     setOutstandingAccountsPage(0);
   }, [clinicPerformanceReport.generatedAt]);
 
   const paginateRows = (rows, page) => rows.slice(page * reportPageSize, (page + 1) * reportPageSize);
 
-  const pagedMonthlyTrends = useMemo(
-    () => paginateRows(clinicPerformanceReport.monthlyTrends, monthlyTrendsPage),
-    [clinicPerformanceReport.monthlyTrends, monthlyTrendsPage]
-  );
-  const pagedProviderPerformance = useMemo(
-    () => paginateRows(clinicPerformanceReport.providerPerformance, providerPerformancePage),
-    [clinicPerformanceReport.providerPerformance, providerPerformancePage]
-  );
-  const pagedNewPatientsTrend = useMemo(
-    () => paginateRows(clinicPerformanceReport.newPatientsTrend, newPatientsPage),
-    [clinicPerformanceReport.newPatientsTrend, newPatientsPage]
-  );
-  const pagedOutstandingPatients = useMemo(
+const pagedOutstandingPatients = useMemo(
     () => paginateRows(clinicPerformanceReport.outstandingPatients, outstandingAccountsPage),
     [clinicPerformanceReport.outstandingPatients, outstandingAccountsPage]
   );
@@ -432,7 +417,9 @@ function AdminDashboardPage() {
         monthlyTrends: Array.isArray(data.monthlyTrends) ? data.monthlyTrends : [],
         providerPerformance: Array.isArray(data.providerPerformance) ? data.providerPerformance : [],
         newPatientsTrend: Array.isArray(data.newPatientsTrend) ? data.newPatientsTrend : [],
+        newPatientRows: Array.isArray(data.newPatientRows) ? data.newPatientRows : [],
         outstandingPatients: Array.isArray(data.outstandingPatients) ? data.outstandingPatients : [],
+        appointmentRows: Array.isArray(data.appointmentRows) ? data.appointmentRows : [],
         generatedAt: data.generatedAt || null,
         filters: data.filters || null
       });
@@ -1503,19 +1490,6 @@ function AdminDashboardPage() {
                     </select>
                   </label>
 
-                  <label className="admin-inline-filter">
-                    Patient State
-                    <input
-                      type="text"
-                      value={clinicFilters.patientState === 'ALL' ? '' : clinicFilters.patientState}
-                      placeholder="e.g. NY"
-                      maxLength={2}
-                      onChange={(e) => {
-                        const value = String(e.target.value || '').trim().toUpperCase();
-                        setClinicFilters((prev) => ({ ...prev, patientState: value || 'ALL' }));
-                      }}
-                    />
-                  </label>
 
                   <label className="admin-inline-filter">
                     Procedure Category
@@ -1555,6 +1529,21 @@ function AdminDashboardPage() {
                   )}
                 </div>
 
+                {summary && (
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', margin: '1rem 0 0' }}>
+                    <article className="metric-card" style={{ flex: '1', minWidth: '160px' }}>
+                      <h2>Patient Collections</h2>
+                      <p>{formatMoney(summary.metrics?.patientCollected)}</p>
+                      <small>All-time from patients</small>
+                    </article>
+                    <article className="metric-card" style={{ flex: '1', minWidth: '160px' }}>
+                      <h2>Insurance Collections</h2>
+                      <p>{formatMoney(summary.metrics?.insuranceCollected)}</p>
+                      <small>All-time from other sources</small>
+                    </article>
+                  </div>
+                )}
+
                 {clinicPerformanceError && <p className="admin-error">{clinicPerformanceError}</p>}
                 {clinicPerformanceReport.generatedAt && (
                   <p className="muted clinic-generated-at">Generated {new Date(clinicPerformanceReport.generatedAt).toLocaleString()}</p>
@@ -1572,16 +1561,6 @@ function AdminDashboardPage() {
                     <h2>Collected</h2>
                     <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
                     <small>After refunds</small>
-                  </article>
-                  <article className="metric-card">
-                    <h2>Patient Collections</h2>
-                    <p>{formatMoney(summary.metrics?.patientCollected)}</p>
-                    <small>All-time from patients</small>
-                  </article>
-                  <article className="metric-card">
-                    <h2>Insurance Collections</h2>
-                    <p>{formatMoney(summary.metrics?.insuranceCollected)}</p>
-                    <small>All-time from other sources</small>
                   </article>
                   <article className="metric-card">
                     <h2>Collection Rate</h2>
@@ -1630,7 +1609,25 @@ function AdminDashboardPage() {
                 <>
                   {activeReportTab === 'monthly' && (
                     <article className="admin-panel">
-                      <h2>Production & Collections by Month</h2>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                        <h2 style={{ margin: 0 }}>Production & Collections by Month</h2>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <button
+                            type="button"
+                            className={`admin-btn${monthlyTrendsSort === 'date' ? ' is-active' : ''}`}
+                            onClick={() => setMonthlyTrendsSort('date')}
+                          >
+                            Sort by Date
+                          </button>
+                          <button
+                            type="button"
+                            className={`admin-btn${monthlyTrendsSort === 'alpha' ? ' is-active' : ''}`}
+                            onClick={() => setMonthlyTrendsSort('alpha')}
+                          >
+                            Sort A–Z
+                          </button>
+                        </div>
+                      </div>
                       <div className="table-wrap report-table-wrap">
                         <table>
                           <thead>
@@ -1640,6 +1637,7 @@ function AdminDashboardPage() {
                               <th>Completed</th>
                               <th>Cancelled</th>
                               <th>No-Show</th>
+                              <th>Scheduled</th>
                               <th>Production</th>
                               <th>Patient Collected</th>
                               <th>Insurance Collected</th>
@@ -1648,39 +1646,106 @@ function AdminDashboardPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {clinicPerformanceReport.monthlyTrends.length ? pagedMonthlyTrends.map((row) => (
-                              <tr key={row.period_key}>
-                                <td>{row.period_label}</td>
-                                <td>{row.total_appointments}</td>
-                                <td>{row.completed_appointments}</td>
-                                <td>{row.cancelled_appointments}</td>
-                                <td>{row.no_show_appointments}</td>
-                                <td>{formatMoney(row.total_production)}</td>
-                                <td>{formatMoney(row.patient_collected)}</td>
-                                <td>{formatMoney(row.insurance_collected)}</td>
-                                <td>{formatMoney(row.total_collected)}</td>
-                                <td>{formatMoney(row.total_outstanding)}</td>
-                              </tr>
-                            )) : <tr><td colSpan="10">No monthly trend data for this range.</td></tr>}
+                            {clinicPerformanceReport.monthlyTrends.length ? clinicPerformanceReport.monthlyTrends.map((month) => {
+                              const monthAppts = clinicPerformanceReport.appointmentRows
+                                .filter((a) => a.period_key === month.period_key)
+                                .sort((a, b) => {
+                                  const dateA = String(a.appointment_date || '').slice(0, 10);
+                                  const dateB = String(b.appointment_date || '').slice(0, 10);
+                                  const nameA = String(a.patient_name || '').toLowerCase();
+                                  const nameB = String(b.patient_name || '').toLowerCase();
+                                  if (monthlyTrendsSort === 'alpha') {
+                                    return nameA !== nameB ? nameA.localeCompare(nameB) : dateA.localeCompare(dateB);
+                                  }
+                                  return dateA !== dateB ? dateA.localeCompare(dateB) : nameA.localeCompare(nameB);
+                                });
+                              return (
+                                <>
+                                  <tr key={month.period_key} style={{ background: '#e8f2f0', fontWeight: 700 }}>
+                                    <td>{month.period_label}</td>
+                                    <td>{month.total_appointments}</td>
+                                    <td>{month.completed_appointments}</td>
+                                    <td>{month.cancelled_appointments}</td>
+                                    <td>{month.no_show_appointments}</td>
+                                    <td>{month.scheduled_appointments}</td>
+                                    <td>{formatMoney(month.total_production)}</td>
+                                    <td>{formatMoney(month.patient_collected)}</td>
+                                    <td>{formatMoney(month.insurance_collected)}</td>
+                                    <td>{formatMoney(month.total_collected)}</td>
+                                    <td>{formatMoney(month.total_outstanding)}</td>
+                                  </tr>
+                                  {monthAppts.length > 0 && (
+                                    <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>Date</td>
+                                      <td>Patient</td>
+                                      <td colSpan="9" />
+                                    </tr>
+                                  )}
+                                  {monthAppts.map((appt) => (
+                                    <tr key={appt.appointment_id} style={{ background: '#f9fdfb', fontSize: '0.87rem', color: '#334240' }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>
+                                        {String(appt.appointment_date || '').slice(0, 10)}
+                                      </td>
+                                      <td>{appt.patient_name}</td>
+                                      <td style={{ color: '#1d6b41', fontWeight: 600 }}>
+                                        {appt.status_name === 'COMPLETED' ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
+                                        {['CANCELED', 'CANCELLED'].includes(appt.status_name) ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
+                                        {appt.status_name === 'NO_SHOW' ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#4b6966', fontWeight: 600 }}>
+                                        {['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(appt.status_name) ? '✓' : ''}
+                                      </td>
+                                      <td>{formatMoney(appt.production)}</td>
+                                      <td>{formatMoney(appt.patient_collected)}</td>
+                                      <td>{formatMoney(appt.insurance_collected)}</td>
+                                      <td>{formatMoney(appt.total_collected)}</td>
+                                      <td>{formatMoney(appt.outstanding)}</td>
+                                    </tr>
+                                  ))}
+                                </>
+                              );
+                            }) : <tr><td colSpan="11">No monthly trend data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>
-                      {renderTablePager(clinicPerformanceReport.monthlyTrends.length, monthlyTrendsPage, setMonthlyTrendsPage)}
                     </article>
                   )}
 
                   {activeReportTab === 'providers' && (
                     <article className="admin-panel">
-                      <h2>Provider Productivity</h2>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                        <h2 style={{ margin: 0 }}>Provider Productivity</h2>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <button
+                            type="button"
+                            className={`admin-btn${monthlyTrendsSort === 'date' ? ' is-active' : ''}`}
+                            onClick={() => setMonthlyTrendsSort('date')}
+                          >
+                            Sort by Date
+                          </button>
+                          <button
+                            type="button"
+                            className={`admin-btn${monthlyTrendsSort === 'alpha' ? ' is-active' : ''}`}
+                            onClick={() => setMonthlyTrendsSort('alpha')}
+                          >
+                            Sort A–Z
+                          </button>
+                        </div>
+                      </div>
                       <div className="table-wrap report-table-wrap">
                         <table>
                           <thead>
                             <tr>
-                              <th>Provider</th>
+                              <th>Provider / Date</th>
                               <th>Appointments</th>
                               <th>Completed</th>
                               <th>Cancelled</th>
                               <th>No-Show</th>
+                              <th>Scheduled</th>
                               <th>Production</th>
                               <th>Patient Collected</th>
                               <th>Insurance Collected</th>
@@ -1690,30 +1755,77 @@ function AdminDashboardPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {clinicPerformanceReport.providerPerformance.length ? pagedProviderPerformance.map((row) => {
+                            {clinicPerformanceReport.providerPerformance.length ? clinicPerformanceReport.providerPerformance.map((row) => {
                               const collectionRate = Number(row.total_production || 0) > 0
                                 ? (Number(row.total_collected || 0) / Number(row.total_production || 0)) * 100
                                 : 0;
+                              const providerAppts = clinicPerformanceReport.appointmentRows
+                                .filter((a) => Number(a.doctor_id) === Number(row.doctor_id))
+                                .sort((a, b) => {
+                                  const dateA = String(a.appointment_date || '').slice(0, 10);
+                                  const dateB = String(b.appointment_date || '').slice(0, 10);
+                                  const nameA = String(a.patient_name || '').toLowerCase();
+                                  const nameB = String(b.patient_name || '').toLowerCase();
+                                  if (monthlyTrendsSort === 'alpha') {
+                                    return nameA !== nameB ? nameA.localeCompare(nameB) : dateA.localeCompare(dateB);
+                                  }
+                                  return dateA !== dateB ? dateA.localeCompare(dateB) : nameA.localeCompare(nameB);
+                                });
                               return (
-                                <tr key={row.doctor_id}>
-                                  <td>Dr. {row.doctor_name}</td>
-                                  <td>{row.total_appointments}</td>
-                                  <td>{row.completed_appointments}</td>
-                                  <td>{row.cancelled_appointments}</td>
-                                  <td>{row.no_show_appointments}</td>
-                                  <td>{formatMoney(row.total_production)}</td>
-                                  <td>{formatMoney(row.patient_collected)}</td>
-                                  <td>{formatMoney(row.insurance_collected)}</td>
-                                  <td>{formatMoney(row.total_collected)}</td>
-                                  <td>{formatPercent(collectionRate)}</td>
-                                  <td>{formatMoney(row.total_outstanding)}</td>
-                                </tr>
+                                <>
+                                  <tr key={row.doctor_id} style={{ background: '#e8f2f0', fontWeight: 700 }}>
+                                    <td>Dr. {row.doctor_name}</td>
+                                    <td>{row.total_appointments}</td>
+                                    <td>{row.completed_appointments}</td>
+                                    <td>{row.cancelled_appointments}</td>
+                                    <td>{row.no_show_appointments}</td>
+                                    <td>{row.scheduled_appointments}</td>
+                                    <td>{formatMoney(row.total_production)}</td>
+                                    <td>{formatMoney(row.patient_collected)}</td>
+                                    <td>{formatMoney(row.insurance_collected)}</td>
+                                    <td>{formatMoney(row.total_collected)}</td>
+                                    <td>{formatPercent(collectionRate)}</td>
+                                    <td>{formatMoney(row.total_outstanding)}</td>
+                                  </tr>
+                                  {providerAppts.length > 0 && (
+                                    <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>Date</td>
+                                      <td>Patient</td>
+                                      <td colSpan="10" />
+                                    </tr>
+                                  )}
+                                  {providerAppts.map((appt) => (
+                                    <tr key={appt.appointment_id} style={{ background: '#f9fdfb', fontSize: '0.87rem', color: '#334240' }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>
+                                        {String(appt.appointment_date || '').slice(0, 10)}
+                                      </td>
+                                      <td>{appt.patient_name}</td>
+                                      <td style={{ color: '#1d6b41', fontWeight: 600 }}>
+                                        {appt.status_name === 'COMPLETED' ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
+                                        {['CANCELED', 'CANCELLED'].includes(appt.status_name) ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
+                                        {appt.status_name === 'NO_SHOW' ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#4b6966', fontWeight: 600 }}>
+                                        {['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(appt.status_name) ? '✓' : ''}
+                                      </td>
+                                      <td>{formatMoney(appt.production)}</td>
+                                      <td>{formatMoney(appt.patient_collected)}</td>
+                                      <td>{formatMoney(appt.insurance_collected)}</td>
+                                      <td>{formatMoney(appt.total_collected)}</td>
+                                      <td />
+                                      <td>{formatMoney(appt.outstanding)}</td>
+                                    </tr>
+                                  ))}
+                                </>
                               );
-                            }) : <tr><td colSpan="11">No provider productivity data for this range.</td></tr>}
+                            }) : <tr><td colSpan="12">No provider productivity data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>
-                      {renderTablePager(clinicPerformanceReport.providerPerformance.length, providerPerformancePage, setProviderPerformancePage)}
                     </article>
                   )}
 
@@ -1726,19 +1838,51 @@ function AdminDashboardPage() {
                             <tr>
                               <th>Month</th>
                               <th>New Patients</th>
+                              <th>Patient Name</th>
+                              <th>Date Registered</th>
+                              <th>Phone</th>
+                              <th>Doctor</th>
+                              <th>Total Appts</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {clinicPerformanceReport.newPatientsTrend.length ? pagedNewPatientsTrend.map((row) => (
-                              <tr key={row.period_key}>
-                                <td>{row.period_label}</td>
-                                <td>{row.new_patients}</td>
-                              </tr>
-                            )) : <tr><td colSpan="2">No patient growth data for this range.</td></tr>}
+                            {clinicPerformanceReport.newPatientsTrend.length ? clinicPerformanceReport.newPatientsTrend.map((month) => {
+                              const monthPatients = clinicPerformanceReport.newPatientRows.filter(
+                                (p) => p.period_key === month.period_key
+                              );
+                              return (
+                                <>
+                                  <tr key={month.period_key} style={{ background: '#e8f2f0', fontWeight: 700 }}>
+                                    <td>{month.period_label}</td>
+                                    <td>{month.new_patients}</td>
+                                    <td colSpan="5" />
+                                  </tr>
+                                  {monthPatients.length > 0 && (
+                                    <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
+                                      <td colSpan="2" />
+                                      <td>Patient</td>
+                                      <td>Registered</td>
+                                      <td>Phone</td>
+                                      <td>Doctor</td>
+                                      <td>Total Appts</td>
+                                    </tr>
+                                  )}
+                                  {monthPatients.map((p) => (
+                                    <tr key={p.patient_id} style={{ background: '#f9fdfb', fontSize: '0.87rem', color: '#334240' }}>
+                                      <td colSpan="2" />
+                                      <td>{p.patient_name}</td>
+                                      <td>{String(p.registered_date || '').slice(0, 10)}</td>
+                                      <td>{p.p_phone || '—'}</td>
+                                      <td>{p.doctor_name ? `Dr. ${p.doctor_name}` : '—'}</td>
+                                      <td>{p.total_appointments}</td>
+                                    </tr>
+                                  ))}
+                                </>
+                              );
+                            }) : <tr><td colSpan="7">No patient growth data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>
-                      {renderTablePager(clinicPerformanceReport.newPatientsTrend.length, newPatientsPage, setNewPatientsPage)}
                     </article>
                   )}
 

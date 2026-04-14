@@ -11,6 +11,7 @@ function CreateAppointmentPage() {
   const [doctors, setDoctors] = useState([]);
   const [locations, setLocations] = useState([]);
   const [message, setMessage] = useState('');
+  const [confirmation, setConfirmation] = useState(null);
 
   const [appointmentForm, setAppointmentForm] = useState({
     patientId: '',
@@ -65,6 +66,13 @@ function CreateAppointmentPage() {
     loadData();
   }, [API_BASE_URL, navigate, session?.staffId]);
 
+  const formatTime = (time24) => {
+    const [h, m] = time24.split(':').map(Number);
+    const period = h >= 12 ? 'PM' : 'AM';
+    const hour = h % 12 || 12;
+    return `${hour}:${String(m).padStart(2, '0')} ${period}`;
+  };
+
   const createAppointment = async (event) => {
     event.preventDefault();
     try {
@@ -81,11 +89,24 @@ function CreateAppointmentPage() {
         })
       }).then(safeJson);
 
-      setMessage('Appointment created successfully.');
-      setTimeout(() => navigate('/receptionist'), 2000);
+      const selectedDoctor = doctors.find((d) => String(d.doctor_id) === String(appointmentForm.doctorId));
+      const selectedLocation = locations.find((l) => String(l.location_id) === String(appointmentForm.locationId));
+
+      setConfirmation({
+        date: appointmentForm.appointmentDate,
+        time: appointmentForm.appointmentTime,
+        doctorName: selectedDoctor?.doctor_name || null,
+        locationAddress: selectedLocation?.full_address || null,
+        patientId: appointmentForm.patientId
+      });
     } catch (error) {
       setMessage(error.message || 'Failed to create appointment');
     }
+  };
+
+  const handleConfirmationClose = () => {
+    setConfirmation(null);
+    navigate('/receptionist');
   };
 
   return (
@@ -114,6 +135,25 @@ function CreateAppointmentPage() {
           <button type="submit">Create Appointment</button>
         </form>
       </section>
+
+      {confirmation && (
+        <div className="modal-overlay" onClick={handleConfirmationClose}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Appointment Confirmed</h3>
+            <p>The appointment has been successfully scheduled.</p>
+            <div style={{ margin: '1rem 0 0', display: 'flex', flexDirection: 'column', gap: '0.35rem', color: '#334240', fontSize: '0.95rem' }}>
+              <span><strong>Patient ID:</strong> {confirmation.patientId}</span>
+              <span><strong>Date:</strong> {confirmation.date}</span>
+              <span><strong>Time:</strong> {formatTime(confirmation.time)}</span>
+              {confirmation.doctorName && <span><strong>Dentist:</strong> {confirmation.doctorName}</span>}
+              {confirmation.locationAddress && <span><strong>Location:</strong> {confirmation.locationAddress}</span>}
+            </div>
+            <div className="modal-actions">
+              <button className="modal-login-btn" onClick={handleConfirmationClose}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
