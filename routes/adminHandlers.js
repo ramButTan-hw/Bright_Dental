@@ -2502,6 +2502,8 @@ function createAdminHandlers(deps) {
 
       const activePatientIds = new Set((activePatientRows || []).map((row) => Number(row.patient_id)));
       const unresolvedPatientIds = new Set();
+      const unresolvedTimeOffPatientIds = new Set();
+      const unresolvedDoctorHiddenPatientIds = new Set();
 
       cancelledRows.forEach((row) => {
         const patientId = Number(row.patient_id);
@@ -2510,14 +2512,21 @@ function createAdminHandlers(deps) {
           && replacementStatus
           && !['CANCELLED', 'COMPLETED'].includes(replacementStatus);
 
-        if (!hasLinkedActiveReplacement && !activePatientIds.has(patientId)) {
+        const isResolved = hasLinkedActiveReplacement || activePatientIds.has(patientId);
+        row.is_resolved = isResolved;
+
+        if (!isResolved) {
           unresolvedPatientIds.add(patientId);
+          if (row.cancelled_by === 'SYSTEM_TIME_OFF') unresolvedTimeOffPatientIds.add(patientId);
+          if (row.cancelled_by === 'SYSTEM_DOCTOR_HIDDEN') unresolvedDoctorHiddenPatientIds.add(patientId);
         }
       });
 
       sendJSON(res, 200, {
         items: cancelledRows,
-        unresolvedCount: unresolvedPatientIds.size
+        unresolvedCount: unresolvedPatientIds.size,
+        unresolvedTimeOffCount: unresolvedTimeOffPatientIds.size,
+        unresolvedDoctorHiddenCount: unresolvedDoctorHiddenPatientIds.size
       });
     }).catch((err) => {
       console.error('Error fetching system-cancelled appointments:', err);

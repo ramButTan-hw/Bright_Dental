@@ -104,6 +104,8 @@ function ReceptionistPage() {
 const [mySchedule, setMySchedule] = useState([]);
   const [systemCancelledAppts, setSystemCancelledAppts] = useState([]);
   const [systemCancelledUnresolvedCount, setSystemCancelledUnresolvedCount] = useState(0);
+  const [unresolvedTimeOffCount, setUnresolvedTimeOffCount] = useState(0);
+  const [unresolvedDoctorHiddenCount, setUnresolvedDoctorHiddenCount] = useState(0);
   const [dismissFallbackDoctorToast, setDismissFallbackDoctorToast] = useState(false);
   const [dismissFallbackDoctorHiddenToast, setDismissFallbackDoctorHiddenToast] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -156,28 +158,28 @@ const [mySchedule, setMySchedule] = useState([]);
     setPharmacyChangeRequests(Array.isArray(pharmacyChangeData) ? pharmacyChangeData : []);
     setSystemCancelledAppts(Array.isArray(systemCancelledData?.items) ? systemCancelledData.items : (Array.isArray(systemCancelledData) ? systemCancelledData : []));
     setSystemCancelledUnresolvedCount(Number(systemCancelledData?.unresolvedCount ?? (Array.isArray(systemCancelledData) ? systemCancelledData.length : 0)));
+    setUnresolvedTimeOffCount(Number(systemCancelledData?.unresolvedTimeOffCount ?? 0));
+    setUnresolvedDoctorHiddenCount(Number(systemCancelledData?.unresolvedDoctorHiddenCount ?? 0));
     await loadAppointmentsForDate(selectedDate);
   };
 
   const visibleNotifications = notifications.filter((notification) => !dismissedNotificationIds.has(notification.notification_id));
 const doctorTimeOffNotification = visibleNotifications.find((notification) => notification.notification_type === 'DOCTOR_TIME_OFF') || null;
-  const doctorTimeOffCancelledCount = systemCancelledAppts.filter((r) => r.cancelled_by === 'SYSTEM_TIME_OFF').length;
-  const shouldShowFallbackDoctorToast = !doctorTimeOffNotification && !dismissFallbackDoctorToast && doctorTimeOffCancelledCount > 0;
+  const shouldShowFallbackDoctorToast = !doctorTimeOffNotification && !dismissFallbackDoctorToast && unresolvedTimeOffCount > 0;
   const fallbackDoctorTimeOffToast = shouldShowFallbackDoctorToast
     ? {
       notification_id: null,
-      message: `${doctorTimeOffCancelledCount} appointment${doctorTimeOffCancelledCount === 1 ? '' : 's'} still need rescheduling after doctor time off cancellations.`
+      message: `${unresolvedTimeOffCount} patient${unresolvedTimeOffCount === 1 ? '' : 's'} still need rescheduling after doctor time off cancellations.`
     }
     : null;
   const activeDoctorTimeOffToast = doctorTimeOffNotification || fallbackDoctorTimeOffToast;
 
   const doctorHiddenNotification = visibleNotifications.find((n) => n.notification_type === 'DOCTOR_HIDDEN') || null;
-  const doctorHiddenCancelledCount = systemCancelledAppts.filter((r) => r.cancelled_by === 'SYSTEM_DOCTOR_HIDDEN').length;
-  const shouldShowFallbackDoctorHiddenToast = !doctorHiddenNotification && !dismissFallbackDoctorHiddenToast && doctorHiddenCancelledCount > 0;
+  const shouldShowFallbackDoctorHiddenToast = !doctorHiddenNotification && !dismissFallbackDoctorHiddenToast && unresolvedDoctorHiddenCount > 0;
   const fallbackDoctorHiddenToast = shouldShowFallbackDoctorHiddenToast
     ? {
       notification_id: null,
-      message: `${doctorHiddenCancelledCount} appointment${doctorHiddenCancelledCount === 1 ? '' : 's'} were cancelled due to doctor deletion and need rescheduling.`
+      message: `${unresolvedDoctorHiddenCount} patient${unresolvedDoctorHiddenCount === 1 ? '' : 's'} still need rescheduling after doctor deletion cancellations.`
     }
     : null;
   const activeDoctorHiddenToast = doctorHiddenNotification || fallbackDoctorHiddenToast;
@@ -739,6 +741,7 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Time</th>
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Doctor</th>
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Reason</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Status</th>
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Cancelled At</th>
                 </tr>
               </thead>
@@ -760,6 +763,11 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
                       {row.cancelled_by === 'SYSTEM_DOCTOR_HIDDEN'
                         ? <span style={{ color: '#a53030', fontWeight: 600, fontSize: '0.82rem' }}>Doctor Deleted</span>
                         : <span style={{ color: '#7a5c00', fontWeight: 600, fontSize: '0.82rem' }}>Doctor Time Off</span>}
+                    </td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>
+                      {row.is_resolved
+                        ? <span style={{ color: '#155724', background: '#d4edda', borderRadius: '4px', padding: '2px 8px', fontSize: '0.8rem', fontWeight: 600 }}>Resolved</span>
+                        : <span style={{ color: '#721c24', background: '#f8d7da', borderRadius: '4px', padding: '2px 8px', fontSize: '0.8rem', fontWeight: 600 }}>Needs Reschedule</span>}
                     </td>
                     <td style={{ padding: '0.5rem 0.75rem', color: '#888', fontSize: '0.82rem' }}>{formatDate(row.cancelled_at)}</td>
                   </tr>
