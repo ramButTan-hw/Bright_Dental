@@ -203,6 +203,7 @@ function AdminDashboardPage() {
   const [cancelledRequests, setCancelledRequests] = useState([]);
   const [cancelledAppointments, setCancelledAppointments] = useState([]);
   const [refundHistory, setRefundHistory] = useState([]);
+  const [overpaidInvoices, setOverpaidInvoices] = useState([]);
   const [refundForm, setRefundForm] = useState({ invoiceId: '', amount: '', reason: '' });
   const [invoiceLookup, setInvoiceLookup] = useState(null);
   const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
@@ -301,7 +302,7 @@ function AdminDashboardPage() {
     setError('');
 
     try {
-      const [summaryData, queueData, followUpData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData, refundData, cancelledApptData] = await Promise.all([
+      const [summaryData, queueData, followUpData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData, refundData, cancelledApptData, overpaidData] = await Promise.all([
         fetch(`${API_BASE_URL}/api/admin/dashboard/summary?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/appointments/queue?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/follow-ups/queue?windowDays=365&includeScheduled=${includeScheduledFollowUps}`).then(safeJson),
@@ -315,7 +316,8 @@ function AdminDashboardPage() {
         fetch(`${API_BASE_URL}/api/admin/staff-schedules`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff-schedules/gaps`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/refunds`).then(safeJson),
-        fetch(`${API_BASE_URL}/api/admin/cancelled-appointments`).then(safeJson)
+        fetch(`${API_BASE_URL}/api/admin/cancelled-appointments`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/overpaid-invoices`).then(safeJson)
       ]);
 
       setSummary(summaryData);
@@ -335,6 +337,7 @@ function AdminDashboardPage() {
       setScheduleGaps(Array.isArray(gapsData) ? gapsData : []);
       setRefundHistory(Array.isArray(refundData) ? refundData : []);
       setCancelledAppointments(Array.isArray(cancelledApptData) ? cancelledApptData : []);
+      setOverpaidInvoices(Array.isArray(overpaidData) ? overpaidData : []);
     } catch (err) {
       setError(err.message || 'Unable to load admin data.');
     } finally {
@@ -376,12 +379,14 @@ function AdminDashboardPage() {
       setRefundForm({ invoiceId: '', amount: '', reason: '' });
       setInvoiceLookup(null);
       // Reload refund history and financial data
-      const [refundData, reportData] = await Promise.all([
+      const [refundData, reportData, overpaidData] = await Promise.all([
         fetch(`${API_BASE_URL}/api/admin/refunds`).then(safeJson),
-        fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson)
+        fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/overpaid-invoices`).then(safeJson)
       ]);
       setRefundHistory(Array.isArray(refundData) ? refundData : []);
       setPatientReport(reportData);
+      setOverpaidInvoices(Array.isArray(overpaidData) ? overpaidData : []);
     } catch (err) {
       setError(err.message || 'Failed to process refund.');
     }
@@ -1780,7 +1785,60 @@ function AdminDashboardPage() {
 
           {activeSection === 'refunds' && (
             <>
-              <section className="admin-panel">
+              {overpaidInvoices.length > 0 && (
+                <section className="admin-panel">
+                  <div className="admin-panel-header">
+                    <h2>Overpaid Invoices <span style={{ fontSize: '0.8rem', fontWeight: 600, background: '#fde8a0', color: '#7a5100', borderRadius: '999px', padding: '0.15em 0.6em', marginLeft: '0.4rem' }}>{overpaidInvoices.length}</span></h2>
+                    <p className="muted">Patients who have paid more than their current invoice total. Click "Refund" to pre-fill the form below.</p>
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Invoice</th>
+                          <th>Patient</th>
+                          <th>Appt Date</th>
+                          <th>Doctor</th>
+                          <th>Invoice Total</th>
+                          <th>Net Paid</th>
+                          <th>Overpayment</th>
+                          <th>Reason</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overpaidInvoices.map((inv) => (
+                          <tr key={inv.invoice_id}>
+                            <td>#{inv.invoice_id}</td>
+                            <td>{inv.patient_name}</td>
+                            <td>{formatDate(inv.appointment_date)}</td>
+                            <td>{inv.doctor_name || '—'}</td>
+                            <td>{formatMoney(inv.patient_amount)}</td>
+                            <td>{formatMoney(inv.net_paid)}</td>
+                            <td style={{ color: '#9d2e2e', fontWeight: 700 }}>{formatMoney(inv.overpayment)}</td>
+                            <td style={{ color: '#555', fontSize: '0.82rem' }}>{inv.reason}</td>
+                            <td>
+                              <button
+                                type="button"
+                                style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
+                                onClick={() => {
+                                  setRefundForm({ invoiceId: String(inv.invoice_id), amount: String(inv.overpayment), reason: inv.reason });
+                                  lookupInvoice(inv.invoice_id);
+                                  document.getElementById('process-refund-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }}
+                              >
+                                Refund
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              <section className="admin-panel" id="process-refund-panel">
                 <div className="admin-panel-header">
                   <h2>Process Refund</h2>
                   <p className="muted">Enter an invoice ID to look up details and process a refund.</p>
