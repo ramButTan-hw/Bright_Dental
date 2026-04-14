@@ -105,6 +105,7 @@ const [mySchedule, setMySchedule] = useState([]);
   const [systemCancelledAppts, setSystemCancelledAppts] = useState([]);
   const [systemCancelledUnresolvedCount, setSystemCancelledUnresolvedCount] = useState(0);
   const [dismissFallbackDoctorToast, setDismissFallbackDoctorToast] = useState(false);
+  const [dismissFallbackDoctorHiddenToast, setDismissFallbackDoctorHiddenToast] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState(() => {
     try {
@@ -160,14 +161,26 @@ const [mySchedule, setMySchedule] = useState([]);
 
   const visibleNotifications = notifications.filter((notification) => !dismissedNotificationIds.has(notification.notification_id));
 const doctorTimeOffNotification = visibleNotifications.find((notification) => notification.notification_type === 'DOCTOR_TIME_OFF') || null;
-  const shouldShowFallbackDoctorToast = !doctorTimeOffNotification && !dismissFallbackDoctorToast && systemCancelledUnresolvedCount > 0;
+  const doctorTimeOffCancelledCount = systemCancelledAppts.filter((r) => r.cancelled_by === 'SYSTEM_TIME_OFF').length;
+  const shouldShowFallbackDoctorToast = !doctorTimeOffNotification && !dismissFallbackDoctorToast && doctorTimeOffCancelledCount > 0;
   const fallbackDoctorTimeOffToast = shouldShowFallbackDoctorToast
     ? {
       notification_id: null,
-      message: `${systemCancelledUnresolvedCount} patient${systemCancelledUnresolvedCount === 1 ? '' : 's'} still need rescheduling after doctor time off cancellations.`
+      message: `${doctorTimeOffCancelledCount} appointment${doctorTimeOffCancelledCount === 1 ? '' : 's'} still need rescheduling after doctor time off cancellations.`
     }
     : null;
   const activeDoctorTimeOffToast = doctorTimeOffNotification || fallbackDoctorTimeOffToast;
+
+  const doctorHiddenNotification = visibleNotifications.find((n) => n.notification_type === 'DOCTOR_HIDDEN') || null;
+  const doctorHiddenCancelledCount = systemCancelledAppts.filter((r) => r.cancelled_by === 'SYSTEM_DOCTOR_HIDDEN').length;
+  const shouldShowFallbackDoctorHiddenToast = !doctorHiddenNotification && !dismissFallbackDoctorHiddenToast && doctorHiddenCancelledCount > 0;
+  const fallbackDoctorHiddenToast = shouldShowFallbackDoctorHiddenToast
+    ? {
+      notification_id: null,
+      message: `${doctorHiddenCancelledCount} appointment${doctorHiddenCancelledCount === 1 ? '' : 's'} were cancelled due to doctor deletion and need rescheduling.`
+    }
+    : null;
+  const activeDoctorHiddenToast = doctorHiddenNotification || fallbackDoctorHiddenToast;
 
   const requestAlerts = [
     ...(insuranceChangeRequests.length > 0 ? [{
@@ -346,7 +359,7 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
         </section>
       )}
 
-      {(activeDoctorTimeOffToast || requestAlerts.length > 0) && (
+      {(activeDoctorTimeOffToast || activeDoctorHiddenToast || requestAlerts.length > 0) && (
         <aside className="reception-request-alert-stack" aria-live="polite" aria-label="Notifications">
           {activeDoctorTimeOffToast && (
             <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
@@ -372,6 +385,45 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
               </div>
               <p className="reception-request-alert-card__message">
                 {activeDoctorTimeOffToast.message}
+              </p>
+              <button
+                type="button"
+                className="reception-request-alert-card__action"
+                onClick={() => {
+                  const target = document.getElementById('system-cancelled-appointments');
+                  if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }}
+              >
+                Review Cancellations &rarr;
+              </button>
+            </article>
+          )}
+          {activeDoctorHiddenToast && (
+            <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
+              <div className="reception-request-alert-card__top">
+                <div>
+                  <p className="reception-request-alert-card__eyebrow">Doctor Deletion</p>
+                  <h3>Doctor deletion affected patient schedules</h3>
+                </div>
+                <button
+                  type="button"
+                  className="reception-request-alert-card__close"
+                  aria-label="Dismiss doctor deletion notification"
+                  onClick={() => {
+                    if (activeDoctorHiddenToast.notification_id) {
+                      dismissNotification(activeDoctorHiddenToast.notification_id);
+                      return;
+                    }
+                    setDismissFallbackDoctorHiddenToast(true);
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+              <p className="reception-request-alert-card__message">
+                {activeDoctorHiddenToast.message}
               </p>
               <button
                 type="button"
@@ -674,7 +726,7 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
         <section className="reception-section" id="system-cancelled-appointments">
           <h2 style={{ color: '#a53030', marginBottom: '0.75rem' }}>Appointments Cancelled by System — Patients Need to Reschedule</h2>
           <p style={{ color: '#666', fontSize: '0.88rem', marginBottom: '1rem' }}>
-            The following appointments were automatically cancelled due to doctor time-off approval in the last 30 days. Contact these patients to help them reschedule.
+            The following appointments were automatically cancelled by the system in the last 30 days. Contact these patients to help them reschedule.
           </p>
           <div style={{ overflowX: 'auto' }}>
             <table className="reception-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
@@ -686,18 +738,29 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Cancelled Appt Date</th>
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Time</th>
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Doctor</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Reason</th>
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Cancelled At</th>
                 </tr>
               </thead>
               <tbody>
                 {systemCancelledAppts.map((row) => (
-                  <tr key={row.appointment_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                    <td style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>{row.patient_name}</td>
+                  <tr
+                    key={row.appointment_id}
+                    className="reception-clickable-row"
+                    style={{ borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }}
+                    onClick={() => navigateToPatientProfile(row.patient_id)}
+                  >
+                    <td style={{ padding: '0.5rem 0.75rem', fontWeight: 600, color: '#0f6965' }}>{row.patient_name}</td>
                     <td style={{ padding: '0.5rem 0.75rem' }}>{row.p_email}</td>
                     <td style={{ padding: '0.5rem 0.75rem' }}>{row.p_phone}</td>
                     <td style={{ padding: '0.5rem 0.75rem' }}>{formatDate(row.appointment_date)}</td>
                     <td style={{ padding: '0.5rem 0.75rem' }}>{formatTime(row.appointment_time)}</td>
                     <td style={{ padding: '0.5rem 0.75rem' }}>{row.doctor_name}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>
+                      {row.cancelled_by === 'SYSTEM_DOCTOR_HIDDEN'
+                        ? <span style={{ color: '#a53030', fontWeight: 600, fontSize: '0.82rem' }}>Doctor Deleted</span>
+                        : <span style={{ color: '#7a5c00', fontWeight: 600, fontSize: '0.82rem' }}>Doctor Time Off</span>}
+                    </td>
                     <td style={{ padding: '0.5rem 0.75rem', color: '#888', fontSize: '0.82rem' }}>{formatDate(row.cancelled_at)}</td>
                   </tr>
                 ))}
