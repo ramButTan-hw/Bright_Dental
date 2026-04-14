@@ -1155,6 +1155,50 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
       return true;
     }
 
+    // PUT /api/dentist/findings/:findingId — edit a dental finding
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'findings' && parts[3]) {
+      const findingId = Number(parts[3]);
+      if (!Number.isInteger(findingId) || findingId <= 0) {
+        sendJSON(res, 400, { error: 'Valid findingId is required' });
+        return true;
+      }
+      parseJSON(req, (err, data) => {
+        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        const doctorId = Number(data.doctorId || 0);
+        if (!Number.isInteger(doctorId) || doctorId <= 0) {
+          return sendJSON(res, 400, { error: 'Valid doctorId is required' });
+        }
+        const updates = {};
+        if (data.conditionType !== undefined) updates.condition_type = String(data.conditionType).trim() || null;
+        if (data.toothNumber !== undefined) updates.tooth_number = String(data.toothNumber).trim() || null;
+        if (data.surface !== undefined) updates.surface = String(data.surface).trim() || null;
+        if (data.notes !== undefined) updates.notes = String(data.notes).trim() || null;
+
+        if (Object.keys(updates).length === 0) {
+          return sendJSON(res, 400, { error: 'No fields provided to update' });
+        }
+
+        const setClauses = Object.keys(updates).map((col) => `${col} = ?`).join(', ');
+        const values = [...Object.values(updates), findingId, doctorId];
+
+        pool.query(
+          `UPDATE dental_findings SET ${setClauses} WHERE finding_id = ? AND doctor_id = ?`,
+          values,
+          (updateErr, result) => {
+            if (updateErr) {
+              console.error('Error updating dental finding:', updateErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            if (!result.affectedRows) {
+              return sendJSON(res, 404, { error: 'Dental finding not found' });
+            }
+            return sendJSON(res, 200, { message: 'Dental finding updated' });
+          }
+        );
+      });
+      return true;
+    }
+
     // PUT /api/dentist/treatments/:planId — edit a completed treatment and recalculate invoice
     if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'treatments' && parts[3]) {
       const planId = Number(parts[3]);
