@@ -189,6 +189,8 @@ function DentistPatientProfilePage() {
   const [procedureCodeOptions, setProcedureCodeOptions] = useState([]);
   const [editingTreatment, setEditingTreatment] = useState(null);
   const [editConfirmPending, setEditConfirmPending] = useState(false);
+  const [editingFinding, setEditingFinding] = useState(null);
+  const [editFindingConfirmPending, setEditFindingConfirmPending] = useState(false);
 
   const [findingForm, setFindingForm] = useState({
     surface: '',
@@ -571,6 +573,47 @@ function DentistPatientProfilePage() {
     }
   };
 
+  const openEditFinding = (entry) => {
+    const findingId = String(entry.uniqueId).replace('finding-', '');
+    const finding = dentalFindings.find((f) => String(f.finding_id) === findingId);
+    if (!finding) return;
+    setEditingFinding({
+      findingId: Number(findingId),
+      conditionType: finding.condition_type || '',
+      toothNumber: finding.tooth_number || '',
+      surface: finding.surface || '',
+      notes: finding.notes || ''
+    });
+    setEditFindingConfirmPending(false);
+  };
+
+  const saveEditFinding = async () => {
+    if (!editingFinding) return;
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/dentist/findings/${editingFinding.findingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doctorId,
+          conditionType: editingFinding.conditionType,
+          toothNumber: editingFinding.toothNumber,
+          surface: editingFinding.surface,
+          notes: editingFinding.notes
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to update finding.');
+      setMessage('Finding updated successfully.');
+      setEditingFinding(null);
+      setEditFindingConfirmPending(false);
+      await loadDetail();
+    } catch (err) {
+      setError(err.message || 'Failed to update finding.');
+    }
+  };
+
   const hasActiveAppointment = detail?.appointment?.status_name &&
     ['CHECKED_IN', 'CONFIRMED', 'SCHEDULED', 'RESCHEDULED'].includes(detail.appointment.status_name.toUpperCase());
 
@@ -797,13 +840,23 @@ function DentistPatientProfilePage() {
                         </div>
                       )}
                       {entry.type === 'FINDING' && entry.uniqueId.startsWith('finding-') && (
-                        <button
-                          type="button"
-                          className="dentist-history-delete-btn"
-                          onClick={() => deleteFindingEntry(String(entry.uniqueId).replace('finding-', ''))}
-                        >
-                          Delete
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexDirection: 'column' }}>
+                          <button
+                            type="button"
+                            className="dentist-save-btn"
+                            style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
+                            onClick={() => openEditFinding(entry)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="dentist-history-delete-btn"
+                            onClick={() => deleteFindingEntry(String(entry.uniqueId).replace('finding-', ''))}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       )}
                     </li>
                   ))}
@@ -825,6 +878,56 @@ function DentistPatientProfilePage() {
           />
         </div>
       </section>
+
+      {/* ── Edit Finding Modal ── */}
+      {editingFinding && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: '#fff', borderRadius: '14px', padding: '1.5rem', width: '95%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            {!editFindingConfirmPending ? (
+              <>
+                <h2 style={{ marginTop: 0, color: '#2a4f4d' }}>Edit Finding</h2>
+                <div style={{ display: 'grid', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Condition Type
+                    <select
+                      className="dentist-search-input"
+                      value={editingFinding.conditionType}
+                      onChange={(e) => setEditingFinding((prev) => ({ ...prev, conditionType: e.target.value }))}
+                    >
+                      <option value="">Select condition</option>
+                      {FINDING_CONDITION_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Tooth Number
+                    <input className="dentist-search-input" value={editingFinding.toothNumber} onChange={(e) => setEditingFinding((prev) => ({ ...prev, toothNumber: e.target.value }))} />
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Surface
+                    <select className="dentist-search-input" value={editingFinding.surface} onChange={(e) => setEditingFinding((prev) => ({ ...prev, surface: e.target.value }))}>
+                      <option value="">Select surface</option>
+                      {SURFACE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Notes
+                    <textarea className="dentist-note-box" value={editingFinding.notes} onChange={(e) => setEditingFinding((prev) => ({ ...prev, notes: e.target.value }))} />
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                  <button type="button" className="dentist-history-delete-btn" onClick={() => { setEditingFinding(null); setEditFindingConfirmPending(false); }}>Cancel</button>
+                  <button type="button" className="dentist-save-btn" onClick={() => setEditFindingConfirmPending(true)}>Save Changes</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 style={{ marginTop: 0, color: '#9d2e2e' }}>Confirm Edit</h2>
+                <p>Are you sure you want to update this dental finding?</p>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                  <button type="button" className="dentist-history-delete-btn" onClick={() => setEditFindingConfirmPending(false)}>Go Back</button>
+                  <button type="button" className="dentist-save-btn" style={{ background: '#9d2e2e' }} onClick={saveEditFinding}>Yes, Update Finding</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Edit Treatment Modal ── */}
       {editingTreatment && (
