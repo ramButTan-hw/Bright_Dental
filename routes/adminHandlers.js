@@ -463,6 +463,7 @@ function createAdminHandlers(deps) {
       LEFT JOIN users u ON u.user_id = st.user_id
       LEFT JOIN staff_locations sl ON sl.staff_id = st.staff_id
       LEFT JOIN locations l ON l.location_id = sl.location_id
+      WHERE COALESCE(u.is_deleted, 0) = 0
       GROUP BY d.doctor_id, d.npi, st.staff_id, st.first_name, st.last_name,
                st.date_of_birth, st.gender, st.phone_number, u.user_username, u.user_role
       ORDER BY st.last_name ASC, st.first_name ASC`,
