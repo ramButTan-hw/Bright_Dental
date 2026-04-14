@@ -2479,7 +2479,8 @@ function createAdminHandlers(deps) {
          p.p_email,
          p.p_phone,
          CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-         a.updated_at AS cancelled_at${hasRescheduleLinkColumn ? ',\n         r.appointment_id AS rescheduled_appointment_id,\n         rs.status_name AS rescheduled_status_name' : ''}
+         a.updated_at AS cancelled_at,
+         a.updated_by AS cancelled_by${hasRescheduleLinkColumn ? ',\n         r.appointment_id AS rescheduled_appointment_id,\n         rs.status_name AS rescheduled_status_name' : ''}
        FROM appointments a
        JOIN patients p ON p.patient_id = a.patient_id
        JOIN appointment_statuses ast ON ast.status_id = a.status_id

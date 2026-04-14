@@ -843,7 +843,7 @@ CREATE TABLE IF NOT EXISTS receptionist_notifications (
     source_table VARCHAR(50) NOT NULL,
     source_request_id INT NOT NULL,
     patient_id INT NOT NULL,
-    notification_type ENUM('INSURANCE_CHANGE_REQUEST', 'PHARMACY_CHANGE_REQUEST', 'DOCTOR_TIME_OFF') NOT NULL,
+    notification_type ENUM('INSURANCE_CHANGE_REQUEST', 'PHARMACY_CHANGE_REQUEST', 'DOCTOR_TIME_OFF', 'DOCTOR_HIDDEN') NOT NULL,
     message VARCHAR(255) NOT NULL,
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     read_at TIMESTAMP NULL DEFAULT NULL,
@@ -1211,6 +1211,9 @@ BEGIN
     DECLARE v_doctor_id INT DEFAULT NULL;
     DECLARE v_cancelled_status_id INT DEFAULT NULL;
     DECLARE v_reason_id INT DEFAULT NULL;
+    DECLARE v_doctor_name VARCHAR(120) DEFAULT '';
+    DECLARE v_affected_count INT DEFAULT 0;
+    DECLARE v_patient_id INT DEFAULT NULL;
 
     IF OLD.is_deleted = 0 AND NEW.is_deleted = 1 THEN
         SELECT d.doctor_id INTO v_doctor_id
@@ -1226,7 +1229,23 @@ BEGIN
             SELECT reason_id INTO v_reason_id
             FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
 
+            SELECT CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, ''))
+            INTO v_doctor_name
+            FROM doctors d
+            JOIN staff st ON st.staff_id = d.staff_id
+            WHERE d.doctor_id = v_doctor_id
+            LIMIT 1;
+
             IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+                SELECT COUNT(*), MIN(a.patient_id)
+                INTO v_affected_count, v_patient_id
+                FROM appointments a
+                WHERE a.doctor_id = v_doctor_id
+                  AND a.appointment_date >= CURDATE()
+                  AND a.status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  );
+
                 UPDATE appointments
                 SET status_id = v_cancelled_status_id,
                     reason_id = v_reason_id,
@@ -1242,6 +1261,31 @@ BEGIN
                 WHERE assigned_doctor_id = v_doctor_id
                   AND request_status = 'ASSIGNED'
                   AND assigned_date >= CURDATE();
+
+                IF v_affected_count > 0 AND v_patient_id IS NOT NULL THEN
+                    INSERT INTO receptionist_notifications (
+                        source_table,
+                        source_request_id,
+                        patient_id,
+                        notification_type,
+                        message,
+                        created_by,
+                        updated_by
+                    ) VALUES (
+                        'users',
+                        NEW.user_id,
+                        v_patient_id,
+                        'DOCTOR_HIDDEN',
+                        CONCAT('Doctor account deactivated: ', COALESCE(NULLIF(TRIM(v_doctor_name), ''), CONCAT('doctor #', v_doctor_id)), '. ', v_affected_count, ' appointment', IF(v_affected_count = 1, '', 's'), ' were cancelled due to doctor deletion and need rescheduling.'),
+                        'SYSTEM_TRIGGER',
+                        'SYSTEM_TRIGGER'
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        patient_id = VALUES(patient_id),
+                        notification_type = VALUES(notification_type),
+                        message = VALUES(message),
+                        updated_by = VALUES(updated_by);
+                END IF;
             END IF;
         END IF;
     END IF;
