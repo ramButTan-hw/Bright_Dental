@@ -199,6 +199,7 @@ function AdminDashboardPage() {
   const [allStaff, setAllStaff] = useState([]);
   const [resetPasswordStaffId, setResetPasswordStaffId] = useState(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [resetPasswordMessage, setResetPasswordMessage] = useState('');
   const [cancelledRequests, setCancelledRequests] = useState([]);
   const [cancelledAppointments, setCancelledAppointments] = useState([]);
   const [refundHistory, setRefundHistory] = useState([]);
@@ -644,8 +645,20 @@ function AdminDashboardPage() {
   }, [expandedCards.manageStaff]);
 
   const handleResetPassword = async (staffId) => {
-    if (!resetPasswordValue || resetPasswordValue.length < 8 || !/[A-Z]/.test(resetPasswordValue) || !/[a-z]/.test(resetPasswordValue) || !/[0-9]/.test(resetPasswordValue)) {
-      setActionMessage('Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number.');
+    if (!resetPasswordValue || resetPasswordValue.length < 8) {
+      setResetPasswordMessage('Must be at least 8 characters.');
+      return;
+    }
+    if (!/[A-Z]/.test(resetPasswordValue)) {
+      setResetPasswordMessage('Must include at least 1 uppercase letter.');
+      return;
+    }
+    if (!/[a-z]/.test(resetPasswordValue)) {
+      setResetPasswordMessage('Must include at least 1 lowercase letter.');
+      return;
+    }
+    if (!/[0-9]/.test(resetPasswordValue)) {
+      setResetPasswordMessage('Must include at least 1 number.');
       return;
     }
     try {
@@ -655,11 +668,11 @@ function AdminDashboardPage() {
         body: JSON.stringify({ newPassword: resetPasswordValue })
       });
       await safeJson(response);
-      setActionMessage('Password reset successfully.');
-      setResetPasswordStaffId(null);
+      setResetPasswordMessage('Password changed successfully.');
       setResetPasswordValue('');
+      setTimeout(() => { setResetPasswordStaffId(null); setResetPasswordMessage(''); }, 2000);
     } catch (err) {
-      setActionMessage(err.message || 'Failed to reset password.');
+      setResetPasswordMessage(err.message || 'Failed to reset password.');
     }
   };
 
@@ -993,7 +1006,7 @@ function AdminDashboardPage() {
                         <strong>Waiting appointment requests</strong>
                         <p className="muted">{summary.metrics?.waitingToSchedule || 0} requests need assignment.</p>
                       </div>
-                      <button type="button" className="admin-btn" onClick={() => setActiveSection('scheduling')}>Assign</button>
+                      <button type="button" className="admin-btn" onClick={() => setActiveSection('scheduling')}>View</button>
                     </div>
                     <div className="overview-queue-item">
                       <div>
@@ -2438,24 +2451,31 @@ function AdminDashboardPage() {
                                       {member.is_deleted ? 'Restore' : 'Hide'}
                                     </button>
                                     {resetPasswordStaffId === member.staff_id ? (
-                                      <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-                                        <input
-                                          type="password"
-                                          placeholder="New password"
-                                          value={resetPasswordValue}
-                                          onChange={(e) => setResetPasswordValue(e.target.value)}
-                                          style={{ width: '160px', padding: '0.2rem 0.4rem', fontSize: '0.8rem' }}
-                                          minLength={8}
-                                          title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number"
-                                        />
-                                        <button type="button" className="admin-action-btn approve" onClick={() => handleResetPassword(member.staff_id)}>Set</button>
-                                        <button type="button" className="admin-action-btn deny" onClick={() => { setResetPasswordStaffId(null); setResetPasswordValue(''); }}>X</button>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                        <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                                          <input
+                                            type="password"
+                                            placeholder="New password"
+                                            value={resetPasswordValue}
+                                            onChange={(e) => { setResetPasswordValue(e.target.value); setResetPasswordMessage(''); }}
+                                            style={{ width: '160px', padding: '0.2rem 0.4rem', fontSize: '0.8rem' }}
+                                            minLength={8}
+                                            title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number"
+                                          />
+                                          <button type="button" className="admin-action-btn approve" onClick={() => handleResetPassword(member.staff_id)}>Set</button>
+                                          <button type="button" className="admin-action-btn deny" onClick={() => { setResetPasswordStaffId(null); setResetPasswordValue(''); setResetPasswordMessage(''); }}>X</button>
+                                        </div>
+                                        {resetPasswordMessage && (
+                                          <p style={{ margin: 0, fontSize: '0.78rem', color: resetPasswordMessage.includes('successfully') ? '#007a4d' : '#b91c1c' }}>
+                                            {resetPasswordMessage}
+                                          </p>
+                                        )}
                                       </div>
                                     ) : (
                                       <button
                                         type="button"
                                         className="admin-action-btn deny"
-                                        onClick={() => { setResetPasswordStaffId(member.staff_id); setResetPasswordValue(''); }}
+                                        onClick={() => { setResetPasswordStaffId(member.staff_id); setResetPasswordValue(''); setResetPasswordMessage(''); }}
                                       >
                                         Reset Password
                                       </button>
