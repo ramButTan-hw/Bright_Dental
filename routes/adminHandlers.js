@@ -2568,6 +2568,7 @@ function createAdminHandlers(deps) {
     adminUpdateStaffSchedule,
     processRefund,
     getRefundHistory,
+    getOverpaidInvoices,
     getInvoiceLookup,
     getCancelledAppointments,
     getSystemCancelledAppointments
@@ -3129,6 +3130,47 @@ function createAdminHandlers(deps) {
           overpayment,
           max_refundable: Math.round(netPaid * 100) / 100
         });
+      }
+    );
+  }
+
+  function getOverpaidInvoices(req, res) {
+    pool.query(
+      `SELECT
+         i.invoice_id,
+         i.patient_amount,
+         i.payment_status,
+         i.updated_by,
+         CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+         p.patient_id,
+         a.appointment_date,
+         COALESCE(CONCAT(st.first_name, ' ', st.last_name), '') AS doctor_name,
+         COALESCE(SUM(pay.payment_amount), 0) AS total_paid,
+         COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS total_refunded
+       FROM invoices i
+       JOIN appointments a ON a.appointment_id = i.appointment_id
+       JOIN patients p ON p.patient_id = a.patient_id
+       LEFT JOIN doctors doc ON doc.doctor_id = a.doctor_id
+       LEFT JOIN staff st ON st.staff_id = doc.staff_id
+       LEFT JOIN payments pay ON pay.invoice_id = i.invoice_id
+       WHERE i.payment_status NOT IN ('Refunded')
+       GROUP BY i.invoice_id, i.patient_amount, i.payment_status, i.updated_by,
+                p.p_first_name, p.p_last_name, p.patient_id,
+                a.appointment_date, st.first_name, st.last_name
+       HAVING (total_paid - total_refunded) > i.patient_amount
+       ORDER BY a.appointment_date DESC`,
+      (err, rows) => {
+        if (err) { console.error('Error fetching overpaid invoices:', err); return sendJSON(res, 500, { error: 'Database error' }); }
+        const result = (rows || []).map((row) => {
+          const netPaid = Number(row.total_paid) - Number(row.total_refunded);
+          const overpayment = Math.round((netPaid - Number(row.patient_amount)) * 100) / 100;
+          const updatedBy = String(row.updated_by || '');
+          let reason = 'Payment exceeds invoice amount';
+          if (updatedBy === 'DENTIST_PORTAL') reason = 'Treatment cost reduced by dentist after payment';
+          else if (updatedBy === 'SYSTEM_AUTO') reason = 'Payment recorded above invoice total';
+          return { ...row, net_paid: netPaid, overpayment, reason };
+        });
+        sendJSON(res, 200, result);
       }
     );
   }

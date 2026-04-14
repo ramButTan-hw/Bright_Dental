@@ -44,6 +44,7 @@ function createAdminRoutes(handlers) {
     adminUpdateStaffSchedule,
     processRefund,
     getRefundHistory,
+    getOverpaidInvoices,
     getInvoiceLookup,
     getCancelledAppointments,
     getSystemCancelledAppointments
@@ -411,6 +412,12 @@ function createAdminRoutes(handlers) {
     // GET /api/admin/refunds — refund history
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'refunds') {
       getRefundHistory(req, res);
+      return true;
+    }
+
+    // GET /api/admin/overpaid-invoices — invoices where patient paid more than owed
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'overpaid-invoices') {
+      getOverpaidInvoices(req, res);
       return true;
     }
 
