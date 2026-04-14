@@ -2524,6 +2524,144 @@ function createAdminHandlers(deps) {
     });
   }
 
+  // GET /api/admin/reports/financial-detail — per-appointment financial ledger
+  function getFinancialDetailReport(req, res) {
+    const parsedUrl = url.parse(req.url, true);
+    const dateFrom = String(parsedUrl.query.dateFrom || '').trim();
+    const dateTo = String(parsedUrl.query.dateTo || '').trim();
+    const patientSearch = String(parsedUrl.query.patient || '').trim();
+    const doctorIdRaw = Number(parsedUrl.query.doctorId || 0);
+    const locationIdRaw = Number(parsedUrl.query.locationId || 0);
+    const statusGroupRaw = String(parsedUrl.query.statusGroup || 'ALL').trim().toUpperCase();
+    const paymentStatusRaw = String(parsedUrl.query.paymentStatus || 'ALL').trim().toUpperCase();
+    const patientStateRaw = String(parsedUrl.query.patientState || 'ALL').trim().toUpperCase();
+
+    if (!dateFrom || !dateTo || !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+      return sendJSON(res, 400, { error: 'dateFrom and dateTo (YYYY-MM-DD) are required' });
+    }
+
+    const allowedStatusGroups = new Set(['ALL', 'COMPLETED', 'SCHEDULED', 'CANCELLED', 'NO_SHOW', 'MISSED']);
+    const allowedPaymentStatuses = new Set(['ALL', 'PAID', 'PARTIAL', 'UNPAID', 'REFUNDED']);
+    const statusGroup = allowedStatusGroups.has(statusGroupRaw) ? statusGroupRaw : 'ALL';
+    const paymentStatus = allowedPaymentStatuses.has(paymentStatusRaw) ? paymentStatusRaw : 'ALL';
+    const patientState = /^[A-Z]{2}$/.test(patientStateRaw) ? patientStateRaw : 'ALL';
+    const doctorId = Number.isInteger(doctorIdRaw) && doctorIdRaw > 0 ? doctorIdRaw : null;
+    const locationId = Number.isInteger(locationIdRaw) && locationIdRaw > 0 ? locationIdRaw : null;
+
+    const conditions = ['a.appointment_date BETWEEN ? AND ?'];
+    const params = [dateFrom, dateTo];
+
+    if (patientSearch) {
+      conditions.push("CONCAT(p.p_first_name, ' ', p.p_last_name) LIKE ?");
+      params.push(`%${patientSearch}%`);
+    }
+    if (doctorId) {
+      conditions.push('a.doctor_id = ?');
+      params.push(doctorId);
+    }
+    if (locationId) {
+      conditions.push('a.location_id = ?');
+      params.push(locationId);
+    }
+    if (statusGroup === 'COMPLETED') {
+      conditions.push("UPPER(s.status_name) = 'COMPLETED'");
+    } else if (statusGroup === 'SCHEDULED') {
+      conditions.push("UPPER(s.status_name) IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')");
+    } else if (statusGroup === 'CANCELLED') {
+      conditions.push("UPPER(s.status_name) IN ('CANCELED', 'CANCELLED')");
+    } else if (statusGroup === 'NO_SHOW') {
+      conditions.push("UPPER(s.status_name) = 'NO_SHOW'");
+    } else if (statusGroup === 'MISSED') {
+      conditions.push("UPPER(s.status_name) IN ('CANCELED', 'CANCELLED', 'NO_SHOW')");
+    }
+    if (paymentStatus !== 'ALL') {
+      conditions.push('UPPER(COALESCE(i.payment_status, \'\')) = ?');
+      params.push(paymentStatus);
+    }
+    if (patientState !== 'ALL') {
+      conditions.push('UPPER(COALESCE(p.p_state, \'\')) = ?');
+      params.push(patientState);
+    }
+
+    const where = conditions.join(' AND ');
+
+    pool.query(
+      `SELECT
+         p.patient_id,
+         CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+         p.p_phone,
+         a.appointment_id,
+         a.appointment_date,
+         a.appointment_time,
+         UPPER(s.status_name) AS visit_status,
+         CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+         i.invoice_id,
+         COALESCE(i.amount, 0) AS gross_charge,
+         COALESCE(i.insurance_covered_amount, 0) AS insurance_covered,
+         COALESCE(i.patient_amount, 0) AS patient_responsibility,
+         COALESCE(pay.total_paid, 0) AS patient_paid,
+         COALESCE(ref.total_refunded, 0) AS total_refunded,
+         COALESCE(i.payment_status, 'N/A') AS payment_status,
+         GREATEST(COALESCE(i.patient_amount, 0) - COALESCE(pay.total_paid, 0), 0) AS balance_due
+       FROM appointments a
+       JOIN appointment_statuses s ON s.status_id = a.status_id
+       JOIN patients p ON p.patient_id = a.patient_id
+       LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
+       LEFT JOIN staff st ON st.staff_id = d.staff_id
+       LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
+       LEFT JOIN (
+         SELECT invoice_id, SUM(payment_amount) AS total_paid
+         FROM payments
+         GROUP BY invoice_id
+       ) pay ON pay.invoice_id = i.invoice_id
+       LEFT JOIN (
+         SELECT invoice_id, SUM(refund_amount) AS total_refunded
+         FROM refunds
+         GROUP BY invoice_id
+       ) ref ON ref.invoice_id = i.invoice_id
+       WHERE ${where}
+       ORDER BY p.p_last_name ASC, p.p_first_name ASC, a.appointment_date ASC`,
+      params,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching financial detail report:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        const items = (rows || []).map((row) => ({
+          patient_id: row.patient_id,
+          patient_name: row.patient_name,
+          p_phone: row.p_phone || '',
+          appointment_id: row.appointment_id,
+          appointment_date: row.appointment_date,
+          appointment_time: row.appointment_time,
+          visit_status: row.visit_status,
+          doctor_name: row.doctor_name || 'Unassigned',
+          invoice_id: row.invoice_id || null,
+          gross_charge: Number(row.gross_charge),
+          insurance_covered: Number(row.insurance_covered),
+          patient_responsibility: Number(row.patient_responsibility),
+          patient_paid: Number(row.patient_paid),
+          total_refunded: Number(row.total_refunded),
+          payment_status: row.payment_status,
+          balance_due: Number(row.balance_due)
+        }));
+
+        // Totals row
+        const totals = items.reduce((acc, r) => {
+          acc.gross_charge += r.gross_charge;
+          acc.insurance_covered += r.insurance_covered;
+          acc.patient_responsibility += r.patient_responsibility;
+          acc.patient_paid += r.patient_paid;
+          acc.total_refunded += r.total_refunded;
+          acc.balance_due += r.balance_due;
+          return acc;
+        }, { gross_charge: 0, insurance_covered: 0, patient_responsibility: 0, patient_paid: 0, total_refunded: 0, balance_due: 0 });
+
+        sendJSON(res, 200, { items, totals, generatedAt: new Date().toISOString(), dateFrom, dateTo });
+      }
+    );
+  }
+
   return {
     getAdminDashboardSummary,
     getAdminAppointmentsQueue,
@@ -2571,7 +2709,8 @@ function createAdminHandlers(deps) {
     getOverpaidInvoices,
     getInvoiceLookup,
     getCancelledAppointments,
-    getSystemCancelledAppointments
+    getSystemCancelledAppointments,
+    getFinancialDetailReport
   };
 
   // ── Staff Schedule Request Handlers ──

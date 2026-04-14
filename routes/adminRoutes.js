@@ -47,7 +47,8 @@ function createAdminRoutes(handlers) {
     getOverpaidInvoices,
     getInvoiceLookup,
     getCancelledAppointments,
-    getSystemCancelledAppointments
+    getSystemCancelledAppointments,
+    getFinancialDetailReport
   } = handlers;
 
   function handleAdminRoutes(req, res, method, parts, parseJSON, parsedUrl) {
@@ -83,6 +84,11 @@ function createAdminRoutes(handlers) {
 
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'performance') {
       getClinicPerformanceReport(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'financial-detail') {
+      getFinancialDetailReport(req, res);
       return true;
     }
 
