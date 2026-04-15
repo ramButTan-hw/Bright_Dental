@@ -740,6 +740,7 @@ const pagedOutstandingPatients = useMemo(
       });
     }
 
+
     if (pendingScheduleRequestCount > 0) {
       alerts.push({
         id: 'pending-schedule-requests',
@@ -932,7 +933,6 @@ const pagedOutstandingPatients = useMemo(
         <button type="button" className={activeSection === 'scheduling' ? 'is-active' : ''} onClick={() => setActiveSection('scheduling')}>Scheduling</button>
         <button type="button" className={activeSection === 'reports' ? 'is-active' : ''} onClick={() => setActiveSection('reports')}>Reports</button>
         <button type="button" className={activeSection === 'refunds' ? 'is-active' : ''} onClick={() => setActiveSection('refunds')}>Refunds</button>
-        <button type="button" className={activeSection === 'recall' ? 'is-active' : ''} onClick={() => setActiveSection('recall')}>Recall / Recare</button>
         <button type="button" className={activeSection === 'staff-scheduling' ? 'is-active' : ''} onClick={() => setActiveSection('staff-scheduling')}>Staff Scheduling</button>
         <button type="button" className={activeSection === 'staffing' ? 'is-active' : ''} onClick={() => setActiveSection('staffing')}>Staffing & Locations</button>
       </nav>
@@ -1204,210 +1204,6 @@ const pagedOutstandingPatients = useMemo(
             </section>
           )}
 
-          {activeSection === 'recall' && (
-            <>
-              <section className="admin-panel">
-                <div className="admin-panel-header-row recall-header-row">
-                  <div className="recall-header-copy">
-                    <p className="admin-label" style={{ marginBottom: '0.25rem' }}>Recall / Recare</p>
-                    <h2 style={{ margin: 0 }}>Who still needs to come back</h2>
-                    <p className="muted">Follow-up patients due now or within the selected window, with contact status and next scheduled appointment.</p>
-                  </div>
-                  <div className="report-date-range recall-primary-controls">
-                    <label className="admin-inline-filter">
-                      As of
-                      <input type="date" value={recallReportAsOfDate} onChange={(e) => setRecallReportAsOfDate(e.target.value)} />
-                    </label>
-                    <label className="admin-inline-filter">
-                      Window (days)
-                      <input
-                        type="number"
-                        min="30"
-                        max="365"
-                        value={recallReportWindowDays}
-                        onChange={(e) => setRecallReportWindowDays(Number(e.target.value || 90))}
-                        style={{ width: '90px' }}
-                      />
-                    </label>
-                    <button type="button" className="admin-btn" onClick={loadRecallReport} disabled={recallReportLoading}>
-                      {recallReportLoading ? 'Loading...' : 'Refresh'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="recall-filter-grid">
-                  <label className="admin-inline-filter">
-                    Due Status
-                    <select value={recallDueFilter} onChange={(e) => setRecallDueFilter(e.target.value)}>
-                      <option value="ALL">All</option>
-                      <option value="OVERDUE">Overdue</option>
-                      <option value="DUE_TODAY">Due Today</option>
-                      <option value="DUE_30">Due in 1-30 Days</option>
-                      <option value="DUE_60">Due in 31-60 Days</option>
-                      <option value="DUE_90_PLUS">Due in 61+ Days</option>
-                    </select>
-                  </label>
-                  <label className="admin-inline-filter">
-                    Contact
-                    <select value={recallContactFilter} onChange={(e) => setRecallContactFilter(e.target.value)}>
-                      <option value="ALL">All</option>
-                      <option value="CONTACTED">Contacted</option>
-                      <option value="UNCONTACTED">Not Contacted</option>
-                    </select>
-                  </label>
-                  <label className="admin-inline-filter">
-                    Scheduling
-                    <select value={recallScheduledFilter} onChange={(e) => setRecallScheduledFilter(e.target.value)}>
-                      <option value="ALL">All</option>
-                      <option value="SCHEDULED">Scheduled</option>
-                      <option value="UNSCHEDULED">Unscheduled</option>
-                    </select>
-                  </label>
-                  <label className="admin-inline-filter recall-search-field">
-                    Patient Search
-                    <input
-                      type="text"
-                      value={recallSearch}
-                      onChange={(e) => setRecallSearch(e.target.value)}
-                      placeholder="Name, email, or phone"
-                    />
-                  </label>
-                </div>
-
-                {recallReportError && <p className="admin-error">{recallReportError}</p>}
-                {recallReport.generatedAt && (
-                  <p className="muted recall-generated-at">Generated {new Date(recallReport.generatedAt).toLocaleString()}</p>
-                )}
-              </section>
-
-              {recallReportLoading && <p className="admin-loading">Loading recall report...</p>}
-
-              {!recallReportLoading && (
-                <section className="admin-metrics-grid">
-                  <article className="metric-card">
-                    <h2>Due Patients</h2>
-                    <p>{filteredRecallSummary.totalPatientsDue}</p>
-                  </article>
-                  <article className="metric-card">
-                    <h2>Overdue</h2>
-                    <p style={{ color: filteredRecallSummary.overdue > 0 ? '#9d2e2e' : 'inherit' }}>{filteredRecallSummary.overdue}</p>
-                  </article>
-                  <article className="metric-card">
-                    <h2>Due Today</h2>
-                    <p>{filteredRecallSummary.dueToday}</p>
-                  </article>
-                  <article className="metric-card">
-                    <h2>Due in 30 Days</h2>
-                    <p>{filteredRecallSummary.due30}</p>
-                  </article>
-                  <article className="metric-card">
-                    <h2>Due in 60 Days</h2>
-                    <p>{filteredRecallSummary.due60}</p>
-                  </article>
-                  <article className="metric-card">
-                    <h2>Due in 90+ Days</h2>
-                    <p>{filteredRecallSummary.due90Plus}</p>
-                  </article>
-                  <article className="metric-card">
-                    <h2>Scheduled</h2>
-                    <p>{filteredRecallSummary.scheduled}</p>
-                    <small>Recall patients with a future appointment</small>
-                  </article>
-                  <article className="metric-card">
-                    <h2>Unscheduled</h2>
-                    <p>{filteredRecallSummary.unscheduled}</p>
-                    <small>Need follow-up outreach</small>
-                  </article>
-                </section>
-              )}
-
-              {!recallReportLoading && filteredRecallItems.length > 0 && (
-                <section className="admin-panel">
-                  <h2>Recall Queue Detail</h2>
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Patient</th>
-                          <th>Phone</th>
-                          <th>Follow-Up Due</th>
-                          <th>Status</th>
-                          <th>Pending Items</th>
-                          <th>Contact</th>
-                          <th>Next Appointment</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredRecallItems.map((item) => (
-                          <tr key={item.patientId}>
-                            <td>
-                              <strong>{item.patientName}</strong>
-                              <div className="muted" style={{ fontSize: '0.8rem' }}>{item.email || 'No email on file'}</div>
-                            </td>
-                            <td>{item.phone || 'N/A'}</td>
-                            <td>{item.followUpDate ? formatDate(item.followUpDate) : 'N/A'}</td>
-                            <td>
-                              <span style={{
-                                display: 'inline-block',
-                                padding: '0.15rem 0.45rem',
-                                borderRadius: '999px',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                background: item.dueState === 'OVERDUE' ? '#f8d7da' : item.dueState === 'DUE_TODAY' ? '#fff3cd' : '#e7f1ff',
-                                color: item.dueState === 'OVERDUE' ? '#721c24' : item.dueState === 'DUE_TODAY' ? '#856404' : '#1f4d7a'
-                              }}>
-                                {item.dueState === 'OVERDUE'
-                                  ? `Overdue (${Math.abs(Number(item.daysUntilDue || 0))}d)`
-                                  : item.dueState === 'DUE_TODAY'
-                                    ? 'Due Today'
-                                    : item.dueState === 'DUE_30'
-                                      ? `Due in ${Number(item.daysUntilDue || 0)}d`
-                                      : item.dueState === 'DUE_60'
-                                        ? `Due in ${Number(item.daysUntilDue || 0)}d`
-                                        : item.dueState === 'DUE_90_PLUS'
-                                          ? `Due in ${Number(item.daysUntilDue || 0)}d`
-                                          : 'Unknown'}
-                              </span>
-                            </td>
-                            <td>{item.pendingFollowUpItems}</td>
-                            <td>
-                              {item.lastContactedAt ? (
-                                <div style={{ display: 'grid', gap: '0.2rem' }}>
-                                  <span style={{ color: '#155724', fontWeight: 700, fontSize: '0.8rem' }}>
-                                    Contacted{item.lastContactedBy ? ` by ${item.lastContactedBy}` : ''}
-                                  </span>
-                                  <span className="muted" style={{ fontSize: '0.75rem' }}>{new Date(item.lastContactedAt).toLocaleString()}</span>
-                                  <span className="muted" style={{ fontSize: '0.75rem' }}>{item.lastContactNote || 'No note'}</span>
-                                </div>
-                              ) : (
-                                <span style={{ color: '#856404', fontSize: '0.8rem' }}>Not contacted</span>
-                              )}
-                            </td>
-                            <td>
-                              {item.nextAppointmentDate ? (
-                                <div style={{ display: 'grid', gap: '0.2rem' }}>
-                                  <span>{formatDate(item.nextAppointmentDate)}</span>
-                                  <span className="muted" style={{ fontSize: '0.75rem' }}>{item.nextAppointmentStatus || 'Scheduled'}</span>
-                                </div>
-                              ) : (
-                                <span style={{ color: '#9d2e2e', fontWeight: 700 }}>Not scheduled</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              )}
-
-              {!recallReportLoading && !filteredRecallItems.length && (
-                <section className="admin-panel">
-                  <p>No recall patients match the current filters.</p>
-                </section>
-              )}
-            </>
-          )}
 
           {activeSection === 'reports' && (
             <>
@@ -1964,6 +1760,7 @@ const pagedOutstandingPatients = useMemo(
                             <td>
                               <button
                                 type="button"
+                                className="admin-btn"
                                 style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
                                 onClick={() => {
                                   setRefundForm({ invoiceId: String(inv.invoice_id), amount: String(inv.overpayment), reason: inv.reason });
@@ -2640,7 +2437,7 @@ const pagedOutstandingPatients = useMemo(
                                     background: member.is_deleted ? '#f8d7da' : '#d4edda',
                                     color: member.is_deleted ? '#721c24' : '#155724'
                                   }}>
-                                    {member.is_deleted ? 'Hidden' : 'Active'}
+                                    {member.is_deleted ? 'Deactivated' : 'Active'}
                                   </span>
                                 </td>
                                 <td>
@@ -2650,7 +2447,7 @@ const pagedOutstandingPatients = useMemo(
                                       className="admin-action-btn approve"
                                       onClick={() => handleToggleVisibility(member.staff_id)}
                                     >
-                                      {member.is_deleted ? 'Restore' : 'Hide'}
+                                      {member.is_deleted ? 'Restore' : 'Deactivate'}
                                     </button>
                                     {resetPasswordStaffId === member.staff_id ? (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
