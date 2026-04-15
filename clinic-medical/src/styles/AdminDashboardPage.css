@@ -540,6 +540,18 @@ th {
   font-size: 0.9rem;
 }
 
+.admin-form .admin-input-error {
+  border-color: #b42318;
+  box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.12);
+}
+
+.admin-field-error {
+  margin: -0.1rem 0 0.25rem;
+  color: #b42318;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .admin-form button {
   border: none;
   background: #0f6965;

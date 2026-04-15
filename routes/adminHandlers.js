@@ -665,16 +665,41 @@ function createAdminHandlers(deps) {
     const streetName = String(data?.streetName || '').trim();
     const zipCode = String(data?.zipCode || '').trim();
 
+    const validationErrors = [];
+
     if (!city || !state || !streetNo || !streetName || !zipCode) {
-      return sendJSON(res, 400, { error: 'city, state, streetNo, streetName, and zipCode are required' });
+      validationErrors.push('city, state, streetNo, streetName, and zipCode are required');
     }
 
-    if (!/^[A-Z]{2}$/.test(state)) {
-      return sendJSON(res, 400, { error: 'state must be a 2-letter abbreviation (e.g., TX)' });
+    if (city && city.length > 20) {
+      validationErrors.push('city must be 20 characters or fewer');
     }
 
-    if (!/^\d{5}$/.test(zipCode)) {
-      return sendJSON(res, 400, { error: 'zipCode must contain exactly 5 digits' });
+    if (state && !/^[A-Z]{2}$/.test(state)) {
+      validationErrors.push('state must be a 2-letter abbreviation (e.g., TX)');
+    }
+
+    if (streetNo && streetNo.length > 20) {
+      validationErrors.push('streetNo must be 20 characters or fewer');
+    }
+
+    if (streetNo && !/^\d+[A-Za-z0-9\-\/]*$/.test(streetNo)) {
+      validationErrors.push('streetNo must be a street number only (e.g., 11606 or 11606A)');
+    }
+
+    if (streetName && streetName.length > 100) {
+      validationErrors.push('streetName must be 100 characters or fewer');
+    }
+
+    if (zipCode && !/^\d{5}(?:-\d{4})?$/.test(zipCode)) {
+      validationErrors.push('zipCode must be 5 digits or ZIP+4 format (e.g., 77089 or 77089-1234)');
+    }
+
+    if (validationErrors.length > 0) {
+      return sendJSON(res, 400, {
+        error: 'Invalid location data',
+        details: validationErrors
+      });
     }
 
     pool.query(
@@ -691,6 +716,18 @@ function createAdminHandlers(deps) {
       (err, result) => {
         if (err) {
           console.error('Error creating location:', err);
+          if (err.code === 'ER_DATA_TOO_LONG') {
+            return sendJSON(res, 400, {
+              error: 'Invalid location data',
+              details: ['One or more fields exceed allowed length']
+            });
+          }
+          if (err.code === 'ER_TRUNCATED_WRONG_VALUE' || err.code === 'ER_WARN_DATA_OUT_OF_RANGE') {
+            return sendJSON(res, 400, {
+              error: 'Invalid location data',
+              details: ['One or more fields have invalid values']
+            });
+          }
           return sendJSON(res, 500, { error: 'Failed to create location' });
         }
 
@@ -1811,7 +1848,7 @@ function createAdminHandlers(deps) {
          ORDER BY st.last_name`
       );
       const [treatments] = await db.query(
-        'SELECT procedure_code, description, category FROM ada_procedure_codes ORDER BY category, description'
+        'SELECT procedure_code, description, category FROM ada_procedure_codes ORDER BY procedure_code ASC'
       );
       sendJSON(res, 200, {
         locations: locations || [],
@@ -1965,7 +2002,8 @@ function createAdminHandlers(deps) {
     const statusGroupRaw = String(parsedUrl.query.statusGroup || 'ALL').trim().toUpperCase();
     const paymentStatusRaw = String(parsedUrl.query.paymentStatus || 'ALL').trim().toUpperCase();
     const patientStateRaw = String(parsedUrl.query.patientState || 'ALL').trim().toUpperCase();
-    const procedureCategoryRaw = String(parsedUrl.query.procedureCategory || 'ALL').trim().toUpperCase();
+    const procedureCodeQuery = parsedUrl.query.procedureCode || parsedUrl.query.procedureCategory || 'ALL';
+    const procedureCodeRaw = String(procedureCodeQuery).trim().toUpperCase();
 
     const doctorId = Number.isInteger(doctorIdRaw) && doctorIdRaw > 0 ? doctorIdRaw : null;
     const locationId = Number.isInteger(locationIdRaw) && locationIdRaw > 0 ? locationIdRaw : null;
@@ -1975,7 +2013,7 @@ function createAdminHandlers(deps) {
     const normalizedStatusGroup = allowedStatusGroups.has(statusGroupRaw) ? statusGroupRaw : 'ALL';
     const normalizedPaymentStatus = allowedPaymentStatuses.has(paymentStatusRaw) ? paymentStatusRaw : 'ALL';
     const normalizedPatientState = /^[A-Z]{2}$/.test(patientStateRaw) ? patientStateRaw : 'ALL';
-    const normalizedProcedureCategory = procedureCategoryRaw ? procedureCategoryRaw : 'ALL';
+    const normalizedProcedureCode = procedureCodeRaw ? procedureCodeRaw : 'ALL';
 
     if (!dateFrom || !dateTo || !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
       return sendJSON(res, 400, { error: 'dateFrom and dateTo are required in YYYY-MM-DD format' });
@@ -2019,17 +2057,16 @@ function createAdminHandlers(deps) {
           params.push(normalizedPatientState);
         }
 
-        if (normalizedProcedureCategory !== 'ALL') {
+        if (normalizedProcedureCode !== 'ALL') {
           conditions.push(`EXISTS (
             SELECT 1
             FROM treatment_plans tp
-            JOIN ada_procedure_codes apc ON apc.procedure_code = tp.procedure_code
             WHERE tp.patient_id = a.patient_id
               AND tp.doctor_id = a.doctor_id
               AND DATE(tp.created_at) BETWEEN ? AND ?
-              AND UPPER(COALESCE(apc.category, '')) = ?
+              AND UPPER(COALESCE(tp.procedure_code, '')) = ?
           )`);
-          params.push(dateFrom, dateTo, normalizedProcedureCategory);
+          params.push(dateFrom, dateTo, normalizedProcedureCode);
         }
 
         return {
@@ -2293,7 +2330,7 @@ function createAdminHandlers(deps) {
           statusGroup: normalizedStatusGroup,
           paymentStatus: normalizedPaymentStatus,
           patientState: normalizedPatientState,
-          procedureCategory: normalizedProcedureCategory
+          procedureCode: normalizedProcedureCode
         },
         generatedAt: new Date().toISOString(),
         summary: {

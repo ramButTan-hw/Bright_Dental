@@ -40,6 +40,50 @@ const formatZipInput = (value) => String(value || '').replace(/\D/g, '').slice(0
 
 const extractDigits = (value) => String(value || '').replace(/\D/g, '');
 
+const getLocationFieldErrors = (form) => {
+  const city = String(form?.city || '').trim();
+  const state = String(form?.state || '').trim().toUpperCase();
+  const streetNo = String(form?.streetNo || '').trim();
+  const streetName = String(form?.streetName || '').trim();
+  const zipCode = String(form?.zipCode || '').trim();
+
+  const errors = {};
+
+  if (!city || !state || !streetNo || !streetName || !zipCode) {
+    if (!streetNo) errors.streetNo = 'Street number is required.';
+    if (!streetName) errors.streetName = 'Street name is required.';
+    if (!city) errors.city = 'City is required.';
+    if (!state) errors.state = 'State is required.';
+    if (!zipCode) errors.zipCode = 'ZIP code is required.';
+  }
+
+  if (city && city.length > 20 && !errors.city) {
+    errors.city = 'City must be 20 characters or fewer.';
+  }
+
+  if (state && !/^[A-Z]{2}$/.test(state) && !errors.state) {
+    errors.state = 'State must be a 2-letter abbreviation (for example, TX).';
+  }
+
+  if (streetNo && streetNo.length > 20 && !errors.streetNo) {
+    errors.streetNo = 'Street number must be 20 characters or fewer.';
+  }
+
+  if (streetNo && !/^\d+[A-Za-z0-9\-\/]*$/.test(streetNo) && !errors.streetNo) {
+    errors.streetNo = 'Street number must start with digits (for example, 11606 or 11606A).';
+  }
+
+  if (streetName && streetName.length > 100 && !errors.streetName) {
+    errors.streetName = 'Street name must be 100 characters or fewer.';
+  }
+
+  if (zipCode && !/^\d{5}$/.test(zipCode) && !errors.zipCode) {
+    errors.zipCode = 'ZIP code must contain exactly 5 digits.';
+  }
+
+  return errors;
+};
+
 function useSortState() {
   const [col, setCol] = useState(null);
   const [dir, setDir] = useState('asc');
@@ -118,14 +162,14 @@ function AdminDashboardPage() {
   });
   const [clinicPerformanceLoading, setClinicPerformanceLoading] = useState(false);
   const [clinicPerformanceError, setClinicPerformanceError] = useState('');
-  const [clinicProcedureCategories, setClinicProcedureCategories] = useState([]);
+  const [clinicProcedureCodes, setClinicProcedureCodes] = useState([]);
   const [clinicFilters, setClinicFilters] = useState({
     locationId: 'ALL',
     doctorId: 'ALL',
     statusGroup: 'ALL',
     paymentStatus: 'ALL',
     patientState: 'ALL',
-    procedureCategory: 'ALL'
+    procedureCode: 'ALL'
   });
   const [recallReportAsOfDate, setRecallReportAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [recallReportWindowDays, setRecallReportWindowDays] = useState(90);
@@ -273,6 +317,7 @@ const pagedOutstandingPatients = useMemo(
     streetName: '',
     zipCode: ''
   });
+  const [locationFieldErrors, setLocationFieldErrors] = useState({});
 
   const safeJson = async (response) => {
     const payload = await response.json().catch(() => ({}));
@@ -406,7 +451,7 @@ const pagedOutstandingPatients = useMemo(
       if (clinicFilters.statusGroup !== 'ALL') params.set('statusGroup', clinicFilters.statusGroup);
       if (clinicFilters.paymentStatus !== 'ALL') params.set('paymentStatus', clinicFilters.paymentStatus);
       if (clinicFilters.patientState !== 'ALL') params.set('patientState', clinicFilters.patientState);
-      if (clinicFilters.procedureCategory !== 'ALL') params.set('procedureCategory', clinicFilters.procedureCategory);
+      if (clinicFilters.procedureCode !== 'ALL') params.set('procedureCode', clinicFilters.procedureCode);
 
       const data = await fetch(
         `${API_BASE_URL}/api/admin/reports/performance?${params.toString()}`
@@ -433,14 +478,21 @@ const pagedOutstandingPatients = useMemo(
   const loadClinicFilterOptions = async () => {
     try {
       const data = await fetch(`${API_BASE_URL}/api/admin/reports/filter-options`).then(safeJson);
-      const categories = Array.from(new Set(
-        (Array.isArray(data.treatments) ? data.treatments : [])
-          .map((item) => String(item.category || '').trim())
-          .filter(Boolean)
-      )).sort((a, b) => a.localeCompare(b));
-      setClinicProcedureCategories(categories);
+      const codes = (Array.isArray(data.treatments) ? data.treatments : [])
+        .map((item) => {
+          const code = String(item?.procedure_code || '').trim().toUpperCase();
+          const description = String(item?.description || '').trim();
+          if (!code) return null;
+          return {
+            code,
+            label: description ? `${code} - ${description}` : code
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.code.localeCompare(b.code));
+      setClinicProcedureCodes(codes);
     } catch {
-      setClinicProcedureCategories([]);
+      setClinicProcedureCodes([]);
     }
   };
 
@@ -484,7 +536,7 @@ const pagedOutstandingPatients = useMemo(
   useEffect(() => {
     if (activeSection === 'reports') {
       loadClinicPerformanceReport();
-      if (!clinicProcedureCategories.length) {
+      if (!clinicProcedureCodes.length) {
         loadClinicFilterOptions();
       }
     }
@@ -558,8 +610,10 @@ const pagedOutstandingPatients = useMemo(
     e.preventDefault();
     setActionMessage('');
 
-    if (!/^\d{5}$/.test(String(locationForm.zipCode || ''))) {
-      setActionMessage('Location ZIP code must contain exactly 5 digits.');
+    const locationErrors = getLocationFieldErrors(locationForm);
+    setLocationFieldErrors(locationErrors);
+    if (Object.keys(locationErrors).length) {
+      setActionMessage('Please correct the highlighted location fields.');
       return;
     }
 
@@ -567,16 +621,31 @@ const pagedOutstandingPatients = useMemo(
       const response = await fetch(`${API_BASE_URL}/api/admin/locations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(locationForm)
+        body: JSON.stringify({
+          city: String(locationForm.city || '').trim(),
+          state: String(locationForm.state || '').trim().toUpperCase(),
+          streetNo: String(locationForm.streetNo || '').trim(),
+          streetName: String(locationForm.streetName || '').trim(),
+          zipCode: String(locationForm.zipCode || '').trim()
+        })
       });
 
       await safeJson(response);
       setLocationForm({ city: '', state: '', streetNo: '', streetName: '', zipCode: '' });
+      setLocationFieldErrors({});
       setActionMessage('Location added successfully.');
       loadAdminData();
     } catch (err) {
       setActionMessage(err.message || 'Failed to add location.');
     }
+  };
+
+  const updateLocationField = (field, value) => {
+    setLocationForm((prev) => {
+      const nextForm = { ...prev, [field]: value };
+      setLocationFieldErrors(getLocationFieldErrors(nextForm));
+      return nextForm;
+    });
   };
 
   const handleLocationDelete = async (location) => {
@@ -909,8 +978,8 @@ const pagedOutstandingPatients = useMemo(
     if (clinicFilters.patientState !== 'ALL') {
       chips.push(`State: ${clinicFilters.patientState}`);
     }
-    if (clinicFilters.procedureCategory !== 'ALL') {
-      chips.push(`Procedure: ${clinicFilters.procedureCategory}`);
+    if (clinicFilters.procedureCode !== 'ALL') {
+      chips.push(`Procedure: ${clinicFilters.procedureCode}`);
     }
 
     return chips;
@@ -1288,14 +1357,14 @@ const pagedOutstandingPatients = useMemo(
 
 
                   <label className="admin-inline-filter">
-                    Procedure Category
+                    Procedure Code
                     <select
-                      value={clinicFilters.procedureCategory}
-                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, procedureCategory: e.target.value }))}
+                      value={clinicFilters.procedureCode}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, procedureCode: e.target.value }))}
                     >
-                      <option value="ALL">All categories</option>
-                      {clinicProcedureCategories.map((category) => (
-                        <option key={category} value={String(category).toUpperCase()}>{category}</option>
+                      <option value="ALL">All procedure codes</option>
+                      {clinicProcedureCodes.map((item) => (
+                        <option key={item.code} value={item.code}>{item.label}</option>
                       ))}
                     </select>
                   </label>
@@ -1311,7 +1380,7 @@ const pagedOutstandingPatients = useMemo(
                       statusGroup: 'ALL',
                       paymentStatus: 'ALL',
                       patientState: 'ALL',
-                      procedureCategory: 'ALL'
+                      procedureCode: 'ALL'
                     })}
                   >
                     Clear Filters
@@ -2253,11 +2322,56 @@ const pagedOutstandingPatients = useMemo(
                   {expandedCards.location && (
                     <div className="collapse-content">
                       <form className="admin-form" onSubmit={handleLocationSubmit}>
-                        <input placeholder="Street number" value={locationForm.streetNo} onChange={(e) => setLocationForm((prev) => ({ ...prev, streetNo: e.target.value }))} required />
-                        <input placeholder="Street name" value={locationForm.streetName} onChange={(e) => setLocationForm((prev) => ({ ...prev, streetName: e.target.value }))} required />
-                        <input placeholder="City" value={locationForm.city} onChange={(e) => setLocationForm((prev) => ({ ...prev, city: e.target.value }))} required />
-                        <input placeholder="State" maxLength="2" value={locationForm.state} onChange={(e) => setLocationForm((prev) => ({ ...prev, state: e.target.value }))} required />
-                        <input placeholder="ZIP" value={locationForm.zipCode} inputMode="numeric" pattern="\d{5}" maxLength={5} onChange={(e) => setLocationForm((prev) => ({ ...prev, zipCode: formatZipInput(e.target.value) }))} required />
+                        <input
+                          placeholder="Street number"
+                          maxLength={20}
+                          title="Use street number only, for example 11606 or 11606A"
+                          value={locationForm.streetNo}
+                          className={locationFieldErrors.streetNo ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('streetNo', e.target.value)}
+                          required
+                        />
+                        {locationFieldErrors.streetNo ? <p className="admin-field-error">{locationFieldErrors.streetNo}</p> : null}
+                        <input
+                          placeholder="Street name"
+                          maxLength={100}
+                          value={locationForm.streetName}
+                          className={locationFieldErrors.streetName ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('streetName', e.target.value)}
+                          required
+                        />
+                        {locationFieldErrors.streetName ? <p className="admin-field-error">{locationFieldErrors.streetName}</p> : null}
+                        <input
+                          placeholder="City"
+                          maxLength={20}
+                          value={locationForm.city}
+                          className={locationFieldErrors.city ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('city', e.target.value)}
+                          required
+                        />
+                        {locationFieldErrors.city ? <p className="admin-field-error">{locationFieldErrors.city}</p> : null}
+                        <input
+                          placeholder="State"
+                          maxLength={2}
+                          pattern="[A-Za-z]{2}"
+                          title="State must be 2 letters"
+                          value={locationForm.state}
+                          className={locationFieldErrors.state ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('state', String(e.target.value || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase())}
+                          required
+                        />
+                        {locationFieldErrors.state ? <p className="admin-field-error">{locationFieldErrors.state}</p> : null}
+                        <input
+                          placeholder="ZIP"
+                          value={locationForm.zipCode}
+                          inputMode="numeric"
+                          pattern="\d{5}"
+                          maxLength={5}
+                          className={locationFieldErrors.zipCode ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('zipCode', formatZipInput(e.target.value))}
+                          required
+                        />
+                        {locationFieldErrors.zipCode ? <p className="admin-field-error">{locationFieldErrors.zipCode}</p> : null}
                         <button type="submit">Create Location</button>
                       </form>
                       <ul className="compact-list">
