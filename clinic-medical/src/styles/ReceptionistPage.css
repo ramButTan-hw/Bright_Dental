@@ -97,9 +97,17 @@
   bottom: 1.25rem;
   z-index: 1000;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 0.45rem;
   width: 320px;
+  max-height: calc(100vh - 2.5rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.reception-request-alert-stack::-webkit-scrollbar {
+  display: none;
 }
 
 .reception-request-alert-card {

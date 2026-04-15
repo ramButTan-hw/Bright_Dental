@@ -648,6 +648,33 @@ function DentistPatientProfilePage() {
           <p><strong>Sleep Habits:</strong> {sleepHabits.join(', ') || 'None reported'}</p>
           <p><strong>Caffeine Habits:</strong> {caffeineHabits.join(', ') || 'None reported'}</p>
           <p><strong>Tobacco History:</strong> {tobaccoSummary.join('; ') || 'None reported'}</p>
+          <div style={{ marginTop: '0.75rem' }}>
+            <strong>Current Medications (Patient-Reported):</strong>
+            {(detail.currentMedications || []).length === 0 ? (
+              <span style={{ marginLeft: '0.4rem' }}>None reported</span>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '0.5rem', fontSize: '0.88rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #d7e7e5' }}>
+                    <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Medication</th>
+                    <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Dosage</th>
+                    <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Frequency</th>
+                    <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(detail.currentMedications || []).map((med, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <td style={{ padding: '0.3rem 0.5rem', fontWeight: 600 }}>{med.medication_name}</td>
+                      <td style={{ padding: '0.3rem 0.5rem' }}>{med.dosage || '—'}</td>
+                      <td style={{ padding: '0.3rem 0.5rem' }}>{med.frequency || '—'}</td>
+                      <td style={{ padding: '0.3rem 0.5rem' }}>{med.reason_for_use || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </article>
       </section>
 

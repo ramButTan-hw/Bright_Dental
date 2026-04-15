@@ -363,84 +363,6 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
 
       {(activeDoctorTimeOffToast || activeDoctorHiddenToast || requestAlerts.length > 0) && (
         <aside className="reception-request-alert-stack" aria-live="polite" aria-label="Notifications">
-          {activeDoctorTimeOffToast && (
-            <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
-              <div className="reception-request-alert-card__top">
-                <div>
-                  <p className="reception-request-alert-card__eyebrow">Doctor Time Off</p>
-                  <h3>Doctor time off affected patient schedules</h3>
-                </div>
-                <button
-                  type="button"
-                  className="reception-request-alert-card__close"
-                  aria-label="Dismiss doctor time off notification"
-                  onClick={() => {
-                    if (activeDoctorTimeOffToast.notification_id) {
-                      dismissNotification(activeDoctorTimeOffToast.notification_id);
-                      return;
-                    }
-                    setDismissFallbackDoctorToast(true);
-                  }}
-                >
-                  &times;
-                </button>
-              </div>
-              <p className="reception-request-alert-card__message">
-                {activeDoctorTimeOffToast.message}
-              </p>
-              <button
-                type="button"
-                className="reception-request-alert-card__action"
-                onClick={() => {
-                  const target = document.getElementById('system-cancelled-appointments');
-                  if (target) {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }
-                }}
-              >
-                Review Cancellations &rarr;
-              </button>
-            </article>
-          )}
-          {activeDoctorHiddenToast && (
-            <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
-              <div className="reception-request-alert-card__top">
-                <div>
-                  <p className="reception-request-alert-card__eyebrow">Doctor Deletion</p>
-                  <h3>Doctor deletion affected patient schedules</h3>
-                </div>
-                <button
-                  type="button"
-                  className="reception-request-alert-card__close"
-                  aria-label="Dismiss doctor deletion notification"
-                  onClick={() => {
-                    if (activeDoctorHiddenToast.notification_id) {
-                      dismissNotification(activeDoctorHiddenToast.notification_id);
-                      return;
-                    }
-                    setDismissFallbackDoctorHiddenToast(true);
-                  }}
-                >
-                  &times;
-                </button>
-              </div>
-              <p className="reception-request-alert-card__message">
-                {activeDoctorHiddenToast.message}
-              </p>
-              <button
-                type="button"
-                className="reception-request-alert-card__action"
-                onClick={() => {
-                  const target = document.getElementById('system-cancelled-appointments');
-                  if (target) {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }
-                }}
-              >
-                Review Cancellations &rarr;
-              </button>
-            </article>
-          )}
           {requestAlerts.map((alert) => (
             <article
               key={alert.alertKey}
@@ -477,6 +399,80 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
               </button>
             </article>
           ))}
+          {activeDoctorHiddenToast && (
+            <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
+              <div className="reception-request-alert-card__top">
+                <div>
+                  <p className="reception-request-alert-card__eyebrow">Doctor Deletion</p>
+                  <h3>Doctor deletion affected patient schedules</h3>
+                </div>
+                <button
+                  type="button"
+                  className="reception-request-alert-card__close"
+                  aria-label="Dismiss doctor deletion notification"
+                  onClick={() => {
+                    if (activeDoctorHiddenToast.notification_id) {
+                      dismissNotification(activeDoctorHiddenToast.notification_id);
+                      return;
+                    }
+                    setDismissFallbackDoctorHiddenToast(true);
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+              <p className="reception-request-alert-card__message">
+                {activeDoctorHiddenToast.message}
+              </p>
+              <button
+                type="button"
+                className="reception-request-alert-card__action"
+                onClick={() => {
+                  const target = document.getElementById('system-cancelled-appointments');
+                  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                Review Cancellations &rarr;
+              </button>
+            </article>
+          )}
+          {activeDoctorTimeOffToast && (
+            <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
+              <div className="reception-request-alert-card__top">
+                <div>
+                  <p className="reception-request-alert-card__eyebrow">Doctor Time Off</p>
+                  <h3>Doctor time off affected patient schedules</h3>
+                </div>
+                <button
+                  type="button"
+                  className="reception-request-alert-card__close"
+                  aria-label="Dismiss doctor time off notification"
+                  onClick={() => {
+                    if (activeDoctorTimeOffToast.notification_id) {
+                      dismissNotification(activeDoctorTimeOffToast.notification_id);
+                      return;
+                    }
+                    setDismissFallbackDoctorToast(true);
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+              <p className="reception-request-alert-card__message">
+                {activeDoctorTimeOffToast.message}
+              </p>
+              <button
+                type="button"
+                className="reception-request-alert-card__action"
+                onClick={() => {
+                  const target = document.getElementById('system-cancelled-appointments');
+                  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                Review Cancellations &rarr;
+              </button>
+            </article>
+          )}
         </aside>
       )}
 

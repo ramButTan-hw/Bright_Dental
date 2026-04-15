@@ -652,35 +652,54 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                                   }
                                 }
 
-                                const completedTreatments = (treatmentRows || []).filter((item) => String(item.status_name || '').toUpperCase() === 'COMPLETED');
+                                pool.query(
+                                  `SELECT
+                                    medication_name,
+                                    dosage,
+                                    frequency,
+                                    reason_for_use
+                                  FROM patient_current_medications
+                                  WHERE patient_id = ? AND is_active = 1
+                                  ORDER BY created_at DESC`,
+                                  [patientId],
+                                  (medErr, medRows) => {
+                                    if (medErr) {
+                                      console.error('Error fetching patient medications:', medErr);
+                                      return sendJSON(res, 500, { error: 'Database error' });
+                                    }
 
-                                sendJSON(res, 200, {
-                                  appointment: base,
-                                  patientProfile: {
-                                    patient_id: base.patient_id,
-                                    first_name: base.p_first_name,
-                                    last_name: base.p_last_name,
-                                    date_of_birth: base.p_dob,
-                                    gender: base.p_gender,
-                                    race: base.p_race,
-                                    ethnicity: base.p_ethnicity,
-                                    phone: base.p_phone,
-                                    email: base.p_email,
-                                    address: base.p_address,
-                                    city: base.p_city,
-                                    state: base.p_state,
-                                    zipcode: base.p_zipcode,
-                                    country: base.p_country,
-                                    emergency_contact_name: base.p_emergency_contact_name,
-                                    emergency_contact_phone: base.p_emergency_contact_phone
-                                  },
-                                  intakeSnapshot,
-                                  pastAppointments: pastRows || [],
-                                  treatmentPlans: treatmentRows || [],
-                                  completedTreatments,
-                                  dentalFindings: findingRows || [],
-                                  prescriptions: rxRows || []
-                                });
+                                    const completedTreatments = (treatmentRows || []).filter((item) => String(item.status_name || '').toUpperCase() === 'COMPLETED');
+
+                                    sendJSON(res, 200, {
+                                      appointment: base,
+                                      patientProfile: {
+                                        patient_id: base.patient_id,
+                                        first_name: base.p_first_name,
+                                        last_name: base.p_last_name,
+                                        date_of_birth: base.p_dob,
+                                        gender: base.p_gender,
+                                        race: base.p_race,
+                                        ethnicity: base.p_ethnicity,
+                                        phone: base.p_phone,
+                                        email: base.p_email,
+                                        address: base.p_address,
+                                        city: base.p_city,
+                                        state: base.p_state,
+                                        zipcode: base.p_zipcode,
+                                        country: base.p_country,
+                                        emergency_contact_name: base.p_emergency_contact_name,
+                                        emergency_contact_phone: base.p_emergency_contact_phone
+                                      },
+                                      intakeSnapshot,
+                                      currentMedications: medRows || [],
+                                      pastAppointments: pastRows || [],
+                                      treatmentPlans: treatmentRows || [],
+                                      completedTreatments,
+                                      dentalFindings: findingRows || [],
+                                      prescriptions: rxRows || []
+                                    });
+                                  }
+                                );
                               }
                             );
                       }

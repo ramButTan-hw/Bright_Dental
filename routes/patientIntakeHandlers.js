@@ -702,23 +702,48 @@ function createPatientIntakeHandlers(deps) {
           return sendJSON(res, 500, { error: 'Database error' });
         }
 
-        let snapshot = null;
-        if (snapshotRows?.[0]?.snapshot_json) {
-          try {
-            snapshot = typeof snapshotRows[0].snapshot_json === 'string'
-              ? JSON.parse(snapshotRows[0].snapshot_json)
-              : snapshotRows[0].snapshot_json;
-          } catch {
-            snapshot = null;
-          }
-        }
+        pool.query(
+          `SELECT medication_name, dosage, frequency, reason_for_use
+           FROM patient_current_medications
+           WHERE patient_id = ? AND is_active = 1
+           ORDER BY created_at DESC`,
+          [patientId],
+          (medErr, medRows) => {
+            if (medErr) {
+              console.error('Error fetching patient current medications:', medErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
 
-        const latestPreference = prefRows?.[0] || null;
-        sendJSON(res, 200, {
-          patientId,
-          snapshot,
-          latestPreference
-        });
+            let snapshot = null;
+            if (snapshotRows?.[0]?.snapshot_json) {
+              try {
+                snapshot = typeof snapshotRows[0].snapshot_json === 'string'
+                  ? JSON.parse(snapshotRows[0].snapshot_json)
+                  : snapshotRows[0].snapshot_json;
+              } catch {
+                snapshot = null;
+              }
+            }
+
+            // Always seed medications from the live DB table so edits are reflected
+            if (medRows && medRows.length > 0) {
+              if (!snapshot) snapshot = {};
+              snapshot.medications = medRows.map((m) => ({
+                name: m.medication_name,
+                dosage: m.dosage || '',
+                frequency: m.frequency || '',
+                reason: m.reason_for_use || ''
+              }));
+            }
+
+            const latestPreference = prefRows?.[0] || null;
+            sendJSON(res, 200, {
+              patientId,
+              snapshot,
+              latestPreference
+            });
+          }
+        );
       });
     });
   }
@@ -749,6 +774,7 @@ function createPatientIntakeHandlers(deps) {
         medicalHistory: medicalHistory || {},
         medicalHistoryOtherText: medicalHistoryOtherText || '',
         adverseReactions: adverseReactions || {},
+        medications: filteredMedications,
         dentalFindings: dentalFindings || {},
         dentalHistory: dentalHistory || {},
         sleepSocial: sleepSocial || {},
@@ -803,11 +829,16 @@ function createPatientIntakeHandlers(deps) {
         ]
       );
 
+      // Replace all active medications with the submitted list
+      await db.query(
+        `UPDATE patient_current_medications SET is_active = 0, updated_by = 'PORTAL' WHERE patient_id = ?`,
+        [patientId]
+      );
       for (const med of filteredMedications) {
         await db.query(
           `INSERT INTO patient_current_medications (
-            patient_id, medication_name, dosage, frequency, reason_for_use, created_by, updated_by
-          ) VALUES (?, ?, ?, ?, ?, 'PORTAL', 'PORTAL')`,
+            patient_id, medication_name, dosage, frequency, reason_for_use, is_active, created_by, updated_by
+          ) VALUES (?, ?, ?, ?, ?, 1, 'PORTAL', 'PORTAL')`,
           [patientId, med.name, med.dosage || null, med.frequency || null, med.reason || null]
         );
       }
