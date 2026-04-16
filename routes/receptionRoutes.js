@@ -207,6 +207,37 @@ function createReceptionRoutes({ pool, sendJSON }) {
     return `${String(base.getHours()).padStart(2, '0')}:${String(base.getMinutes()).padStart(2, '0')}:${String(base.getSeconds()).padStart(2, '0')}`;
   }
 
+  const FEE_NO_SHOW = 50.00;
+  const FEE_LATE_CANCEL = 35.00;
+  const FEE_LATE_ARRIVAL = 25.00;
+  const LATE_ARRIVAL_GRACE_MINUTES = 15;
+
+  // Adds a penalty fee to the appointment's invoice (or creates one if none exists).
+  // Must be called inside an active transaction on `conn`.
+  async function applyFeeToInvoice(conn, appointmentId, feeAmount, feeNote) {
+    const [[existing]] = await conn.promise().query(
+      'SELECT invoice_id, amount, patient_amount FROM invoices WHERE appointment_id = ? LIMIT 1',
+      [appointmentId]
+    );
+    if (existing) {
+      await conn.promise().query(
+        `UPDATE invoices
+         SET amount = amount + ?, patient_amount = patient_amount + ?,
+             fee_note = ?, updated_by = 'SYSTEM_FEE'
+         WHERE invoice_id = ?`,
+        [feeAmount, feeAmount, feeNote, existing.invoice_id]
+      );
+    } else {
+      await conn.promise().query(
+        `INSERT INTO invoices
+         (appointment_id, insurance_id, amount, insurance_covered_amount, patient_amount,
+          payment_status, fee_note, created_by, updated_by)
+         VALUES (?, NULL, ?, 0, ?, 'Unpaid', ?, 'SYSTEM_FEE', 'SYSTEM_FEE')`,
+        [appointmentId, feeAmount, feeAmount, feeNote]
+      );
+    }
+  }
+
   async function getAppointmentStatusId(conn, statusName) {
     const [rows] = await conn.promise().query(
       'SELECT status_id FROM appointment_statuses WHERE status_name = ? LIMIT 1',
@@ -559,6 +590,13 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
         try {
           const confirmedStatusId = await getAppointmentStatusId(conn, 'CHECKED_IN');
+
+          // Fetch appointment date+time to detect late arrival
+          const [[apptRow]] = await conn.promise().query(
+            'SELECT appointment_date, appointment_time FROM appointments WHERE appointment_id = ? LIMIT 1',
+            [appointmentId]
+          );
+
           const [updateResult] = await conn.promise().query(
             `UPDATE appointments
              SET status_id = ?, updated_by = 'RECEPTION_PORTAL'
@@ -570,13 +608,34 @@ function createReceptionRoutes({ pool, sendJSON }) {
             throw new Error('Appointment not found');
           }
 
+          // Apply late arrival fee if check-in is more than grace period past scheduled time
+          let feeApplied = false;
+          if (apptRow) {
+            const apptDateStr = apptRow.appointment_date instanceof Date
+              ? apptRow.appointment_date.toISOString().slice(0, 10)
+              : String(apptRow.appointment_date).slice(0, 10);
+            const scheduledAt = new Date(`${apptDateStr}T${apptRow.appointment_time}`);
+            const minutesLate = (Date.now() - scheduledAt.getTime()) / 60000;
+            if (minutesLate > LATE_ARRIVAL_GRACE_MINUTES) {
+              await applyFeeToInvoice(conn, appointmentId, FEE_LATE_ARRIVAL,
+                `Late arrival fee (${Math.round(minutesLate)} min past scheduled time)`);
+              feeApplied = true;
+            }
+          }
+
           conn.commit((commitErr) => {
             conn.release();
             if (commitErr) {
               console.error('Error committing check-in:', commitErr);
               return sendJSON(res, 500, { error: 'Database error' });
             }
-            return sendJSON(res, 200, { message: 'Patient checked in successfully' });
+            return sendJSON(res, 200, {
+              message: feeApplied
+                ? `Patient checked in. A $${FEE_LATE_ARRIVAL.toFixed(2)} late arrival fee has been added to their invoice.`
+                : 'Patient checked in successfully',
+              feeApplied,
+              feeAmount: feeApplied ? FEE_LATE_ARRIVAL : 0
+            });
           });
         } catch (error) {
           conn.rollback(() => {
@@ -618,13 +677,19 @@ function createReceptionRoutes({ pool, sendJSON }) {
             throw new Error('Appointment not found');
           }
 
+          await applyFeeToInvoice(conn, appointmentId, FEE_NO_SHOW, 'No-show fee');
+
           conn.commit((commitErr) => {
             conn.release();
             if (commitErr) {
               console.error('Error committing no-show:', commitErr);
               return sendJSON(res, 500, { error: 'Database error' });
             }
-            return sendJSON(res, 200, { message: 'Appointment marked as no-show' });
+            return sendJSON(res, 200, {
+              message: `Appointment marked as no-show. A $${FEE_NO_SHOW.toFixed(2)} no-show fee has been added to their invoice.`,
+              feeApplied: true,
+              feeAmount: FEE_NO_SHOW
+            });
           });
         } catch (error) {
           conn.rollback(() => {
@@ -633,6 +698,60 @@ function createReceptionRoutes({ pool, sendJSON }) {
               return sendJSON(res, 404, { error: error.message });
             }
             console.error('Error marking appointment as no-show:', error);
+            return sendJSON(res, 500, { error: 'Database error' });
+          });
+        }
+      });
+    });
+  }
+
+  function markLateArrivalReceptionAppointment(req, appointmentId, res) {
+    pool.getConnection((connErr, conn) => {
+      if (connErr) {
+        console.error('Error getting connection for late arrival:', connErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      conn.beginTransaction(async (txErr) => {
+        if (txErr) {
+          conn.release();
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        try {
+          const checkedInStatusId = await getAppointmentStatusId(conn, 'CHECKED_IN');
+          const [updateResult] = await conn.promise().query(
+            `UPDATE appointments
+             SET status_id = ?, updated_by = 'RECEPTION_PORTAL'
+             WHERE appointment_id = ?`,
+            [checkedInStatusId, appointmentId]
+          );
+
+          if (!updateResult.affectedRows) {
+            throw new Error('Appointment not found');
+          }
+
+          await applyFeeToInvoice(conn, appointmentId, FEE_LATE_ARRIVAL, 'Late arrival fee');
+
+          conn.commit((commitErr) => {
+            conn.release();
+            if (commitErr) {
+              console.error('Error committing late arrival:', commitErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            return sendJSON(res, 200, {
+              message: `Patient checked in as late. A $${FEE_LATE_ARRIVAL.toFixed(2)} late arrival fee has been added to their invoice.`,
+              feeApplied: true,
+              feeAmount: FEE_LATE_ARRIVAL
+            });
+          });
+        } catch (error) {
+          conn.rollback(() => {
+            conn.release();
+            if (error.message === 'Appointment not found') {
+              return sendJSON(res, 404, { error: error.message });
+            }
+            console.error('Error marking late arrival:', error);
             return sendJSON(res, 500, { error: 'Database error' });
           });
         }
@@ -1730,6 +1849,16 @@ function createReceptionRoutes({ pool, sendJSON }) {
         return true;
       }
       markNoShowReceptionAppointment(req, appointmentId, res);
+      return true;
+    }
+
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'appointments' && parts[3] && parts[4] === 'late') {
+      const appointmentId = Number(parts[3]);
+      if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+        sendJSON(res, 400, { error: 'A valid appointment id is required' });
+        return true;
+      }
+      markLateArrivalReceptionAppointment(req, appointmentId, res);
       return true;
     }
 

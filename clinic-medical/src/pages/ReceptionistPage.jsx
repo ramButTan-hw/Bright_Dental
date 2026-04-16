@@ -268,11 +268,11 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
   });
 
   const markNoShow = async (appointmentId) => {
-    await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/no-show`, {
+    const data = await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/no-show`, {
       method: 'PUT',
     }).then(safeJson);
 
-    setMessage('Appointment marked as no-show.');
+    setMessage(data?.message || 'Appointment marked as no-show.');
     await loadAppointmentsForDate(selectedDate);
   };
 
@@ -311,11 +311,21 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
   }, [systemCancelledUnresolvedCount]);
 
   const checkInPatient = async (appointmentId) => {
-    await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/check-in`, {
+    if (!window.confirm('Check in this patient?')) return;
+    const data = await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/check-in`, {
       method: 'PUT',
     }).then(safeJson);
 
-    setMessage('Patient checked in.');
+    setMessage(data?.message || 'Patient checked in.');
+    await loadAppointmentsForDate(selectedDate);
+  };
+
+  const markLateArrival = async (appointmentId) => {
+    if (!window.confirm('Mark this patient as a late arrival? A $25.00 late arrival fee will be added to their invoice.')) return;
+    const data = await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/late`, {
+      method: 'PUT',
+    }).then(safeJson);
+    setMessage(data?.message || 'Patient marked as late arrival.');
     await loadAppointmentsForDate(selectedDate);
   };
 
@@ -687,7 +697,7 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
               {filteredAppointments.map((appointment) => {
                 const status = String(appointment.status_name || appointment.appointment_status || '').toUpperCase();
                 const canCheckIn = status === 'SCHEDULED' || status === 'CONFIRMED' || status === 'RESCHEDULED';
-                const canMarkNoShow = status !== 'NO_SHOW' && status !== 'CANCELLED' && status !== 'COMPLETED';
+                const canMarkNoShow = status !== 'CHECKED_IN' && status !== 'NO_SHOW' && status !== 'CANCELLED' && status !== 'COMPLETED';
                 return (
                   <tr key={appointment.appointment_id} className="reception-clickable-row" onClick={() => navigateToPatientProfile(appointment.patient_id)}>
                     <td>{formatTime(appointment.appointment_time)}</td>
@@ -698,6 +708,11 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
                       {canCheckIn && (
                         <button type="button" onClick={() => checkInPatient(appointment.appointment_id)}>
                           Check In
+                        </button>
+                      )}
+                      {canCheckIn && (
+                        <button type="button" style={{ background: '#e8a020', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.3rem 0.7rem', cursor: 'pointer', fontSize: '0.82rem' }} onClick={() => markLateArrival(appointment.appointment_id)}>
+                          Late
                         </button>
                       )}
                       {canMarkNoShow && (

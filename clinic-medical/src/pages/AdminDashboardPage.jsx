@@ -255,6 +255,11 @@ function AdminDashboardPage() {
   const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
   const [activeReportTab, setActiveReportTab] = useState('monthly');
   const [monthlyTrendsSort, setMonthlyTrendsSort] = useState('date');
+  const [financialDetail, setFinancialDetail] = useState({ items: [], totals: null, generatedAt: null });
+  const [financialDetailLoading, setFinancialDetailLoading] = useState(false);
+  const [financialDetailError, setFinancialDetailError] = useState('');
+  const [financialDetailPatient, setFinancialDetailPatient] = useState('');
+  const [financialDetailPage, setFinancialDetailPage] = useState(0);
   const [outstandingAccountsPage, setOutstandingAccountsPage] = useState(0);
   const [docSchedPage, setDocSchedPage] = useState(0);
   const docSchedPageSize = 20;
@@ -496,6 +501,31 @@ const pagedOutstandingPatients = useMemo(
     }
   };
 
+  const loadFinancialDetail = async () => {
+    setFinancialDetailLoading(true);
+    setFinancialDetailError('');
+    try {
+      const params = new URLSearchParams({ dateFrom: clinicReportDateFrom, dateTo: clinicReportDateTo });
+      if (financialDetailPatient) params.set('patient', financialDetailPatient);
+      if (clinicFilters.doctorId !== 'ALL') params.set('doctorId', clinicFilters.doctorId);
+      if (clinicFilters.locationId !== 'ALL') params.set('locationId', clinicFilters.locationId);
+      if (clinicFilters.statusGroup !== 'ALL') params.set('statusGroup', clinicFilters.statusGroup);
+      if (clinicFilters.paymentStatus !== 'ALL') params.set('paymentStatus', clinicFilters.paymentStatus);
+      if (clinicFilters.patientState !== 'ALL') params.set('patientState', clinicFilters.patientState);
+      const data = await fetch(`${API_BASE_URL}/api/admin/reports/financial-detail?${params.toString()}`).then(safeJson);
+      setFinancialDetail({
+        items: Array.isArray(data.items) ? data.items : [],
+        totals: data.totals || null,
+        generatedAt: data.generatedAt || null
+      });
+      setFinancialDetailPage(0);
+    } catch (err) {
+      setFinancialDetailError(err.message || 'Unable to load financial detail report.');
+    } finally {
+      setFinancialDetailLoading(false);
+    }
+  };
+
   const loadRecallReport = async () => {
     setRecallReportLoading(true);
     setRecallReportError('');
@@ -541,6 +571,13 @@ const pagedOutstandingPatients = useMemo(
       }
     }
   }, [activeSection, clinicReportDateFrom, clinicReportDateTo]);
+
+  useEffect(() => {
+    if (activeSection === 'reports') {
+      loadFinancialDetail();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection, clinicReportDateFrom, clinicReportDateTo, clinicFilters.doctorId, clinicFilters.locationId, clinicFilters.statusGroup, clinicFilters.paymentStatus, clinicFilters.patientState]);
 
   useEffect(() => {
     if (activeSection === 'reports' || activeSection === 'recall') {
@@ -1458,6 +1495,20 @@ const pagedOutstandingPatients = useMemo(
                     <p>{clinicPerformanceReport.summary.activePatients}</p>
                     <small>Seen in range</small>
                   </article>
+                  {financialDetail.totals && (
+                    <>
+                      <article className="metric-card">
+                        <h2>Patient Responsibility</h2>
+                        <p>{formatMoney(financialDetail.totals.patient_responsibility)}</p>
+                        <small>What patients owe in range</small>
+                      </article>
+                      <article className="metric-card">
+                        <h2>Refunded</h2>
+                        <p>{formatMoney(financialDetail.totals.total_refunded)}</p>
+                        <small>Total refunds issued in range</small>
+                      </article>
+                    </>
+                  )}
                 </section>
               )}
 
@@ -1466,6 +1517,7 @@ const pagedOutstandingPatients = useMemo(
                 <button type="button" className={activeReportTab === 'providers' ? 'is-active' : ''} onClick={() => setActiveReportTab('providers')}>Provider Productivity</button>
                 <button type="button" className={activeReportTab === 'growth' ? 'is-active' : ''} onClick={() => setActiveReportTab('growth')}>Patient Growth</button>
                 <button type="button" className={activeReportTab === 'outstanding' ? 'is-active' : ''} onClick={() => setActiveReportTab('outstanding')}>Outstanding A/R</button>
+                <button type="button" className={activeReportTab === 'financial' ? 'is-active' : ''} onClick={() => setActiveReportTab('financial')}>Financial Detail</button>
               </div>
 
               {clinicPerformanceLoading && <p className="admin-loading">Loading clinic performance report...</p>}
@@ -1785,6 +1837,78 @@ const pagedOutstandingPatients = useMemo(
                         </table>
                       </div>
                       {renderTablePager(clinicPerformanceReport.outstandingPatients.length, outstandingAccountsPage, setOutstandingAccountsPage)}
+                    </article>
+                  )}
+
+                  {activeReportTab === 'financial' && (
+                    <article className="admin-panel">
+                      <h2 style={{ margin: '0 0 0.75rem' }}>Financial Detail Ledger</h2>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginBottom: '0.75rem', alignItems: 'flex-end' }}>
+                        <label className="admin-inline-filter">
+                          Patient
+                          <input type="text" placeholder="Search name…" value={financialDetailPatient} onChange={(e) => setFinancialDetailPatient(e.target.value)} />
+                        </label>
+                        <button type="button" className="admin-btn" onClick={loadFinancialDetail} disabled={financialDetailLoading}>
+                          {financialDetailLoading ? 'Loading…' : 'Search'}
+                        </button>
+                      </div>
+                      {financialDetailError && <p className="admin-error">{financialDetailError}</p>}
+                      {financialDetailLoading && <p className="admin-loading">Loading financial detail…</p>}
+                      {!financialDetailLoading && financialDetail.totals && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem', background: '#f0f7f6', border: '1px solid #d7e7e5', borderRadius: '10px', padding: '0.6rem 1rem' }}>
+                          <span><strong>Patient Responsibility:</strong> {formatMoney(financialDetail.totals.patient_responsibility)}</span>
+                          <span style={{ color: '#555' }}>|</span>
+                          <span><strong>Refunded:</strong> {formatMoney(financialDetail.totals.total_refunded)}</span>
+                        </div>
+                      )}
+                      {!financialDetailLoading && financialDetail.items.length > 0 && (
+                        <>
+                          <div className="table-wrap report-table-wrap">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Patient</th>
+                                  <th>Appt Date</th>
+                                  <th>Provider</th>
+                                  <th>Visit Status</th>
+                                  <th>Invoice #</th>
+                                  <th>Gross Charge</th>
+                                  <th>Insurance Paid</th>
+                                  <th>Patient Owes</th>
+                                  <th>Patient Paid</th>
+                                  <th>Refunded</th>
+                                  <th>Balance Due</th>
+                                  <th>Pay Status</th>
+                                  <th>Fee Note</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {financialDetail.items.slice(financialDetailPage * reportPageSize, (financialDetailPage + 1) * reportPageSize).map((row, i) => (
+                                  <tr key={`${row.appointment_id}-${i}`}>
+                                    <td>{row.patient_name}</td>
+                                    <td>{formatDate(row.appointment_date)}</td>
+                                    <td>{row.doctor_name}</td>
+                                    <td style={{ fontSize: '0.78rem' }}>{row.visit_status}</td>
+                                    <td>{row.invoice_id ? `#${row.invoice_id}` : '—'}</td>
+                                    <td>{formatMoney(row.gross_charge)}</td>
+                                    <td>{formatMoney(row.insurance_covered)}</td>
+                                    <td>{formatMoney(row.patient_responsibility)}</td>
+                                    <td>{formatMoney(row.patient_paid)}</td>
+                                    <td>{row.total_refunded > 0 ? formatMoney(row.total_refunded) : '—'}</td>
+                                    <td style={{ color: row.balance_due > 0 ? '#9d2e2e' : '#2a7a4f', fontWeight: 700 }}>{formatMoney(row.balance_due)}</td>
+                                    <td style={{ fontSize: '0.78rem' }}>{row.payment_status}</td>
+                                    <td style={{ fontSize: '0.78rem', color: row.fee_note ? '#7a5100' : '#aaa' }}>{row.fee_note || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {renderTablePager(financialDetail.items.length, financialDetailPage, setFinancialDetailPage)}
+                        </>
+                      )}
+                      {!financialDetailLoading && financialDetail.generatedAt && financialDetail.items.length === 0 && (
+                        <p className="muted">No appointments found for the selected filters.</p>
+                      )}
                     </article>
                   )}
                 </>

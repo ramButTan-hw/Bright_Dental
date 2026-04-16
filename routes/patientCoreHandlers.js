@@ -1,5 +1,31 @@
 function createPatientCoreHandlers(deps) {
   const { pool, queries, sendJSON, crypto } = deps;
+
+  const FEE_LATE_CANCEL = 35.00;
+
+  async function applyLateCancelFee(conn, appointmentId) {
+    const [[existing]] = await conn.promise().query(
+      'SELECT invoice_id, amount, patient_amount FROM invoices WHERE appointment_id = ? LIMIT 1',
+      [appointmentId]
+    );
+    if (existing) {
+      await conn.promise().query(
+        `UPDATE invoices
+         SET amount = amount + ?, patient_amount = patient_amount + ?,
+             fee_note = 'Late cancellation fee (within 24 hours)', updated_by = 'SYSTEM_FEE'
+         WHERE invoice_id = ?`,
+        [FEE_LATE_CANCEL, FEE_LATE_CANCEL, existing.invoice_id]
+      );
+    } else {
+      await conn.promise().query(
+        `INSERT INTO invoices
+         (appointment_id, insurance_id, amount, insurance_covered_amount, patient_amount,
+          payment_status, fee_note, created_by, updated_by)
+         VALUES (?, NULL, ?, 0, ?, 'Unpaid', 'Late cancellation fee (within 24 hours)', 'SYSTEM_FEE', 'SYSTEM_FEE')`,
+        [appointmentId, FEE_LATE_CANCEL, FEE_LATE_CANCEL]
+      );
+    }
+  }
   
     function normalizePhoneForStorage(value) {
       const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
@@ -243,6 +269,12 @@ function createPatientCoreHandlers(deps) {
           if (!statusRows?.length) throw new Error('CANCELLED status not found');
           const cancelledStatusId = Number(statusRows[0].status_id);
 
+          // Fetch appointment date+time before cancelling to check 24-hour window
+          const [[apptInfo]] = await conn.promise().query(
+            `SELECT doctor_id, appointment_date, appointment_time FROM appointments WHERE appointment_id = ? LIMIT 1`,
+            [appointmentId]
+          );
+
           const [updateResult] = await conn.promise().query(
             `UPDATE appointments
              SET status_id = ?, reason_id = ?, updated_by = 'PATIENT_PORTAL'
@@ -260,19 +292,28 @@ function createPatientCoreHandlers(deps) {
           }
 
           // Also cancel any ASSIGNED preference requests linked to this appointment
-          const [apptRows] = await conn.promise().query(
-            `SELECT doctor_id, appointment_date, appointment_time FROM appointments WHERE appointment_id = ? LIMIT 1`,
-            [appointmentId]
-          );
-          if (apptRows?.length) {
-            const appt = apptRows[0];
+          if (apptInfo) {
             await conn.promise().query(
               `UPDATE appointment_preference_requests
                SET request_status = 'CANCELLED', updated_by = 'PATIENT_PORTAL'
                WHERE patient_id = ? AND assigned_doctor_id = ? AND assigned_date = ? AND assigned_time = ?
                  AND request_status = 'ASSIGNED'`,
-              [patientId, appt.doctor_id, appt.appointment_date, appt.appointment_time]
+              [patientId, apptInfo.doctor_id, apptInfo.appointment_date, apptInfo.appointment_time]
             );
+          }
+
+          // Apply late cancellation fee if appointment is within 24 hours
+          let feeApplied = false;
+          if (apptInfo) {
+            const apptDateStr = apptInfo.appointment_date instanceof Date
+              ? apptInfo.appointment_date.toISOString().slice(0, 10)
+              : String(apptInfo.appointment_date).slice(0, 10);
+            const scheduledAt = new Date(`${apptDateStr}T${apptInfo.appointment_time}`);
+            const hoursUntilAppt = (scheduledAt.getTime() - Date.now()) / 3600000;
+            if (hoursUntilAppt >= 0 && hoursUntilAppt < 24) {
+              await applyLateCancelFee(conn, appointmentId);
+              feeApplied = true;
+            }
           }
 
           conn.commit((commitErr) => {
@@ -281,7 +322,13 @@ function createPatientCoreHandlers(deps) {
               console.error('Error committing cancel:', commitErr);
               return sendJSON(res, 500, { error: 'Database error' });
             }
-            sendJSON(res, 200, { message: 'Appointment cancelled successfully' });
+            sendJSON(res, 200, {
+              message: feeApplied
+                ? `Appointment cancelled. A $${FEE_LATE_CANCEL.toFixed(2)} late cancellation fee has been added because the appointment was within 24 hours.`
+                : 'Appointment cancelled successfully',
+              feeApplied,
+              feeAmount: feeApplied ? FEE_LATE_CANCEL : 0
+            });
           });
         } catch (error) {
           conn.rollback(() => {
