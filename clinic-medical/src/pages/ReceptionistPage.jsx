@@ -268,6 +268,7 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
   });
 
   const markNoShow = async (appointmentId) => {
+    if (!window.confirm('Mark this appointment as a no-show? A $50.00 no-show fee will be added to their invoice.')) return;
     const data = await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/no-show`, {
       method: 'PUT',
     }).then(safeJson);
