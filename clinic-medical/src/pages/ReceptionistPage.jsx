@@ -624,16 +624,16 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
               <tbody>
                 {insuranceChangeRequests.map((req) => (
                   <tr key={req.request_id}>
-                    <td style={{ cursor: 'pointer', color: '#0f6965', fontWeight: 600 }} onClick={() => navigateToPatientProfile(req.patient_id)}>{req.patient_name}</td>
+                    <td className="reception-td-link" onClick={() => navigateToPatientProfile(req.patient_id)}>{req.patient_name}</td>
                     <td>{req.change_type}</td>
-                    <td>{req.change_type === 'REMOVE' ? <span style={{ color: '#999' }}>{req.current_company_name || '—'}</span> : (req.new_company_name || '—')}</td>
-                    <td>{req.change_type !== 'REMOVE' ? (req.member_id || '—') : <span style={{ color: '#999' }}>{req.current_member_id || '—'}</span>}</td>
-                    <td>{req.change_type !== 'REMOVE' ? (req.group_number || '—') : <span style={{ color: '#999' }}>{req.current_group_number || '—'}</span>}</td>
+                    <td>{req.change_type === 'REMOVE' ? <span className="reception-text-muted">{req.current_company_name || '—'}</span> : (req.new_company_name || '—')}</td>
+                    <td>{req.change_type !== 'REMOVE' ? (req.member_id || '—') : <span className="reception-text-muted">{req.current_member_id || '—'}</span>}</td>
+                    <td>{req.change_type !== 'REMOVE' ? (req.group_number || '—') : <span className="reception-text-muted">{req.current_group_number || '—'}</span>}</td>
                     <td>{req.change_type !== 'REMOVE' ? (req.is_primary ? 'Yes' : 'No') : '—'}</td>
-                    <td style={{ maxWidth: '160px', fontSize: '0.8rem', color: '#555' }}>{req.patient_note || '—'}</td>
-                    <td style={{ fontSize: '0.8rem', color: '#777' }}>{new Date(req.created_at).toLocaleDateString()}</td>
-                    <td style={{ display: 'flex', gap: '0.4rem' }}>
-                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                    <td className="reception-td-note">{req.patient_note || '—'}</td>
+                    <td className="reception-td-date">{new Date(req.created_at).toLocaleDateString()}</td>
+                    <td className="reception-td-actions">
+                      <button type="button" className="reception-btn-approve"
                         onClick={async () => {
                           try {
                             await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests/${req.request_id}/approved`, { method: 'PUT' }).then(safeJson);
@@ -642,7 +642,7 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
                             setInsuranceChangeRequests(Array.isArray(fresh) ? fresh : []);
                           } catch (err) { setMessage(err.message || 'Failed to approve.'); }
                         }}>Approve</button>
-                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                      <button type="button" className="reception-btn-deny"
                         onClick={async () => {
                           try {
                             await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests/${req.request_id}/denied`, { method: 'PUT' }).then(safeJson);
@@ -679,14 +679,14 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
               <tbody>
                 {pharmacyChangeRequests.map((req) => (
                   <tr key={req.request_id}>
-                    <td style={{ cursor: 'pointer', color: '#0f6965', fontWeight: 600 }} onClick={() => navigateToPatientProfile(req.patient_id)}>{req.patient_name}</td>
+                    <td className="reception-td-link" onClick={() => navigateToPatientProfile(req.patient_id)}>{req.patient_name}</td>
                     <td>{req.change_type}</td>
-                    <td>{req.change_type === 'REMOVE' ? <span style={{ color: '#999' }}>{req.current_pharm_name || '—'}</span> : `${req.new_pharm_name || '—'}${req.new_pharm_city ? ` (${req.new_pharm_city}, ${req.new_pharm_state})` : ''}`}</td>
+                    <td>{req.change_type === 'REMOVE' ? <span className="reception-text-muted">{req.current_pharm_name || '—'}</span> : `${req.new_pharm_name || '—'}${req.new_pharm_city ? ` (${req.new_pharm_city}, ${req.new_pharm_state})` : ''}`}</td>
                     <td>{req.change_type === 'ADD' ? (req.is_primary ? 'Yes' : 'No') : '—'}</td>
-                    <td style={{ maxWidth: '160px', fontSize: '0.8rem', color: '#555' }}>{req.patient_note || '—'}</td>
-                    <td style={{ fontSize: '0.8rem', color: '#777' }}>{new Date(req.created_at).toLocaleDateString()}</td>
-                    <td style={{ display: 'flex', gap: '0.4rem' }}>
-                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                    <td className="reception-td-note">{req.patient_note || '—'}</td>
+                    <td className="reception-td-date">{new Date(req.created_at).toLocaleDateString()}</td>
+                    <td className="reception-td-actions">
+                      <button type="button" className="reception-btn-approve"
                         onClick={async () => {
                           try {
                             await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests/${req.request_id}/approved`, { method: 'PUT' }).then(safeJson);
@@ -695,7 +695,7 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
                             setPharmacyChangeRequests(Array.isArray(fresh) ? fresh : []);
                           } catch (err) { setMessage(err.message || 'Failed to approve.'); }
                         }}>Approve</button>
-                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                      <button type="button" className="reception-btn-deny"
                         onClick={async () => {
                           try {
                             await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests/${req.request_id}/denied`, { method: 'PUT' }).then(safeJson);
@@ -773,7 +773,7 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
                         </button>
                       )}
                       {canCheckIn && (
-                        <button type="button" style={{ background: '#e8a020', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.3rem 0.7rem', cursor: 'pointer', fontSize: '0.82rem' }} onClick={() => markLateArrival(appointment.appointment_id)}>
+                        <button type="button" className="reception-btn-late" onClick={() => markLateArrival(appointment.appointment_id)}>
                           Late
                         </button>
                       )}
@@ -799,50 +799,49 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
 
       {systemCancelledAppts.length > 0 && (
         <section className="reception-section" id="system-cancelled-appointments">
-          <h2 style={{ color: '#a53030', marginBottom: '0.75rem' }}>Appointments Cancelled by System — Patients Need to Reschedule</h2>
-          <p style={{ color: '#666', fontSize: '0.88rem', marginBottom: '1rem' }}>
+          <h2 className="reception-cancelled-heading">Appointments Cancelled by System — Patients Need to Reschedule</h2>
+          <p className="reception-cancelled-desc">
             The following appointments were automatically cancelled by the system in the last 30 days. Contact these patients to help them reschedule.
           </p>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="reception-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+          <div className="reception-table-wrap">
+            <table className="reception-table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Patient</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Email</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Phone</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Cancelled Appt Date</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Time</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Doctor</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Reason</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Status</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Cancelled At</th>
+                  <th className="reception-cancelled-th">Patient</th>
+                  <th className="reception-cancelled-th">Email</th>
+                  <th className="reception-cancelled-th">Phone</th>
+                  <th className="reception-cancelled-th">Cancelled Appt Date</th>
+                  <th className="reception-cancelled-th">Time</th>
+                  <th className="reception-cancelled-th">Doctor</th>
+                  <th className="reception-cancelled-th">Reason</th>
+                  <th className="reception-cancelled-th">Status</th>
+                  <th className="reception-cancelled-th">Cancelled At</th>
                 </tr>
               </thead>
               <tbody>
                 {systemCancelledAppts.map((row) => (
                   <tr
                     key={row.appointment_id}
-                    className="reception-clickable-row"
-                    style={{ borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }}
+                    className="reception-clickable-row reception-cancelled-row"
                     onClick={() => navigateToPatientProfile(row.patient_id)}
                   >
-                    <td style={{ padding: '0.5rem 0.75rem', fontWeight: 600, color: '#0f6965' }}>{row.patient_name}</td>
-                    <td style={{ padding: '0.5rem 0.75rem' }}>{row.p_email}</td>
-                    <td style={{ padding: '0.5rem 0.75rem' }}>{row.p_phone}</td>
-                    <td style={{ padding: '0.5rem 0.75rem' }}>{formatDate(row.appointment_date)}</td>
-                    <td style={{ padding: '0.5rem 0.75rem' }}>{formatTime(row.appointment_time)}</td>
-                    <td style={{ padding: '0.5rem 0.75rem' }}>{row.doctor_name}</td>
-                    <td style={{ padding: '0.5rem 0.75rem' }}>
+                    <td className="reception-cancelled-td-link">{row.patient_name}</td>
+                    <td className="reception-cancelled-td">{row.p_email}</td>
+                    <td className="reception-cancelled-td">{row.p_phone}</td>
+                    <td className="reception-cancelled-td">{formatDate(row.appointment_date)}</td>
+                    <td className="reception-cancelled-td">{formatTime(row.appointment_time)}</td>
+                    <td className="reception-cancelled-td">{row.doctor_name}</td>
+                    <td className="reception-cancelled-td">
                       {row.cancelled_by === 'SYSTEM_DOCTOR_HIDDEN'
-                        ? <span style={{ color: '#a53030', fontWeight: 600, fontSize: '0.82rem' }}>Doctor Deleted</span>
-                        : <span style={{ color: '#7a5c00', fontWeight: 600, fontSize: '0.82rem' }}>Doctor Time Off</span>}
+                        ? <span className="reception-status-deleted">Doctor Deleted</span>
+                        : <span className="reception-status-timeoff">Doctor Time Off</span>}
                     </td>
-                    <td style={{ padding: '0.5rem 0.75rem' }}>
+                    <td className="reception-cancelled-td">
                       {row.is_resolved
-                        ? <span style={{ color: '#155724', background: '#d4edda', borderRadius: '4px', padding: '2px 8px', fontSize: '0.8rem', fontWeight: 600 }}>Resolved</span>
-                        : <span style={{ color: '#721c24', background: '#f8d7da', borderRadius: '4px', padding: '2px 8px', fontSize: '0.8rem', fontWeight: 600 }}>Needs Reschedule</span>}
+                        ? <span className="reception-badge-resolved">Resolved</span>
+                        : <span className="reception-badge-needs-reschedule">Needs Reschedule</span>}
                     </td>
-                    <td style={{ padding: '0.5rem 0.75rem', color: '#888', fontSize: '0.82rem' }}>{formatDate(row.cancelled_at)}</td>
+                    <td className="reception-cancelled-td-muted">{formatDate(row.cancelled_at)}</td>
                   </tr>
                 ))}
               </tbody>

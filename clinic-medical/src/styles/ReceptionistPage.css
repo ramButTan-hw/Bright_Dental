@@ -869,3 +869,71 @@
     font-size: 1.8rem;
   }
 }
+
+/* Change request table cells */
+.reception-td-link { cursor: pointer; color: #0f6965; font-weight: 600; }
+.reception-text-muted { color: #999; }
+.reception-td-note { max-width: 160px; font-size: 0.8rem; color: #555; }
+.reception-td-date { font-size: 0.8rem; color: #777; }
+.reception-td-actions { display: flex; gap: 0.4rem; }
+.reception-btn-approve {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  background: #27ae60;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.reception-btn-deny {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  background: none;
+  border: 1px solid #c0392b;
+  color: #c0392b;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.reception-btn-late {
+  background: #e8a020;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+/* System-cancelled table */
+.reception-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.reception-cancelled-heading { color: #a53030; margin-bottom: 0.75rem; }
+.reception-cancelled-desc { color: #666; font-size: 0.88rem; margin-bottom: 1rem; }
+.reception-cancelled-th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid #e0e0e0;
+}
+.reception-cancelled-row { border-bottom: 1px solid #f0f0f0; }
+.reception-cancelled-td-link { padding: 0.5rem 0.75rem; font-weight: 600; color: #0f6965; }
+.reception-cancelled-td { padding: 0.5rem 0.75rem; }
+.reception-status-deleted { color: #a53030; font-weight: 600; font-size: 0.82rem; }
+.reception-status-timeoff { color: #7a5c00; font-weight: 600; font-size: 0.82rem; }
+.reception-badge-resolved {
+  color: #155724;
+  background: #d4edda;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.reception-badge-needs-reschedule {
+  color: #721c24;
+  background: #f8d7da;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.reception-cancelled-td-muted { padding: 0.5rem 0.75rem; color: #888; font-size: 0.82rem; }

@@ -636,3 +636,197 @@ th {
     flex-direction: column;
   }
 }
+
+/* Overview metric card */
+.admin-metric-zero { color: #6d7e7d; }
+.metric-card--flex { flex: 1; min-width: 160px; }
+
+/* Panel layout helpers */
+.admin-panel--full { grid-column: 1 / -1; }
+.admin-panel-footer { margin-top: 0.65rem; }
+.admin-panel-header-row--mb { margin-bottom: 0.75rem; }
+
+/* Headings */
+.admin-h2-flush { margin: 0; }
+.admin-h2-mb { margin: 0 0 0.75rem; }
+
+/* Table headers / buttons */
+.admin-th-narrow { width: 80px; }
+.admin-btn-restore {
+  background: #27ae60;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.admin-btn--sm { font-size: 0.8rem; padding: 0.25rem 0.65rem; }
+.admin-btn-row { display: flex; gap: 0.4rem; }
+.admin-btn-approve-all {
+  background: #27ae60;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.admin-btn-deny-all {
+  background: #c0392b;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.admin-btn-edit {
+  margin-top: 0.5rem;
+  background: #2980b9;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.admin-btn-save {
+  background: #27ae60;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.admin-btn-cancel-edit {
+  background: #95a5a6;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.admin-btn--mt { margin-top: 1rem; }
+.admin-btn--clear { margin-top: 1rem; margin-left: 0.5rem; background: #95a5a6; }
+.admin-btn-remove { padding: 0.3rem 0.6rem; background-color: #8f2d2d; }
+.admin-select-sm { font-size: 0.85rem; }
+
+/* Admin label modifier */
+.admin-label--sm-gap { margin-bottom: 0.25rem; }
+
+/* Summary rows */
+.admin-summary-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 1rem 0 0; }
+.admin-summary-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #f0f7f6;
+  border: 1px solid #d7e7e5;
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+}
+.admin-filter-row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.75rem; align-items: flex-end; }
+.admin-separator { color: #555; }
+
+/* Report table row types */
+.admin-tr-month { background: #e8f2f0; font-weight: 700; }
+.admin-tr-sub-header { background: #f0f7f5; font-size: 0.78rem; color: #6b8a87; font-weight: 600; }
+.admin-tr-appt { background: #f9fdfb; font-size: 0.87rem; color: #334240; }
+.admin-td-indent { padding-left: 1.5rem; }
+.admin-td-completed { color: #1d6b41; font-weight: 600; }
+.admin-td-alert { color: #9d2e2e; font-weight: 600; }
+.admin-td-scheduled { color: #4b6966; font-weight: 600; }
+.admin-td-overdue { color: #9d2e2e; }
+.admin-td-overdue-bold { color: #9d2e2e; font-weight: 700; }
+.admin-td-paid-bold { color: #2a7a4f; font-weight: 700; }
+.admin-td-sm { font-size: 0.78rem; }
+.admin-td-reason { color: #555; font-size: 0.82rem; }
+.admin-td-fee-note { color: #7a5100; }
+.admin-td-none { color: #aaa; }
+.admin-td-refund { color: #9d2e2e; }
+
+/* Badge in heading */
+.admin-badge-count {
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: #fde8a0;
+  color: #7a5100;
+  border-radius: 999px;
+  padding: 0.15em 0.6em;
+  margin-left: 0.4rem;
+}
+
+/* Refund form */
+.refund-invoice-details {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: #f9f9f9;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+.admin-invoice-grid { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: end; }
+.admin-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+.admin-two-col-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.admin-form--bordered { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ddd; }
+.admin-refund-negative { color: #9d2e2e; }
+.admin-refund-overpaid { color: #27ae60; }
+
+/* Staff scheduling accordion */
+.admin-staff-accordion { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 0.5rem; }
+.admin-staff-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.7rem 1rem;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 6px;
+}
+.admin-staff-toggle.is-open { border-radius: 6px 6px 0 0; }
+.admin-staff-toggle--pending { background: #fff8e1; }
+.admin-staff-toggle--view { background: #f8f9fa; }
+.admin-staff-role-meta { font-weight: 400; color: #666; font-size: 0.85rem; }
+.admin-staff-body { padding: 0.7rem 1rem; }
+.admin-staff-table { width: 100%; font-size: 0.9rem; }
+.admin-staff-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.admin-td-off { color: #999; font-style: italic; }
+.admin-reset-col { display: flex; flex-direction: column; gap: 0.3rem; }
+.admin-reset-row { display: flex; gap: 0.3rem; align-items: center; }
+.admin-reset-input { width: 160px; padding: 0.2rem 0.4rem; font-size: 0.8rem; }
+.admin-reset-msg { margin: 0; font-size: 0.78rem; }
+.admin-reset-msg--success { color: #007a4d; }
+.admin-reset-msg--error { color: #b91c1c; }
+
+/* Coverage gaps */
+.admin-tr-gap-critical { background: #f8d7da; }
+.admin-tr-gap-warning { background: #fff3cd; }
+.admin-tr-gap-info { background: #e8f0fe; }
+
+/* Locations */
+.admin-location-item { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+
+/* Staff member table */
+.admin-tr-deleted { opacity: 0.5; }
+.admin-status-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.admin-status-badge--active { background: #d4edda; color: #155724; }
+.admin-status-badge--inactive { background: #f8d7da; color: #721c24; }
+.admin-row-actions--col { flex-direction: column; gap: 0.3rem; }
