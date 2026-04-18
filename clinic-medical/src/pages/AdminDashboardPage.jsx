@@ -276,6 +276,8 @@ function AdminDashboardPage() {
   const sortDoctorSchedule = useSortState();
   const sortRefund = useSortState();
 
+  useEffect(() => { document.title = 'Admin Dashboard | Bright Dental'; }, []);
+
   useEffect(() => {
     const requestedSection = String(location.state?.initialSection || '').toLowerCase();
     if (requestedSection === 'recall' && activeSection !== 'recall') {

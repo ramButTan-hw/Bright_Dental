@@ -124,6 +124,8 @@ function DentistProfilePage() {
   const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
 
+  useEffect(() => { document.title = 'Dentist Dashboard | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.userId) {
       navigate('/staff-login');

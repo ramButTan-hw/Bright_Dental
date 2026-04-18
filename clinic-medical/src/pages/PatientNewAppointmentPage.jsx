@@ -214,6 +214,8 @@ function PatientNewAppointmentPage() {
     []
   );
 
+  useEffect(() => { document.title = 'New Appointment | Bright Dental'; }, []);
+
   useEffect(() => {
     if (location.state?.isReschedule) {
         setIsReschedule(true);

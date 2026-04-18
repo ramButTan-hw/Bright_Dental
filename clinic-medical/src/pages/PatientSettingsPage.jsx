@@ -31,6 +31,8 @@ function PatientSettingsPage() {
 
   const formatZip = (value) => String(value || '').replace(/\D/g, '').slice(0, 5);
 
+  useEffect(() => { document.title = 'Settings | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.patientId) {
       navigate('/patient-login');

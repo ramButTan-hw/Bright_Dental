@@ -81,6 +81,8 @@ function PatientPortalPage() {
   const session = useMemo(() => getPatientPortalSession(), []);
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
+  useEffect(() => { document.title = 'Patient Portal | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.patientId) {
       navigate('/patient-login');

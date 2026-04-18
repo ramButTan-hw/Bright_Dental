@@ -70,6 +70,8 @@ function DentistLoginPage() {
     }
   };
 
+  useEffect(() => { document.title = 'Dentist Login | Bright Dental'; }, []);
+
   useEffect(() => {
     const activeSession = getDentistPortalSession();
     if (!activeSession?.userId && !activeSession?.username) {

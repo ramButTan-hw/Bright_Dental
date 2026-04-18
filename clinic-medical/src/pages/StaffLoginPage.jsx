@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { resolveApiBaseUrl, setAdminPortalSession, setDentistPortalSession, setReceptionPortalSession } from '../utils/patientPortal';
 import '../styles/PatientLoginPage.css';
@@ -9,6 +9,8 @@ function StaffLoginPage() {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  useEffect(() => { document.title = 'Staff Login | Bright Dental'; }, []);
 
   const handleCredentialChange = (e) => {
     const { name, value } = e.target;

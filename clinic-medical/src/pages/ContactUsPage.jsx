@@ -9,6 +9,8 @@ function ContactUsPage() {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => { document.title = 'Contact Us | Bright Dental'; }, []);
+
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/public/locations`)
       .then((r) => r.json())

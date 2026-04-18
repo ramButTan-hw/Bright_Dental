@@ -1,6 +1,8 @@
+import { useEffect } from 'react';
 import '../styles/testimonies.css';
 
 export default function Testimonies() {
+  useEffect(() => { document.title = 'Testimonials | Bright Dental'; }, []);
   return (
     <section className="testimonies-page">
       <div className="testimonies-container">

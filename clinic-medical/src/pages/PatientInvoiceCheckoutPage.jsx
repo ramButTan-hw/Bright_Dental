@@ -27,6 +27,8 @@ function PatientInvoiceCheckoutPage() {
   const [billingState, setBillingState] = useState('');
   const [billingZip, setBillingZip] = useState('');
 
+  useEffect(() => { document.title = 'Invoice Checkout | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.patientId) {
       navigate('/patient-login');

@@ -11,6 +11,8 @@ function PatientInvoicesPage() {
   const [invoices, setInvoices] = useState([]);
   const [error, setError] = useState('');
 
+  useEffect(() => { document.title = 'My Invoices | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.patientId) {
       navigate('/patient-login');

@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import '../styles/FAQPage.css';
 
 export default function FAQPage() {
+  useEffect(() => { document.title = 'FAQ | Bright Dental'; }, []);
   return (
     <section className="faq-page">
       <div className="faq-container">

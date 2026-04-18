@@ -12,6 +12,8 @@ function PatientSearch() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const debounceRef = useRef(null);
 
+  useEffect(() => { document.title = 'Receptionist Portal | Bright Dental'; }, []);
+
   useEffect(() => {
     const query = String(patientQuery || '').trim();
     if (!query) {

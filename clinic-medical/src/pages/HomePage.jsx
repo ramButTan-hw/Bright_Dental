@@ -24,6 +24,8 @@ function HomePage() {
     }
   ];
 
+  useEffect(() => { document.title = 'Home | Bright Dental'; }, []);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % slides.length);

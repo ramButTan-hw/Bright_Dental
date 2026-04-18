@@ -10,6 +10,8 @@ function PatientBillingPage() {
   const [billing, setBilling] = useState(null);
   const [error, setError] = useState('');
 
+  useEffect(() => { document.title = 'Billing | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.patientId) {
       navigate('/patient-login');

@@ -205,6 +205,8 @@ function PatientRegistrationPage() {
 
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
+  useEffect(() => { document.title = 'Patient Registration | Bright Dental'; }, []);
+
   useEffect(() => {
     const fetchPainSymptoms = async () => {
       try {

@@ -67,6 +67,8 @@ function ReceptionistRecallPage() {
     }
   };
 
+  useEffect(() => { document.title = 'Recall List | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.staffId) {
       navigate('/staff-login');

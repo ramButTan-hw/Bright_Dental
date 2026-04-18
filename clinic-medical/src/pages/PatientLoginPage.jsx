@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/PatientLoginPage.css';
@@ -14,6 +14,8 @@ function PatientLoginPage() {
   const [resetMessage, setResetMessage] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  useEffect(() => { document.title = 'Patient Login | Bright Dental'; }, []);
 
   const formatAppointmentDate = (value) => {
     if (!value) {

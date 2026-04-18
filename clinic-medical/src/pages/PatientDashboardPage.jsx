@@ -42,6 +42,8 @@ function PatientDashboardPage() {
     return payload;
   };
 
+  useEffect(() => { document.title = 'Patient Dashboard | Bright Dental'; }, []);
+
   useEffect(() => {
     const loadPatientData = async () => {
       try {

@@ -15,6 +15,8 @@ function MeetOurStaffPage() {
   const [loading, setLoading] = useState(true);
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
+  useEffect(() => { document.title = 'Meet Our Staff | Bright Dental'; }, []);
+
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/public/staff`)
       .then((r) => r.json())
