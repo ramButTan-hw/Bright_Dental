@@ -71,6 +71,10 @@
   margin: 0.4rem 0 1rem;
 }
 
+.reception-message--error {
+  color: #b53030;
+}
+
 .reception-grid-two {
   display: grid;
   grid-template-columns: 1fr 1fr;
