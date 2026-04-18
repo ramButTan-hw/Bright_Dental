@@ -5,32 +5,32 @@ export default function Services() {
     {
       title: 'PROFESSIONAL CLEANING',
       description: 'Professional cleanings to maintain healthy teeth and gums.',
-      icon: '✨'
+      marker: 'CL'
     },
     {
       title: 'TEETH WHITENING',
       description: 'Brighten your smile with safe and effective whitening.',
-      icon: '💎'
+      marker: 'WH'
     },
     {
       title: 'DENTAL IMPLANTS',
       description: 'Permanent solutions for missing teeth.',
-      icon: '🦷'
+      marker: 'IM'
     },
     {
       title: 'INVISALIGN',
       description: 'Straighten your teeth with clear aligners.',
-      icon: '✓'
+      marker: 'IN'
     },
     {
       title: 'EMERGENCY CARE',
       description: 'Fast treatment when you need urgent dental care.',
-      icon: '⚡'
+      marker: 'ER'
     },
     {
       title: 'COSMETIC DENTISTRY',
       description: 'Enhance your smile with modern cosmetic treatments.',
-      icon: '🎨'
+      marker: 'CD'
     }
   ];
 
@@ -48,7 +48,7 @@ export default function Services() {
           {services.map((service, index) => (
             <div key={index} className="service-card">
               <div className="service-icon-wrapper">
-                <div className="service-icon">{service.icon}</div>
+                <div className="service-icon" aria-hidden="true">{service.marker}</div>
               </div>
               <h3 className="service-title">{service.title}</h3>
               <p className="service-description">{service.description}</p>
