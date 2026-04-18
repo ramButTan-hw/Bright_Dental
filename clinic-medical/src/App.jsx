@@ -58,7 +58,7 @@ function App() {
       <Navbar />
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/services" element={<Services />} />
+        <Route path="/department" element={<Services />} />
         <Route path="/meet-our-staff" element={<MeetOurStaffPage />} />
         <Route path="/testimonies" element={<TestimoniesPage />} />
         <Route path="/faq" element={<FAQPage />} />
