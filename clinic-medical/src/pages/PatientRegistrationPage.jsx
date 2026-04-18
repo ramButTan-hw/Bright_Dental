@@ -241,8 +241,8 @@ function PatientRegistrationPage() {
             pain: 0
           }))
         );
-      } catch (error) {
-        console.error('Failed to fetch pain symptoms:', error.message);
+      } catch {
+        // silently fall back to empty list
       }
     };
 
@@ -253,8 +253,8 @@ function PatientRegistrationPage() {
           const data = await response.json();
           setInsuranceCompanies(Array.isArray(data) ? data : []);
         }
-      } catch (error) {
-        console.error('Failed to fetch insurance companies:', error.message);
+      } catch {
+        // silently fall back to empty list
       }
     };
 
@@ -265,8 +265,8 @@ function PatientRegistrationPage() {
           const data = await response.json();
           setDepartments(Array.isArray(data) ? data : []);
         }
-      } catch (error) {
-        console.error('Failed to fetch departments:', error.message);
+      } catch {
+        // silently fall back to empty list
       }
     };
 
@@ -277,8 +277,8 @@ function PatientRegistrationPage() {
                 const data = await response.json();
                 setLocations(Array.isArray(data) ? data : []);
             }
-        } catch (error) {
-            console.error('Failed to fetch locations:', error.message);
+        } catch {
+            // silently fall back to empty list
         }
     };
 
@@ -503,8 +503,7 @@ function PatientRegistrationPage() {
 
       const result = await response.json();
       return Boolean(result.exists);
-    } catch (error) {
-      console.error('Email verification error:', error);
+    } catch {
       throw new Error('Unable to validate email right now. Please check your connection and try again.');
     }
   };
