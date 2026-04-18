@@ -6,7 +6,7 @@ import '../styles/PatientPortalPage.css';
 function PatientSettingsPage() {
   const navigate = useNavigate();
   const session = useMemo(() => getPatientPortalSession(), []);
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');

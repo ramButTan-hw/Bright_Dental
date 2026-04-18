@@ -6,7 +6,7 @@ import '../styles/PatientPortalPage.css';
 function PatientBillingPage() {
   const navigate = useNavigate();
   const session = useMemo(() => getPatientPortalSession(), []);
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const [billing, setBilling] = useState(null);
   const [error, setError] = useState('');
 

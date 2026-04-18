@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/MeetOurStaffPage.css';
-
-const API_BASE_URL = resolveApiBaseUrl();
 
 const ROLE_LABELS = {
   DOCTOR: 'Our Doctors',
@@ -15,6 +13,7 @@ const ROLE_ORDER = ['DOCTOR', 'RECEPTIONIST', 'ADMIN'];
 function MeetOurStaffPage() {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/public/staff`)

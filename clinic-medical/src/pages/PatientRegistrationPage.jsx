@@ -203,7 +203,7 @@ function PatientRegistrationPage() {
   const [locations, setLocations] = useState([]);
   const [insuranceInfo, setInsuranceInfo] = useState({ companyId: '', memberId: '', groupNumber: '' });
 
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
   useEffect(() => {
     const fetchPainSymptoms = async () => {

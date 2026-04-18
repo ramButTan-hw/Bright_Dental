@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/PatientLoginPage.css';
@@ -6,7 +6,7 @@ import '../styles/PatientLoginPage.css';
 function PatientLoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const appointmentConfirmation = location.state?.appointmentConfirmation;
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [showForgotPassword, setShowForgotPassword] = useState(false);

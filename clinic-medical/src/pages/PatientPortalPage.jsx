@@ -79,7 +79,7 @@ function PatientPortalPage() {
   };
 
   const session = useMemo(() => getPatientPortalSession(), []);
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
   useEffect(() => {
     if (!session?.patientId) {

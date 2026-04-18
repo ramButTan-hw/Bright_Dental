@@ -136,7 +136,7 @@ function PatientNewAppointmentPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const session = useMemo(() => getPatientPortalSession(), []);
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
   const [loadingPrefill, setLoadingPrefill] = useState(true);
   const [submitting, setSubmitting] = useState(false);

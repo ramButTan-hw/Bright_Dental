@@ -7,7 +7,7 @@ function PatientInvoiceCheckoutPage() {
   const navigate = useNavigate();
   const { invoiceId } = useParams();
   const session = useMemo(() => getPatientPortalSession(), []);
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
