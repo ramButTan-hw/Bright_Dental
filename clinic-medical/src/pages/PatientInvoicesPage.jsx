@@ -81,6 +81,7 @@ function PatientInvoicesPage() {
                 <th>Invoice #</th>
                 <th>Appointment Date</th>
                 <th>Appointment Time</th>
+                <th>Reason</th>
                 <th>Total</th>
                 <th>Insurance</th>
                 <th>Patient Amount</th>
@@ -94,7 +95,7 @@ function PatientInvoicesPage() {
             <tbody>
               {invoices.length === 0 ? (
                 <tr>
-                  <td colSpan="11">No invoices found.</td>
+                  <td colSpan="12">No invoices found.</td>
                 </tr>
               ) : invoices.map((invoice) => {
                 const status = invoice.payment_status || 'Unpaid';
@@ -118,6 +119,7 @@ function PatientInvoicesPage() {
                     </td>
                     <td>{formatDate(invoice.appointment_date)}</td>
                     <td>{formatTime(invoice.appointment_time)}</td>
+                    <td>{invoice.fee_note || invoice.procedure_reasons || '—'}</td>
                     <td>{formatMoney(invoice.amount)}</td>
                     <td>{formatMoney(invoice.insurance_covered_amount)}</td>
                     <td>{formatMoney(invoice.patient_amount)}</td>
