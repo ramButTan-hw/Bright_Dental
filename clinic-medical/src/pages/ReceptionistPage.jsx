@@ -88,6 +88,7 @@ function PatientSearch() {
   return (
     <article className="reception-panel">
       <h2>Search Patient</h2>
+      <p className="reception-panel-subtle">Look up a patient by name, phone, email, or SSN and open their profile directly from the results.</p>
       <input
         value={patientQuery}
         onChange={(e) => setPatientQuery(e.target.value)}
@@ -95,7 +96,7 @@ function PatientSearch() {
         className="reception-search-input"
       />
       {patientSearchResults.length > 0 && (
-        <div className="reception-table-wrap" style={{ marginTop: '0.75rem' }}>
+        <div className="reception-table-wrap reception-search-results">
           <table>
             <thead>
               <tr>
@@ -121,9 +122,9 @@ function PatientSearch() {
         </div>
       )}
       {!isSearching && patientQuery.trim() && !patientSearchResults.length && (
-        <p style={{ marginTop: '0.5rem', color: '#4b6966' }}>No patients found for this search.</p>
+        <p className="reception-inline-note">No patients found for this search.</p>
       )}
-      {isSearching && <p style={{ marginTop: '0.5rem', color: '#4b6966' }}>Searching...</p>}
+      {isSearching && <p className="reception-inline-note">Searching...</p>}
     </article>
   );
 }
@@ -641,6 +642,36 @@ function ReceptionistPage() {
     return statusFilters.has(status);
   });
 
+  const checkedInCount = filteredAppointments.filter((appt) => {
+    const status = String(appt?.status_name || appt?.appointment_status || '').toUpperCase();
+    return status === 'CHECKED_IN';
+  }).length;
+
+  const offDaysCount = mySchedule.filter((schedule) => Boolean(schedule.is_off)).length;
+  const workingDaysCount = mySchedule.filter((schedule) => !schedule.is_off).length;
+  const summaryCards = [
+    {
+      label: 'Pending Requests',
+      value: requests.length,
+      detail: 'Patients waiting for appointment follow-up'
+    },
+    {
+      label: 'Visible Appointments',
+      value: filteredAppointments.length,
+      detail: `${selectedDateLabel} with the current filters applied`
+    },
+    {
+      label: 'Checked In',
+      value: checkedInCount,
+      detail: 'Patients already checked in today'
+    },
+    {
+      label: 'Weekly Schedule',
+      value: `${workingDaysCount}/${mySchedule.length || 0}`,
+      detail: mySchedule.length ? `${offDaysCount} day${offDaysCount === 1 ? '' : 's'} marked off` : 'Schedule will appear here once loaded'
+    }
+  ];
+
   const markNoShow = async (appointmentId) => {
     await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/no-show`, {
       method: 'PUT',
@@ -732,8 +763,12 @@ function ReceptionistPage() {
   return (
     <main className="reception-page">
       <section className="reception-header">
-        <h1>Receptionist Page</h1>
-        <p>Manage appointment requests, check-in patients, and search for patients.</p>
+        <div className="reception-header-copy">
+          <p className="reception-kicker">Front Desk Workspace</p>
+          <h1>Reception Dashboard</h1>
+          <p>Manage appointment requests, review the day’s schedule, and move quickly between patient records.</p>
+          {session?.staffId && <p className="reception-header-subtle">Signed in as staff member #{session.staffId}</p>}
+        </div>
         <div className="reception-actions">
           <button className="reception-action-btn reception-action-btn--primary" onClick={() => navigate('/receptionist/register-patient')}>
             <span className="btn-icon">+</span> Register New Patient
@@ -741,16 +776,27 @@ function ReceptionistPage() {
         </div>
       </section>
 
+      <section className="reception-summary-grid" aria-label="Reception summary">
+        {summaryCards.map((card) => (
+          <article key={card.label} className="reception-summary-card">
+            <p className="reception-summary-label">{card.label}</p>
+            <strong className="reception-summary-value">{card.value}</strong>
+            <p className="reception-summary-detail">{card.detail}</p>
+          </article>
+        ))}
+      </section>
+
       {message && <p className="reception-message">{message}</p>}
 
       {mySchedule.length > 0 && (
-        <section className="reception-panel" style={{ marginBottom: '1rem' }}>
+        <section className="reception-panel reception-schedule-panel">
           <h2>My Schedule</h2>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <p className="reception-panel-subtle">Your current weekly front desk schedule at a glance.</p>
+          <div className="reception-schedule-grid">
             {mySchedule.map((s) => (
-              <div key={s.schedule_id} style={{ background: s.is_off ? '#f5f5f5' : '#eefbfa', border: `1px solid ${s.is_off ? '#ddd' : '#d6e7e4'}`, borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '120px' }}>
-                <strong style={{ color: s.is_off ? '#999' : '#105550' }}>{s.day_of_week.charAt(0) + s.day_of_week.slice(1).toLowerCase()}</strong>
-                <div style={{ fontSize: '0.85rem', color: s.is_off ? '#999' : '#444' }}>{s.is_off ? 'OFF' : `${String(s.start_time || '').slice(0, 5)} — ${String(s.end_time || '').slice(0, 5)}`}</div>
+              <div key={s.schedule_id} className={`reception-schedule-card ${s.is_off ? 'is-off' : ''}`}>
+                <strong className="reception-schedule-day">{s.day_of_week.charAt(0) + s.day_of_week.slice(1).toLowerCase()}</strong>
+                <div className="reception-schedule-time">{s.is_off ? 'Off' : `${String(s.start_time || '').slice(0, 5)} - ${String(s.end_time || '').slice(0, 5)}`}</div>
               </div>
             ))}
           </div>
@@ -769,7 +815,7 @@ function ReceptionistPage() {
                 <th>Requested Date/Time</th>
                 <th>Preferred Location</th>
                 <th>Reason</th>
-                <th style={{ width: '40px' }}></th>
+                <th className="reception-request-action-col"></th>
               </tr>
             </thead>
             <tbody>
@@ -787,7 +833,7 @@ function ReceptionistPage() {
                     <button
                       type="button"
                       title="Cancel this request"
-                      style={{ background: 'none', border: 'none', color: '#c0392b', cursor: 'pointer', fontWeight: 700, fontSize: '1.1rem', padding: '0.2rem 0.5rem' }}
+                      className="reception-inline-danger"
                       onClick={async (e) => {
                         e.stopPropagation();
                         if (!window.confirm(`Cancel appointment request for ${request.p_first_name} ${request.p_last_name}?`)) return;
