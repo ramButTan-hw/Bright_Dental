@@ -246,7 +246,7 @@ function createDentistProfileRoutes({ pool, sendJSON }) {
 
     pool.query(
       `SELECT sl.staff_locations_id, sl.location_id, sl.is_primary,
-              l.full_address, l.location_city, l.location_state
+              CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS full_address, l.location_city, l.location_state
        FROM staff_locations sl
        JOIN locations l ON l.location_id = sl.location_id
        WHERE sl.staff_id = ?

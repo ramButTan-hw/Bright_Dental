@@ -93,6 +93,7 @@ function AssignAppointmentPage() {
   };
 
   const DEFAULT_TIME_SLOTS = [
+    { time: '08:00', label: '8:00 AM' },
     { time: '09:00', label: '9:00 AM' },
     { time: '10:00', label: '10:00 AM' },
     { time: '11:00', label: '11:00 AM' },

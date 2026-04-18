@@ -103,7 +103,7 @@ function createAppointmentPreferenceHandlers(deps) {
               if (!sched) return true; // Doctor doesn't work this day
               if (sched.isOff) return true; // Doctor is OFF this day
               const slotTime = hourStr.length === 2 ? `${hourStr}:00` : hourStr;
-              return slotTime < sched.start || slotTime >= sched.end;
+              return slotTime < sched.start || slotTime > sched.end;
             };
             // Helper: mysql2 returns DATE as JS Date objects — normalise to YYYY-MM-DD
             const toDateKey = (val) => {
@@ -213,7 +213,7 @@ function createAppointmentPreferenceHandlers(deps) {
               requestedLocation: hasLocationFilter ? preferredLocation : null,
               slotWindow: {
                 officeHours: '08:00-19:00',
-                patientSelectionHours: '09:00-19:00',
+                patientSelectionHours: '08:00-19:00',
                 slotDurationMinutes: 60,
                 dentistsAvailable: maxPatientsPerTime,
                 capacityPerTime: maxPatientsPerTime,
@@ -443,15 +443,15 @@ function createAppointmentPreferenceHandlers(deps) {
             `SELECT 1 FROM (
                SELECT start_datetime, end_datetime FROM doctor_time_off
                WHERE doctor_id = ? AND is_approved = TRUE
-                 AND start_datetime <= ? AND end_datetime > ?
+                 AND start_datetime < ? AND end_datetime > ?
                UNION ALL
                SELECT str.start_datetime, str.end_datetime FROM staff_time_off_requests str
                JOIN doctors d ON d.staff_id = str.staff_id
                WHERE d.doctor_id = ? AND str.is_approved = TRUE
-                 AND str.start_datetime <= ? AND str.end_datetime > ?
+                 AND str.start_datetime < ? AND str.end_datetime > ?
              ) AS combined LIMIT 1`,
-            [assignedDoctorId, `${assignedDate} ${normalizedTime}`, `${assignedDate} ${normalizedTime}`,
-             assignedDoctorId, `${assignedDate} ${normalizedTime}`, `${assignedDate} ${normalizedTime}`]
+            [assignedDoctorId, `${assignedDate} ${appointmentEndTime}`, `${assignedDate} ${normalizedTime}`,
+             assignedDoctorId, `${assignedDate} ${appointmentEndTime}`, `${assignedDate} ${normalizedTime}`]
           );
           if (timeOffRows?.length) {
             throw new Error('This doctor has approved time off during the selected date and time. Please choose a different time or doctor.');

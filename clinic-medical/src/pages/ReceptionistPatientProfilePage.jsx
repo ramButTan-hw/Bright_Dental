@@ -54,14 +54,40 @@ function ReceptionistPatientProfilePage() {
   const [confirmingId, setConfirmingId] = useState(null);
   const [slotAvailability, setSlotAvailability] = useState({});
 
-  // Prescription state
-  const [rxFormOpen, setRxFormOpen] = useState(false);
+  // Pharmacy assign state
+  const [pharmAssignOpen, setPharmAssignOpen] = useState(false);
+  const [pharmAssignId, setPharmAssignId] = useState('');
+  const [pharmAssignPrimary, setPharmAssignPrimary] = useState(false);
+  const [isAssigningPharm, setIsAssigningPharm] = useState(false);
+  const [pendingInsuranceRequests, setPendingInsuranceRequests] = useState([]);
+  const [pendingPharmacyRequests, setPendingPharmacyRequests] = useState([]);
+  const [resolvingInsuranceRequestId, setResolvingInsuranceRequestId] = useState(null);
+  const [resolvingPharmacyRequestId, setResolvingPharmacyRequestId] = useState(null);
+
+  // Insurance state
+  const [insuranceFormOpen, setInsuranceFormOpen] = useState(false);
+  const [allInsuranceCompanies, setAllInsuranceCompanies] = useState([]);
+  const [insuranceForm, setInsuranceForm] = useState({ companyId: '', memberId: '', groupNumber: '', isPrimary: false });
+  const [isAddingInsurance, setIsAddingInsurance] = useState(false);
+  const [confirmPrimarySwap, setConfirmPrimarySwap] = useState(false);
+  const [confirmSetPrimaryId, setConfirmSetPrimaryId] = useState(null);
+
   const [allPharmacies, setAllPharmacies] = useState([]);
-  const [rxForm, setRxForm] = useState({
-    medicationName: '', strength: '', dosage: '', frequency: '', instructions: '',
-    startDate: '', endDate: '', quantity: '', refills: '0', pharmId: '', doctorId: ''
+
+  // Unpaid invoice contact tracking (persisted per patient in localStorage)
+  const [invoiceContactLog, setInvoiceContactLog] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`invoiceContactLog_${patientId}`) || '{}');
+    } catch { return {}; }
   });
-  const [isCreatingRx, setIsCreatingRx] = useState(false);
+
+  const updateInvoiceContact = (invoiceId, patch) => {
+    setInvoiceContactLog((prev) => {
+      const next = { ...prev, [invoiceId]: { ...prev[invoiceId], ...patch } };
+      try { localStorage.setItem(`invoiceContactLog_${patientId}`, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   // Checkout state
   const [checkoutInvoice, setCheckoutInvoice] = useState(null);
@@ -107,6 +133,18 @@ function ReceptionistPatientProfilePage() {
       });
       setConfirmForms(forms);
 
+      const [insuranceRequestsData, pharmacyRequestsData] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson).catch(() => []),
+        fetch(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson).catch(() => [])
+      ]);
+
+      setPendingInsuranceRequests(
+        (Array.isArray(insuranceRequestsData) ? insuranceRequestsData : []).filter((req) => Number(req.patient_id) === Number(patientId))
+      );
+      setPendingPharmacyRequests(
+        (Array.isArray(pharmacyRequestsData) ? pharmacyRequestsData : []).filter((req) => Number(req.patient_id) === Number(patientId))
+      );
+
       // Fetch availability for any pre-populated doctors
       for (const req of pending) {
         const docId = req.assigned_doctor_id ? String(req.assigned_doctor_id) : '';
@@ -137,6 +175,22 @@ function ReceptionistPatientProfilePage() {
     loadPatientData();
   }, [API_BASE_URL, patientId]);
 
+  useEffect(() => {
+    const hash = String(window.location.hash || '').replace('#', '');
+    if (!hash) return;
+
+    const tryScroll = () => {
+      const element = document.getElementById(hash);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
+    window.requestAnimationFrame(tryScroll);
+    const timeoutId = window.setTimeout(tryScroll, 150);
+    return () => window.clearTimeout(timeoutId);
+  }, [patientId]);
+
   // Load doctors when location changes (for create appointment form)
   useEffect(() => {
     const loadDoctors = async () => {
@@ -151,9 +205,18 @@ function ReceptionistPatientProfilePage() {
     loadDoctors();
   }, [API_BASE_URL, appointmentForm.locationId]);
 
-  // Load pharmacies when rx form opens
+  // Load insurance companies when insurance form opens
   useEffect(() => {
-    if (!rxFormOpen) return;
+    if (!insuranceFormOpen) return;
+    fetch(`${API_BASE_URL}/api/insurance-companies`)
+      .then(safeJson)
+      .then((data) => setAllInsuranceCompanies(Array.isArray(data) ? data : []))
+      .catch(() => setAllInsuranceCompanies([]));
+  }, [API_BASE_URL, insuranceFormOpen]);
+
+  // Load pharmacies when pharmacy assign form opens
+  useEffect(() => {
+    if (!pharmAssignOpen) return;
     const loadPharmacies = async () => {
       try {
         const data = await fetch(`${API_BASE_URL}/api/pharmacies`).then(safeJson);
@@ -163,39 +226,99 @@ function ReceptionistPatientProfilePage() {
       }
     };
     loadPharmacies();
-  }, [API_BASE_URL, rxFormOpen]);
+  }, [API_BASE_URL, pharmAssignOpen]);
 
-  const handleCreatePrescription = async (e) => {
+  const handleAssignPharmacy = async (e) => {
     e.preventDefault();
-    setIsCreatingRx(true);
+    setIsAssigningPharm(true);
     setMessage('');
     setError('');
     try {
-      await fetch(`${API_BASE_URL}/api/reception/patients/${patientId}/prescriptions`, {
+      await fetch(`${API_BASE_URL}/api/reception/patients/${patientId}/pharmacy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pharmId: Number(pharmAssignId), isPrimary: pharmAssignPrimary })
+      }).then(safeJson);
+      setMessage('Pharmacy assigned.');
+      setPharmAssignOpen(false);
+      setPharmAssignId('');
+      setPharmAssignPrimary(false);
+      loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to assign pharmacy.');
+    } finally {
+      setIsAssigningPharm(false);
+    }
+  };
+
+  const handleRemovePharmacy = async (pharmId) => {
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/reception/patients/${patientId}/pharmacy/${pharmId}`, {
+        method: 'DELETE'
+      }).then(safeJson);
+      setMessage('Pharmacy removed.');
+      loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to remove pharmacy.');
+    }
+  };
+
+  const handleAddInsurance = async (e) => {
+    e.preventDefault();
+    setIsAddingInsurance(true);
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/patients/${patientId}/insurance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          medicationName: rxForm.medicationName,
-          strength: rxForm.strength,
-          dosage: rxForm.dosage,
-          frequency: rxForm.frequency,
-          instructions: rxForm.instructions,
-          startDate: rxForm.startDate || null,
-          endDate: rxForm.endDate || null,
-          quantity: Number(rxForm.quantity) || 0,
-          refills: Number(rxForm.refills) || 0,
-          pharmId: Number(rxForm.pharmId),
-          doctorId: Number(rxForm.doctorId)
+          companyId: Number(insuranceForm.companyId),
+          memberId: insuranceForm.memberId,
+          groupNumber: insuranceForm.groupNumber,
+          isPrimary: insuranceForm.isPrimary
         })
       }).then(safeJson);
-      setMessage('Prescription created successfully.');
-      setRxFormOpen(false);
-      setRxForm({ medicationName: '', strength: '', dosage: '', frequency: '', instructions: '', startDate: '', endDate: '', quantity: '', refills: '0', pharmId: '', doctorId: '' });
+      setMessage('Insurance added.');
+      setInsuranceFormOpen(false);
+      setInsuranceForm({ companyId: '', memberId: '', groupNumber: '', isPrimary: false });
+      setConfirmPrimarySwap(false);
       loadPatientData();
     } catch (err) {
-      setError(err.message || 'Failed to create prescription.');
+      setError(err.message || 'Failed to add insurance.');
     } finally {
-      setIsCreatingRx(false);
+      setIsAddingInsurance(false);
+    }
+  };
+
+  const handleSetPrimaryInsurance = async (insuranceId) => {
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/patients/${patientId}/insurance/${insuranceId}/set-primary`, {
+        method: 'PUT'
+      }).then(safeJson);
+      setMessage('Primary insurance updated.');
+      setConfirmSetPrimaryId(null);
+      loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to update primary insurance.');
+    }
+  };
+
+  const handleRemoveInsurance = async (insuranceId) => {
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/patients/${patientId}/insurance/${insuranceId}`, {
+        method: 'DELETE'
+      }).then(safeJson);
+      setMessage('Insurance removed.');
+      loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to remove insurance.');
     }
   };
 
@@ -205,6 +328,16 @@ function ReceptionistPatientProfilePage() {
 
   const pendingRequests = Array.isArray(patientData?.pendingRequests) ? patientData.pendingRequests : [];
   const hasPendingRequest = pendingRequests.some((r) => r.request_status === 'PREFERRED_PENDING');
+
+  const unpaidInvoices = invoices.filter((inv) => {
+    const due = Number(inv.amount_due ?? (Number(inv.patient_amount || 0) - Number(inv.amount_paid || 0)));
+    return due > 0;
+  });
+  const hasActiveAppointment = appointments.some((appt) => {
+    const status = String(appt?.appointment_status || appt?.status_name || '').toUpperCase();
+    return ['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(status);
+  });
+  const canCreateAppointment = !hasPendingRequest && !hasActiveAppointment;
   const [revertingId, setRevertingId] = useState(null);
 
   const revertAppointmentRequest = async (preferenceRequestId) => {
@@ -223,6 +356,36 @@ function ReceptionistPatientProfilePage() {
       setError(err.message || 'Failed to revert appointment.');
     } finally {
       setRevertingId(null);
+    }
+  };
+
+  const resolveInsuranceRequest = async (requestId, action) => {
+    setResolvingInsuranceRequestId(requestId);
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/reception/insurance-change-requests/${requestId}/${action}`, { method: 'PUT' }).then(safeJson);
+      setMessage(`Insurance request ${action.toLowerCase()}.`);
+      await loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to update insurance request.');
+    } finally {
+      setResolvingInsuranceRequestId(null);
+    }
+  };
+
+  const resolvePharmacyRequest = async (requestId, action) => {
+    setResolvingPharmacyRequestId(requestId);
+    setMessage('');
+    setError('');
+    try {
+      await fetch(`${API_BASE_URL}/api/reception/pharmacy-change-requests/${requestId}/${action}`, { method: 'PUT' }).then(safeJson);
+      setMessage(`Pharmacy request ${action.toLowerCase()}.`);
+      await loadPatientData();
+    } catch (err) {
+      setError(err.message || 'Failed to update pharmacy request.');
+    } finally {
+      setResolvingPharmacyRequestId(null);
     }
   };
 
@@ -564,9 +727,14 @@ function ReceptionistPatientProfilePage() {
   (snapshot?.tobacco?.currentUses || []).forEach((entry) => {
     tobaccoSummary.push(`${entry.type || 'Tobacco'} - ${entry.amount || 'N/A'} (${entry.frequency || 'N/A'})`);
   });
-  (snapshot?.tobacco?.quitHistory || []).forEach((entry) => {
-    tobaccoSummary.push(`${entry.type || 'Tobacco'} quit on ${entry.quitDate || 'unknown date'}`);
-  });
+  if (snapshot?.tobacco?.quit) {
+    (snapshot?.tobacco?.quitHistory || []).forEach((entry) => {
+      const quitType = String(entry?.type || '').trim();
+      const quitDate = String(entry?.quitDate || '').trim();
+      if (!quitType && !quitDate) return;
+      tobaccoSummary.push(`${quitType || 'Tobacco'} quit on ${quitDate || 'unknown date'}`);
+    });
+  }
 
   const dentalFindings = Array.isArray(patientData?.dentalFindings) ? patientData.dentalFindings : [];
   const treatments = Array.isArray(patientData?.treatments) ? patientData.treatments : [];
@@ -597,26 +765,116 @@ function ReceptionistPatientProfilePage() {
           <p><strong>Date of Birth:</strong> {patient.p_dob ? formatDate(patient.p_dob) : 'N/A'}</p>
           <p><strong>Address:</strong> {[patient.p_address, patient.p_city, patient.p_state, patient.p_zipcode].filter(Boolean).join(', ') || 'N/A'}</p>
           <p><strong>Emergency Contact:</strong> {emergencyContact}</p>
-          {insurance.length > 0 ? (
-            <>
-              <h3 style={{ marginTop: '0.8rem', marginBottom: '0.3rem' }}>Insurance</h3>
-              {insurance.map((ins) => (
-                <div key={ins.insurance_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.6rem 0.75rem', marginBottom: '0.5rem' }}>
-                  <p style={{ margin: '0 0 0.3rem', fontWeight: 700 }}>{ins.company_name || 'Unknown'}{ins.is_primary ? ' (Primary)' : ''}</p>
-                  <p style={{ margin: '0.15rem 0' }}><strong>Member ID:</strong> {ins.member_id || 'N/A'}{ins.group_number ? ` | Group: ${ins.group_number}` : ''}</p>
-                  {ins.company_phone && <p style={{ margin: '0.15rem 0' }}><strong>Phone:</strong> {ins.company_phone}</p>}
-                  {ins.company_fax && <p style={{ margin: '0.15rem 0' }}><strong>Fax:</strong> {ins.company_fax}</p>}
-                  {(ins.company_address || ins.company_city) && (
-                    <p style={{ margin: '0.15rem 0' }}><strong>Mailing:</strong> {[ins.company_address, ins.company_city, ins.company_state, ins.company_zipcode].filter(Boolean).join(', ')}</p>
-                  )}
-                  {ins.company_website && <p style={{ margin: '0.15rem 0' }}><strong>Website:</strong> {ins.company_website}</p>}
-                  {ins.company_contact && <p style={{ margin: '0.15rem 0' }}><strong>Contact:</strong> {ins.company_contact}</p>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.8rem', marginBottom: '0.3rem' }}>
+            <h3 style={{ margin: 0 }}>Insurance</h3>
+            <button type="button" style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'none', border: '1px solid #2d7a6e', color: '#2d7a6e', borderRadius: '6px', cursor: 'pointer' }} onClick={() => { setInsuranceFormOpen(!insuranceFormOpen); setConfirmPrimarySwap(false); setInsuranceForm({ companyId: '', memberId: '', groupNumber: '', isPrimary: false }); }}>
+              {insuranceFormOpen ? 'Cancel' : '+ Add'}
+            </button>
+          </div>
+          {insuranceFormOpen && (
+            <form onSubmit={handleAddInsurance} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.75rem', padding: '0.75rem', border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Insurance Company *</span>
+                <select value={insuranceForm.companyId} onChange={(e) => setInsuranceForm((p) => ({ ...p, companyId: e.target.value }))} required>
+                  <option value="">Select company</option>
+                  {allInsuranceCompanies.map((c) => <option key={c.company_id} value={c.company_id}>{c.company_name}</option>)}
+                </select>
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Member ID *</span>
+                <input type="text" value={insuranceForm.memberId} onChange={(e) => setInsuranceForm((p) => ({ ...p, memberId: e.target.value }))} required />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Group Number</span>
+                <input type="text" value={insuranceForm.groupNumber} onChange={(e) => setInsuranceForm((p) => ({ ...p, groupNumber: e.target.value }))} />
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                <input type="checkbox" checked={insuranceForm.isPrimary} onChange={(e) => { setInsuranceForm((p) => ({ ...p, isPrimary: e.target.checked })); setConfirmPrimarySwap(false); }} />
+                Set as primary insurance
+              </label>
+              {insuranceForm.isPrimary && insurance.some((i) => i.is_primary) && (
+                <div style={{ background: '#fff8e1', border: '1px solid #f0c040', borderRadius: '8px', padding: '0.6rem 0.75rem', fontSize: '0.83rem', color: '#7a5a00' }}>
+                  <strong>⚠ {insurance.find((i) => i.is_primary).company_name}</strong> is currently the primary insurance. Saving will replace it.
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.4rem', fontWeight: 600 }}>
+                    <input type="checkbox" checked={confirmPrimarySwap} onChange={(e) => setConfirmPrimarySwap(e.target.checked)} />
+                    I confirm this change
+                  </label>
                 </div>
-              ))}
-            </>
-          ) : (
-            <p style={{ marginTop: '0.8rem', color: '#4b6966' }}><em>No insurance on file</em></p>
+              )}
+              <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isAddingInsurance || (insuranceForm.isPrimary && insurance.some((i) => i.is_primary) && !confirmPrimarySwap)} style={{ alignSelf: 'flex-start' }}>
+                {isAddingInsurance ? 'Saving...' : 'Save'}
+              </button>
+            </form>
           )}
+          {insurance.length > 0 ? insurance.map((ins) => (
+            <div key={ins.insurance_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.6rem 0.75rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <p style={{ margin: '0 0 0.3rem', fontWeight: 700 }}>{ins.company_name || 'Unknown'}{ins.is_primary ? ' (Primary)' : ''}</p>
+                <p style={{ margin: '0.15rem 0' }}><strong>Member ID:</strong> {ins.member_id || 'N/A'}{ins.group_number ? ` | Group: ${ins.group_number}` : ''}</p>
+                {ins.company_phone && <p style={{ margin: '0.15rem 0' }}><strong>Phone:</strong> {ins.company_phone}</p>}
+                {ins.company_fax && <p style={{ margin: '0.15rem 0' }}><strong>Fax:</strong> {ins.company_fax}</p>}
+                {(ins.company_address || ins.company_city) && <p style={{ margin: '0.15rem 0' }}><strong>Mailing:</strong> {[ins.company_address, ins.company_city, ins.company_state, ins.company_zipcode].filter(Boolean).join(', ')}</p>}
+                {ins.company_website && <p style={{ margin: '0.15rem 0' }}><strong>Website:</strong> {ins.company_website}</p>}
+                {ins.company_contact && <p style={{ margin: '0.15rem 0' }}><strong>Contact:</strong> {ins.company_contact}</p>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
+                {!ins.is_primary && (
+                  confirmSetPrimaryId === ins.insurance_id ? (
+                    <div style={{ background: '#fff8e1', border: '1px solid #f0c040', borderRadius: '8px', padding: '0.5rem 0.65rem', fontSize: '0.78rem', color: '#7a5a00', textAlign: 'right' }}>
+                      {insurance.find((i) => i.is_primary) && (
+                        <div>Replaces <strong>{insurance.find((i) => i.is_primary).company_name}</strong> as primary.</div>
+                      )}
+                      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.35rem', justifyContent: 'flex-end' }}>
+                        <button type="button" onClick={() => handleSetPrimaryInsurance(ins.insurance_id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: '#2d7a6e', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Confirm</button>
+                        <button type="button" onClick={() => setConfirmSetPrimaryId(null)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: 'none', border: '1px solid #999', color: '#555', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setConfirmSetPrimaryId(ins.insurance_id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: 'none', border: '1px solid #2d7a6e', color: '#2d7a6e', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Set as primary</button>
+                  )
+                )}
+                <button type="button" onClick={() => handleRemoveInsurance(ins.insurance_id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</button>
+              </div>
+            </div>
+          )) : (
+            <p style={{ color: '#4b6966' }}><em>No insurance on file</em></p>
+          )}
+
+          <div id="insurance-section" style={{ scrollMarginTop: '6.5rem', marginTop: '1rem' }}>
+            <h3 style={{ margin: '0 0 0.5rem' }}>Pending Insurance Change Requests</h3>
+            {pendingInsuranceRequests.length > 0 ? pendingInsuranceRequests.map((req) => (
+              <div key={req.request_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.75rem', marginBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <div>
+                    <p style={{ margin: '0 0 0.25rem', fontWeight: 700 }}>{req.change_type} Insurance</p>
+                    <p style={{ margin: 0 }}><strong>Company:</strong> {req.new_company_name || req.current_company_name || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Member ID:</strong> {req.member_id || req.current_member_id || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Group:</strong> {req.group_number || req.current_group_number || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Primary:</strong> {req.is_primary ? 'Yes' : 'No'}</p>
+                    {req.patient_note && <p style={{ margin: '0.25rem 0 0' }}><strong>Note:</strong> {req.patient_note}</p>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--primary"
+                      disabled={resolvingInsuranceRequestId === req.request_id}
+                      onClick={() => resolveInsuranceRequest(req.request_id, 'APPROVED')}
+                    >
+                      {resolvingInsuranceRequestId === req.request_id ? 'Approving...' : 'Approve'}
+                    </button>
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--secondary"
+                      disabled={resolvingInsuranceRequestId === req.request_id}
+                      onClick={() => resolveInsuranceRequest(req.request_id, 'DENIED')}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )) : <p style={{ color: '#4b6966' }}><em>No pending insurance requests.</em></p>}
+          </div>
         </article>
 
         <article className="reception-panel">
@@ -629,6 +887,50 @@ function ReceptionistPatientProfilePage() {
           <p><strong>Tobacco History:</strong> {tobaccoSummary.join('; ') || 'None reported'}</p>
         </article>
       </section>
+
+      {/* Unpaid Invoice Alert */}
+      {unpaidInvoices.length > 0 && (
+        <section className="invoice-alert-panel">
+          <h3 className="invoice-alert-panel__heading">
+            Outstanding Balances
+            <span className="invoice-alert-panel__count">{unpaidInvoices.length}</span>
+          </h3>
+          <div className="invoice-alert-panel__list">
+            {unpaidInvoices.map((inv) => {
+              const due = Number(inv.amount_due ?? (Number(inv.patient_amount || 0) - Number(inv.amount_paid || 0)));
+              const log = invoiceContactLog[inv.invoice_id] || {};
+              return (
+                <div key={inv.invoice_id} className={`invoice-alert-row${log.contacted ? ' invoice-alert-row--contacted' : ''}`}>
+                  <div className="invoice-alert-row__meta">
+                    <span className="invoice-alert-row__id">Invoice #{inv.invoice_id}</span>
+                    <span className="invoice-alert-row__amount">${due.toFixed(2)} due</span>
+                    <span className={`invoice-alert-row__status invoice-alert-row__status--${String(inv.payment_status || 'unpaid').toLowerCase()}`}>
+                      {inv.payment_status || 'Unpaid'}
+                    </span>
+                  </div>
+                  <label className="invoice-alert-row__contact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(log.contacted)}
+                      onChange={(e) => updateInvoiceContact(inv.invoice_id, { contacted: e.target.checked })}
+                    />
+                    Patient contacted
+                  </label>
+                  {log.contacted && (
+                    <input
+                      type="text"
+                      className="invoice-alert-row__note"
+                      placeholder="Note patient's decision or response…"
+                      value={log.note || ''}
+                      onChange={(e) => updateInvoiceContact(inv.invoice_id, { note: e.target.value })}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Appointment Requests */}
       {pendingRequests.length > 0 && (
@@ -760,21 +1062,33 @@ function ReceptionistPatientProfilePage() {
         </section>
       )}
 
-      {/* Create Appointment — expandable, disabled if pending request exists */}
+      {/* Create Appointment — expandable unless a pending request or active appointment exists */}
       <section className="reception-panel">
-        <button
-          type="button"
-          className="reception-expand-btn"
-          onClick={() => {
-            if (!hasPendingRequest) setCreateOpen((prev) => !prev);
-          }}
-          disabled={hasPendingRequest}
-          title={hasPendingRequest ? 'This patient already has a pending appointment request. Confirm it above instead.' : ''}
-        >
-          <span>{createOpen ? '▾' : '▸'} Create Appointment</span>
-          {hasPendingRequest && <span className="reception-expand-hint">Pending request exists</span>}
-        </button>
-        {createOpen && !hasPendingRequest && (
+        {hasActiveAppointment ? (
+          <div className="reception-readonly-notice">
+            <div className="reception-readonly-notice__header">
+              <span>Create Appointment</span>
+              <span className="reception-readonly-notice__badge">Active appointment exists</span>
+            </div>
+            <p>
+              This patient already has an active appointment. Reschedule or cancel the existing appointment before creating a new one.
+            </p>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="reception-expand-btn"
+              onClick={() => {
+                if (canCreateAppointment) setCreateOpen((prev) => !prev);
+              }}
+              disabled={!canCreateAppointment}
+              title={hasPendingRequest ? 'This patient already has a pending appointment request. Confirm it above instead.' : ''}
+            >
+              <span>{createOpen ? '▾' : '▸'} Create Appointment</span>
+              {hasPendingRequest && <span className="reception-expand-hint">Pending request exists</span>}
+            </button>
+            {createOpen && canCreateAppointment && (
           <form className="reception-form" style={{ marginTop: '0.75rem' }} onSubmit={createAppointment}>
             <label>
               Location
@@ -866,6 +1180,8 @@ function ReceptionistPatientProfilePage() {
               {isCreating ? 'Creating...' : 'Create Appointment'}
             </button>
           </form>
+            )}
+          </>
         )}
       </section>
 
@@ -934,89 +1250,89 @@ function ReceptionistPatientProfilePage() {
       {/* Pharmacy & Prescriptions */}
       <section className="reception-profile-grid-two">
         <article className="reception-panel">
-          <h2>Assigned Pharmacy</h2>
-          {patientPharmacies.length > 0 ? patientPharmacies.map((ph) => (
-            <div key={ph.pharm_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.6rem 0.75rem', marginBottom: '0.5rem' }}>
-              <p style={{ margin: '0 0 0.15rem', fontWeight: 700 }}>{ph.pharm_name}{ph.is_primary ? ' (Primary)' : ''}</p>
-              <p style={{ margin: '0.1rem 0' }}><strong>Phone:</strong> {ph.pharm_phone || 'N/A'}</p>
-              <p style={{ margin: '0.1rem 0' }}><strong>Address:</strong> {[ph.ph_address_1, ph.ph_city, ph.ph_state, ph.ph_zipcode].filter(Boolean).join(', ')}</p>
-            </div>
-          )) : (
-            <p style={{ color: '#4b6966' }}><em>No pharmacy assigned</em></p>
-          )}
-        </article>
-
-        <article className="reception-panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2>Prescriptions</h2>
-            <button type="button" className="reception-action-btn reception-action-btn--primary" onClick={() => setRxFormOpen(!rxFormOpen)}>
-              {rxFormOpen ? 'Cancel' : 'New Prescription'}
+            <h2>Assigned Pharmacy</h2>
+            <button type="button" style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'none', border: '1px solid #2d7a6e', color: '#2d7a6e', borderRadius: '6px', cursor: 'pointer' }} onClick={() => setPharmAssignOpen(!pharmAssignOpen)}>
+              {pharmAssignOpen ? 'Cancel' : '+ Assign'}
             </button>
           </div>
 
-          {rxFormOpen && (
-            <form onSubmit={handleCreatePrescription} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem 0.75rem', marginTop: '0.75rem', padding: '0.75rem', border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd' }}>
-              <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Medication Name *</span>
-                <input value={rxForm.medicationName} onChange={(e) => setRxForm((p) => ({ ...p, medicationName: e.target.value }))} required />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Strength</span>
-                <input value={rxForm.strength} onChange={(e) => setRxForm((p) => ({ ...p, strength: e.target.value }))} placeholder="e.g. 500mg" />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Dosage</span>
-                <input value={rxForm.dosage} onChange={(e) => setRxForm((p) => ({ ...p, dosage: e.target.value }))} placeholder="e.g. 1 tablet" />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Frequency</span>
-                <input value={rxForm.frequency} onChange={(e) => setRxForm((p) => ({ ...p, frequency: e.target.value }))} placeholder="e.g. Twice daily" />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Quantity</span>
-                <input type="number" min="0" value={rxForm.quantity} onChange={(e) => setRxForm((p) => ({ ...p, quantity: e.target.value }))} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Start Date</span>
-                <input type="date" value={rxForm.startDate} onChange={(e) => setRxForm((p) => ({ ...p, startDate: e.target.value }))} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>End Date</span>
-                <input type="date" value={rxForm.endDate} onChange={(e) => setRxForm((p) => ({ ...p, endDate: e.target.value }))} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Refills</span>
-                <input type="number" min="0" value={rxForm.refills} onChange={(e) => setRxForm((p) => ({ ...p, refills: e.target.value }))} />
-              </label>
-              <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Instructions</span>
-                <textarea rows="2" value={rxForm.instructions} onChange={(e) => setRxForm((p) => ({ ...p, instructions: e.target.value }))} placeholder="Patient instructions..." />
-              </label>
+          {pharmAssignOpen && (
+            <form onSubmit={handleAssignPharmacy} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem', padding: '0.75rem', border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd' }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                 <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Pharmacy *</span>
-                <select value={rxForm.pharmId} onChange={(e) => setRxForm((p) => ({ ...p, pharmId: e.target.value }))} required>
+                <select value={pharmAssignId} onChange={(e) => setPharmAssignId(e.target.value)} required>
                   <option value="">Select pharmacy</option>
                   {allPharmacies.map((ph) => (
                     <option key={ph.pharm_id} value={ph.pharm_id}>{ph.pharm_name} — {ph.ph_city}, {ph.ph_state}</option>
                   ))}
                 </select>
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Prescribing Doctor *</span>
-                <select value={rxForm.doctorId} onChange={(e) => setRxForm((p) => ({ ...p, doctorId: e.target.value }))} required>
-                  <option value="">Select doctor</option>
-                  {doctors.map((doc) => (
-                    <option key={doc.doctor_id} value={doc.doctor_id}>Dr. {doc.doctor_name}</option>
-                  ))}
-                </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                <input type="checkbox" checked={pharmAssignPrimary} onChange={(e) => setPharmAssignPrimary(e.target.checked)} />
+                Set as primary pharmacy
               </label>
-              <div style={{ gridColumn: '1 / -1', marginTop: '0.3rem' }}>
-                <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isCreatingRx}>
-                  {isCreatingRx ? 'Creating...' : 'Create Prescription'}
-                </button>
-              </div>
+              <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isAssigningPharm} style={{ alignSelf: 'flex-start' }}>
+                {isAssigningPharm ? 'Saving...' : 'Save'}
+              </button>
             </form>
           )}
+
+          <div style={{ marginTop: pharmAssignOpen ? '0.75rem' : '0' }}>
+            {patientPharmacies.length > 0 ? patientPharmacies.map((ph) => (
+              <div key={ph.pharm_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.6rem 0.75rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ margin: '0 0 0.15rem', fontWeight: 700 }}>{ph.pharm_name}{ph.is_primary ? ' (Primary)' : ''}</p>
+                  <p style={{ margin: '0.1rem 0' }}><strong>Phone:</strong> {ph.pharm_phone || 'N/A'}</p>
+                  <p style={{ margin: '0.1rem 0' }}><strong>Address:</strong> {[ph.ph_address_1, ph.ph_city, ph.ph_state, ph.ph_zipcode].filter(Boolean).join(', ')}</p>
+                </div>
+                <button type="button" onClick={() => handleRemovePharmacy(ph.pharm_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9d2e2e', fontSize: '0.8rem', whiteSpace: 'nowrap', padding: '0.1rem 0.3rem' }}>
+                  Remove
+                </button>
+              </div>
+            )) : (
+              <p style={{ color: '#4b6966' }}><em>No pharmacy assigned</em></p>
+            )}
+          </div>
+
+          <div id="pharmacy-section" style={{ scrollMarginTop: '6.5rem', marginTop: '1rem' }}>
+            <h3 style={{ margin: '0 0 0.5rem' }}>Pending Pharmacy Change Requests</h3>
+            {pendingPharmacyRequests.length > 0 ? pendingPharmacyRequests.map((req) => (
+              <div key={req.request_id} style={{ border: '1px solid #d6e7e4', borderRadius: '10px', background: '#fbfefd', padding: '0.75rem', marginBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <div>
+                    <p style={{ margin: '0 0 0.25rem', fontWeight: 700 }}>{req.change_type} Pharmacy</p>
+                    <p style={{ margin: 0 }}><strong>Pharmacy:</strong> {req.new_pharm_name || req.current_pharm_name || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Location:</strong> {[req.new_pharm_city || req.current_pharm_city, req.new_pharm_state || req.current_pharm_state].filter(Boolean).join(', ') || 'N/A'}</p>
+                    <p style={{ margin: 0 }}><strong>Primary:</strong> {req.is_primary ? 'Yes' : 'No'}</p>
+                    {req.patient_note && <p style={{ margin: '0.25rem 0 0' }}><strong>Note:</strong> {req.patient_note}</p>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--primary"
+                      disabled={resolvingPharmacyRequestId === req.request_id}
+                      onClick={() => resolvePharmacyRequest(req.request_id, 'APPROVED')}
+                    >
+                      {resolvingPharmacyRequestId === req.request_id ? 'Approving...' : 'Approve'}
+                    </button>
+                    <button
+                      type="button"
+                      className="reception-action-btn reception-action-btn--secondary"
+                      disabled={resolvingPharmacyRequestId === req.request_id}
+                      onClick={() => resolvePharmacyRequest(req.request_id, 'DENIED')}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )) : <p style={{ color: '#4b6966' }}><em>No pending pharmacy requests.</em></p>}
+          </div>
+        </article>
+
+        <article className="reception-panel">
+          <h2>Prescriptions</h2>
 
           {prescriptions.length > 0 ? (
             <div className="reception-table-wrap" style={{ marginTop: '0.75rem' }}>

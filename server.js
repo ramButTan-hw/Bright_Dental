@@ -20,7 +20,7 @@ require('dotenv').config();
 
 const PORT = process.env.PORT || 3001;
 const PREFERRED_TIME_OPTIONS = [
-  '09:00:00', '10:00:00', '11:00:00', '12:00:00', '13:00:00', '14:00:00',
+  '08:00:00', '09:00:00', '10:00:00', '11:00:00', '12:00:00', '13:00:00', '14:00:00',
   '15:00:00', '16:00:00', '17:00:00', '18:00:00', '19:00:00'
 ];
 const WEEKDAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -138,50 +138,462 @@ ensureDoctorNpiPrimaryKey();
     { name: 'loc_email', def: "VARCHAR(100) AFTER loc_phone" },
     { name: 'loc_fax', def: "VARCHAR(20) AFTER loc_email" }
   ];
+  let completed = 0;
+  const totalCols = cols.length;
+
+  function onColumnDone() {
+    completed++;
+    if (completed === totalCols) {
+      // All location columns ready — seed contact data
+      const contactData = [
+        {
+          city: 'Houston',
+          state: 'TX',
+          streetNo: '4302',
+          streetName: 'University Dr',
+          zip: '77004',
+          phone: '(832) 461-3355',
+          email: 'houston-university@brightdental.com',
+          fax: '(832) 461-3356'
+        },
+        {
+          city: 'Sugar Land',
+          state: 'TX',
+          streetNo: '14000',
+          streetName: 'University Blvd',
+          zip: '77479',
+          phone: '(281) 555-0199',
+          email: 'sugarland-university@brightdental.com',
+          fax: '(281) 555-0200'
+        },
+        {
+          city: 'Houston',
+          state: 'TX',
+          streetNo: '1',
+          streetName: 'Main St',
+          zip: '77002',
+          phone: '(713) 555-0142',
+          email: 'houston-main@brightdental.com',
+          fax: '(713) 555-0143'
+        },
+        {
+          city: 'Houston',
+          state: 'TX',
+          streetNo: '3412',
+          streetName: 'Fannin St',
+          zip: '77004',
+          phone: '(832) 461-4455',
+          email: 'houston-fannin@brightdental.com',
+          fax: '(832) 461-4456'
+        },
+        {
+          city: 'Sugar Land',
+          state: 'TX',
+          streetNo: '1540',
+          streetName: 'Main St',
+          zip: '77479',
+          phone: '(281) 555-1299',
+          email: 'sugarland-main@brightdental.com',
+          fax: '(281) 555-1300'
+        },
+        {
+          city: 'Houston',
+          state: 'TX',
+          streetNo: '1001',
+          streetName: 'Congress Ave',
+          zip: '77002',
+          phone: '(713) 555-2242',
+          email: 'houston-congress@brightdental.com',
+          fax: '(713) 555-2243'
+        }
+      ];
+      contactData.forEach(({ city, state, streetNo, streetName, zip, phone, email, fax }) => {
+        pool.query(
+          `UPDATE locations
+             SET loc_phone = COALESCE(loc_phone, ?),
+                 loc_email = COALESCE(loc_email, ?),
+                 loc_fax = COALESCE(loc_fax, ?)
+           WHERE location_city = ?
+             AND location_state = ?
+             AND loc_street_no = ?
+             AND loc_street_name = ?
+             AND loc_zip_code = ?`,
+          [phone, email, fax, city, state, streetNo, streetName, zip],
+          (err) => {
+            if (err) console.error('Error seeding location contact info:', err.message);
+          }
+        );
+      });
+    }
+  }
+
   cols.forEach(({ name, def }) => {
     pool.query(`ALTER TABLE locations ADD COLUMN ${name} ${def}`, (err) => {
       if (err && err.code !== 'ER_DUP_FIELDNAME') {
         console.error(`Error adding ${name} column:`, err.message);
       }
+      onColumnDone();
     });
   });
-
-  // Ensure profile_image column exists on staff
-  pool.query(`ALTER TABLE staff ADD COLUMN profile_image LONGBLOB`, (err) => {
-    if (err && err.code !== 'ER_DUP_FIELDNAME') {
-      console.error('Error adding profile_image column:', err.message);
-    }
-  });
-
-  // Seed contact data for default locations after a short delay to ensure columns exist
-  setTimeout(() => {
-    const contactData = [
-      { zip: '77004', phone: '(832) 461-3355', email: 'houston@brightdental.com', fax: '(832) 461-3356' },
-      { zip: '77479', phone: '(281) 555-0199', email: 'sugarland@brightdental.com', fax: '(281) 555-0200' },
-      { zip: '77002', phone: '(713) 555-0142', email: 'downtown@brightdental.com', fax: '(713) 555-0143' }
-    ];
-    contactData.forEach(({ zip, phone, email, fax }) => {
-      pool.query(
-        `UPDATE locations SET loc_phone = COALESCE(loc_phone, ?), loc_email = COALESCE(loc_email, ?), loc_fax = COALESCE(loc_fax, ?) WHERE loc_zip_code = ?`,
-        [phone, email, fax, zip],
-        (err) => {
-          if (err) console.error('Error seeding location contact info:', err.message);
-        }
-      );
-    });
-  }, 2000);
 })();
 
+async function ensureAppointmentRescheduleTracking() {
+  const db = pool.promise();
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const runWithRetry = async (query, params = [], attempts = 3) => {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await db.query(query, params);
+      } catch (error) {
+        lastError = error;
+        const isRetryable = error?.code === 'ER_LOCK_DEADLOCK' || error?.code === 'ER_LOCK_WAIT_TIMEOUT';
+        if (!isRetryable || attempt === attempts) {
+          throw error;
+        }
+        await wait(150 * attempt);
+      }
+    }
+
+    throw lastError;
+  };
+
+  try {
+    const [columnRows] = await runWithRetry(
+      `SELECT COUNT(*) AS column_count
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'appointments'
+         AND COLUMN_NAME = 'rescheduled_from_appointment_id'`
+    );
+
+    if (Number(columnRows?.[0]?.column_count || 0) === 0) {
+      try {
+        await runWithRetry(
+          `ALTER TABLE appointments
+           ADD COLUMN rescheduled_from_appointment_id INT NULL AFTER reason_id`
+        );
+      } catch (alterErr) {
+        if (alterErr.code !== 'ER_DUP_FIELDNAME') {
+          throw alterErr;
+        }
+      }
+    }
+
+    try {
+      await runWithRetry(
+        `CREATE INDEX idx_appointments_rescheduled_from
+         ON appointments (rescheduled_from_appointment_id)`
+      );
+    } catch (indexErr) {
+      if (indexErr.code !== 'ER_DUP_KEYNAME') {
+        throw indexErr;
+      }
+    }
+
+    try {
+      await runWithRetry(
+        `ALTER TABLE appointments
+         ADD CONSTRAINT fk_appointments_rescheduled_from
+         FOREIGN KEY (rescheduled_from_appointment_id) REFERENCES appointments(appointment_id)
+         ON DELETE SET NULL
+         ON UPDATE CASCADE`
+      );
+    } catch (constraintErr) {
+      if (constraintErr.code !== 'ER_DUP_KEYNAME' && constraintErr.code !== 'ER_FK_DUP_NAME') {
+        throw constraintErr;
+      }
+    }
+
+    const [cancelledRows] = await runWithRetry(
+      `SELECT
+         a.appointment_id,
+         a.patient_id,
+         TIMESTAMP(a.appointment_date, a.appointment_time) AS cancelled_datetime,
+         a.updated_at AS cancelled_at
+       FROM appointments a
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       WHERE ast.status_name = 'CANCELLED'
+         AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
+       ORDER BY a.updated_at ASC, a.appointment_id ASC`
+    );
+
+    const [activeRows] = await runWithRetry(
+      `SELECT
+         a.appointment_id,
+         a.patient_id,
+         TIMESTAMP(a.appointment_date, a.appointment_time) AS active_datetime,
+         a.created_at
+       FROM appointments a
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       WHERE ast.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
+         AND a.rescheduled_from_appointment_id IS NULL
+       ORDER BY a.created_at ASC, a.appointment_id ASC`
+    );
+
+    const cancelledByPatient = new Map();
+    (cancelledRows || []).forEach((row) => {
+      const patientId = Number(row.patient_id);
+      if (!cancelledByPatient.has(patientId)) {
+        cancelledByPatient.set(patientId, []);
+      }
+      cancelledByPatient.get(patientId).push({
+        appointmentId: Number(row.appointment_id),
+        cancelledDateTime: new Date(String(row.cancelled_datetime || '')),
+        cancelledAt: new Date(String(row.cancelled_at || '')),
+        linked: false
+      });
+    });
+
+    for (const row of (activeRows || [])) {
+      const patientId = Number(row.patient_id);
+      const activeDateTime = new Date(String(row.active_datetime || ''));
+      const activeCreatedAt = new Date(String(row.created_at || ''));
+      const candidateRows = cancelledByPatient.get(patientId) || [];
+
+      const candidate = candidateRows.find((item) => (
+        !item.linked
+        && item.cancelledDateTime <= activeDateTime
+        && item.cancelledAt <= activeCreatedAt
+      ));
+
+      if (!candidate) {
+        continue;
+      }
+
+      candidate.linked = true;
+      await runWithRetry(
+        `UPDATE appointments
+         SET rescheduled_from_appointment_id = ?
+         WHERE appointment_id = ?
+           AND rescheduled_from_appointment_id IS NULL`,
+        [candidate.appointmentId, Number(row.appointment_id)]
+      );
+    }
+  } catch (error) {
+    console.error('Error ensuring appointment reschedule tracking:', error.message);
+  }
+}
+
+ensureAppointmentRescheduleTracking();
+
+
 pool.query(
-  `INSERT INTO appointment_statuses (status_name, display_name, color_code, created_by)
-   VALUES ('CHECKED_IN', 'Checked In', '#9013FE', 'SYSTEM')
+  `INSERT INTO appointment_statuses (status_name, display_name, created_by) VALUES
+   ('SCHEDULED',   'Scheduled',   'SYSTEM'),
+   ('CONFIRMED',   'Confirmed',   'SYSTEM'),
+   ('COMPLETED',   'Completed',   'SYSTEM'),
+   ('CANCELLED',   'Cancelled',   'SYSTEM'),
+   ('RESCHEDULED', 'Rescheduled', 'SYSTEM'),
+   ('CHECKED_IN',  'Checked In',  'SYSTEM')
    ON DUPLICATE KEY UPDATE display_name = VALUES(display_name)`,
   (err) => {
     if (err) {
-      console.error('Error ensuring CHECKED_IN status:', err.message);
+      console.error('Error ensuring appointment statuses:', err.message);
     }
   }
 );
+
+pool.query(
+  `INSERT INTO treatment_statuses (status_name, display_name, created_by) VALUES
+   ('PLANNED',      'Planned',      'SYSTEM'),
+   ('IN_PROGRESS',  'In Progress',  'SYSTEM'),
+   ('COMPLETED',    'Completed',    'SYSTEM'),
+   ('CANCELLED',    'Cancelled',    'SYSTEM')
+   ON DUPLICATE KEY UPDATE display_name = VALUES(display_name)`,
+  (err) => {
+    if (err) {
+      console.error('Error ensuring treatment statuses:', err.message);
+    }
+  }
+);
+
+pool.query(
+  `INSERT INTO cancel_reasons (reason_text, category, created_by)
+   VALUES ('Doctor Unavailable', 'PROVIDER', 'SYSTEM')
+   ON DUPLICATE KEY UPDATE category = VALUES(category)`,
+  (err) => {
+    if (err) console.error('Error ensuring Doctor Unavailable cancel reason:', err.message);
+  }
+);
+
+// Doctor time-off insert trigger: cancel appointments when time-off is created (is_approved defaults TRUE)
+pool.query('DROP TRIGGER IF EXISTS after_doctor_time_off_insert_cancel_appointments', () => {
+  pool.query(`CREATE TRIGGER after_doctor_time_off_insert_cancel_appointments
+AFTER INSERT ON doctor_time_off
+FOR EACH ROW
+BEGIN
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    IF NEW.is_approved = TRUE THEN
+        SELECT status_id INTO v_cancelled_status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+        SELECT reason_id INTO v_reason_id FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+        IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+            UPDATE appointments SET status_id = v_cancelled_status_id, reason_id = v_reason_id, updated_by = 'SYSTEM_TIME_OFF'
+            WHERE doctor_id = NEW.doctor_id
+              AND status_id NOT IN (SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED'))
+              AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+            UPDATE appointment_preference_requests SET request_status = 'CANCELLED', updated_by = 'SYSTEM_TIME_OFF'
+            WHERE assigned_doctor_id = NEW.doctor_id AND request_status = 'ASSIGNED'
+              AND TIMESTAMP(assigned_date, assigned_time) >= NEW.start_datetime
+              AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('[CRITICAL] after_doctor_time_off_insert trigger failed to create — doctor time-off will NOT auto-cancel appointments:', err.message); });
+});
+
+// Doctor time-off update trigger: cancel appointments when time-off is explicitly approved
+pool.query('DROP TRIGGER IF EXISTS after_doctor_time_off_update_cancel_appointments', () => {
+  pool.query(`CREATE TRIGGER after_doctor_time_off_update_cancel_appointments
+AFTER UPDATE ON doctor_time_off
+FOR EACH ROW
+BEGIN
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    IF NEW.is_approved = TRUE AND OLD.is_approved = FALSE THEN
+        SELECT status_id INTO v_cancelled_status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+        SELECT reason_id INTO v_reason_id FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+        IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+            UPDATE appointments SET status_id = v_cancelled_status_id, reason_id = v_reason_id, updated_by = 'SYSTEM_TIME_OFF'
+            WHERE doctor_id = NEW.doctor_id
+              AND status_id NOT IN (SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED'))
+              AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+            UPDATE appointment_preference_requests SET request_status = 'CANCELLED', updated_by = 'SYSTEM_TIME_OFF'
+            WHERE assigned_doctor_id = NEW.doctor_id AND request_status = 'ASSIGNED'
+              AND TIMESTAMP(assigned_date, assigned_time) >= NEW.start_datetime
+              AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('[CRITICAL] after_doctor_time_off_update trigger failed to create — approving time-off will NOT auto-cancel appointments:', err.message); });
+});
+
+// Appointment status state machine: block invalid status transitions
+pool.query('DROP TRIGGER IF EXISTS appointments_enforce_status_transition', () => {
+  pool.query(`CREATE TRIGGER appointments_enforce_status_transition
+BEFORE UPDATE ON appointments
+FOR EACH ROW
+BEGIN
+    DECLARE old_status VARCHAR(50) DEFAULT NULL;
+    DECLARE new_status VARCHAR(50) DEFAULT NULL;
+    IF OLD.status_id <> NEW.status_id THEN
+        SELECT status_name INTO old_status FROM appointment_statuses WHERE status_id = OLD.status_id LIMIT 1;
+        SELECT status_name INTO new_status FROM appointment_statuses WHERE status_id = NEW.status_id LIMIT 1;
+        IF old_status IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Appointment status cannot be changed once it is Completed or Cancelled';
+        END IF;
+        IF old_status = 'CHECKED_IN' AND new_status NOT IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'A checked-in appointment can only be marked Completed or Cancelled';
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('[CRITICAL] appointments_enforce_status_transition trigger failed to create — invalid status transitions will NOT be blocked:', err.message); });
+});
+
+// Staff time-off approval trigger: cancel a doctor's appointments when their staff request is approved
+pool.query('DROP TRIGGER IF EXISTS after_staff_time_off_approved_cancel_appointments', () => {
+  pool.query(`CREATE TRIGGER after_staff_time_off_approved_cancel_appointments
+AFTER UPDATE ON staff_time_off_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_doctor_id INT DEFAULT NULL;
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    IF NEW.is_approved = TRUE AND OLD.is_approved = FALSE THEN
+        SELECT d.doctor_id INTO v_doctor_id FROM doctors d WHERE d.staff_id = NEW.staff_id LIMIT 1;
+        IF v_doctor_id IS NOT NULL THEN
+            SELECT status_id INTO v_cancelled_status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+            SELECT reason_id INTO v_reason_id FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+            IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+                UPDATE appointments SET status_id = v_cancelled_status_id, reason_id = v_reason_id, updated_by = 'SYSTEM_TIME_OFF'
+                WHERE doctor_id = v_doctor_id
+                  AND status_id NOT IN (SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED'))
+                  AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+                  AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+                UPDATE appointment_preference_requests SET request_status = 'CANCELLED', updated_by = 'SYSTEM_TIME_OFF'
+                WHERE assigned_doctor_id = v_doctor_id AND request_status = 'ASSIGNED'
+                  AND TIMESTAMP(assigned_date, assigned_time) >= NEW.start_datetime
+                  AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
+            END IF;
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('[CRITICAL] after_staff_time_off_approved trigger failed to create — approving staff time-off will NOT auto-cancel doctor appointments:', err.message); });
+});
+
+// Doctor hidden trigger: cancel future appointments when a doctor's account is deactivated
+pool.query('DROP TRIGGER IF EXISTS after_staff_hidden_cancel_appointments', () => {
+  pool.query(`CREATE TRIGGER after_staff_hidden_cancel_appointments
+AFTER UPDATE ON users
+FOR EACH ROW
+BEGIN
+    DECLARE v_doctor_id INT DEFAULT NULL;
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    DECLARE v_doctor_name VARCHAR(120) DEFAULT '';
+    DECLARE v_affected_count INT DEFAULT 0;
+    DECLARE v_patient_id INT DEFAULT NULL;
+    IF OLD.is_deleted = 0 AND NEW.is_deleted = 1 THEN
+        SELECT d.doctor_id INTO v_doctor_id
+        FROM staff st
+        JOIN doctors d ON d.staff_id = st.staff_id
+        WHERE st.user_id = NEW.user_id
+        LIMIT 1;
+        IF v_doctor_id IS NOT NULL THEN
+            SELECT status_id INTO v_cancelled_status_id FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+            SELECT reason_id INTO v_reason_id FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+            SELECT CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, ''))
+            INTO v_doctor_name
+            FROM doctors d JOIN staff st ON st.staff_id = d.staff_id
+            WHERE d.doctor_id = v_doctor_id LIMIT 1;
+            IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+                SELECT COUNT(*), MIN(a.patient_id) INTO v_affected_count, v_patient_id
+                FROM appointments a
+                WHERE a.doctor_id = v_doctor_id
+                  AND a.appointment_date >= CURDATE()
+                  AND a.status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  );
+                UPDATE appointments
+                SET status_id = v_cancelled_status_id,
+                    reason_id = v_reason_id,
+                    updated_by = 'SYSTEM_DOCTOR_HIDDEN'
+                WHERE doctor_id = v_doctor_id
+                  AND appointment_date >= CURDATE()
+                  AND status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  );
+                UPDATE appointment_preference_requests SET request_status = 'CANCELLED', updated_by = 'SYSTEM_DOCTOR_HIDDEN'
+                WHERE assigned_doctor_id = v_doctor_id AND request_status = 'ASSIGNED'
+                  AND assigned_date >= CURDATE();
+                IF v_affected_count > 0 AND v_patient_id IS NOT NULL THEN
+                    INSERT INTO receptionist_notifications (
+                        source_table, source_request_id, patient_id, notification_type, message, created_by, updated_by
+                    ) VALUES (
+                        'users',
+                        NEW.user_id,
+                        v_patient_id,
+                        'DOCTOR_HIDDEN',
+                        CONCAT('Doctor account deactivated: ', COALESCE(NULLIF(TRIM(v_doctor_name), ''), CONCAT('doctor #', v_doctor_id)), '. ', v_affected_count, ' appointment', IF(v_affected_count = 1, '', 's'), ' were cancelled due to doctor deletion and need rescheduling.'),
+                        'SYSTEM_TRIGGER',
+                        'SYSTEM_TRIGGER'
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        patient_id = VALUES(patient_id),
+                        notification_type = VALUES(notification_type),
+                        message = VALUES(message),
+                        updated_by = VALUES(updated_by);
+                END IF;
+            END IF;
+        END IF;
+    END IF;
+END`, (err) => { if (err) console.error('[CRITICAL] after_staff_hidden_cancel_appointments trigger failed to create — deactivating a doctor will NOT auto-cancel their appointments:', err.message); });
+});
+
+
 
 // Ensure staff time-off request storage exists for non-doctor staff workflows.
 pool.query(
@@ -249,27 +661,16 @@ pool.query(
   }
 );
 
-// Migration: add is_off column to existing schedule tables
-pool.query(`ALTER TABLE staff_schedules ADD COLUMN is_off TINYINT(1) NOT NULL DEFAULT 0`, (err) => {
-  if (err && !err.message.includes('Duplicate column')) console.error('Migration staff_schedules.is_off:', err.message);
-});
-pool.query(`ALTER TABLE staff_schedule_requests ADD COLUMN is_off TINYINT(1) NOT NULL DEFAULT 0`, (err) => {
-  if (err && !err.message.includes('Duplicate column')) console.error('Migration staff_schedule_requests.is_off:', err.message);
-});
-// Migration: allow NULL times for OFF days
-pool.query(`ALTER TABLE staff_schedules MODIFY start_time TIME NULL, MODIFY end_time TIME NULL`, (err) => {
-  if (err) console.error('Migration staff_schedules nullable times:', err.message);
-});
-pool.query(`ALTER TABLE staff_schedule_requests MODIFY start_time TIME NULL, MODIFY end_time TIME NULL`, (err) => {
-  if (err) console.error('Migration staff_schedule_requests nullable times:', err.message);
-});
-// Migration: drop CHECK constraints that block NULL times for OFF days
-pool.query(`ALTER TABLE staff_schedules DROP CHECK chk_sched_time`, (err) => {
-  if (err && !err.message.includes('not found') && !err.message.includes("doesn't exist") && !err.code === 'ER_CHECK_CONSTRAINT_NOT_FOUND') { /* ignore */ }
-});
-pool.query(`ALTER TABLE staff_schedule_requests DROP CHECK chk_sched_req_time`, (err) => {
-  if (err && !err.message.includes('not found') && !err.message.includes("doesn't exist") && !err.code === 'ER_CHECK_CONSTRAINT_NOT_FOUND') { /* ignore */ }
-});
+
+// Seed payment_methods (safe to run every startup via INSERT IGNORE)
+pool.query(
+  `INSERT IGNORE INTO payment_methods (method_name, display_name, is_active) VALUES
+    ('CREDIT_CARD', 'Credit Card', 1),
+    ('DEBIT_CARD',  'Debit Card',  1)`,
+  (err) => {
+    if (err) console.error('Seed payment_methods:', err.message);
+  }
+);
 
 // Migration: create refunds table
 pool.query(`CREATE TABLE IF NOT EXISTS refunds (
@@ -286,27 +687,259 @@ pool.query(`CREATE TABLE IF NOT EXISTS refunds (
   if (err && !err.message.includes('already exists')) console.error('Create refunds table:', err.message);
 });
 
-// ============================================================================
-// MIDDLEWARE: Parse JSON body
-// ============================================================================
+pool.query(
+  `CREATE TABLE IF NOT EXISTS receptionist_notifications (
+    notification_id INT AUTO_INCREMENT PRIMARY KEY,
+    source_table VARCHAR(50) NOT NULL,
+    source_request_id INT NOT NULL,
+    patient_id INT NOT NULL,
+    notification_type ENUM('INSURANCE_CHANGE_REQUEST', 'PHARMACY_CHANGE_REQUEST', 'DOCTOR_TIME_OFF') NOT NULL,
+    message VARCHAR(255) NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMP NULL DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_reception_notification_source (source_table, source_request_id),
+    INDEX idx_reception_notification_read (is_read, created_at),
+    INDEX idx_reception_notification_type (notification_type),
+    INDEX idx_reception_notification_patient (patient_id)
+  )`,
+  (err) => {
+    if (err && !err.message.includes('already exists')) console.error('Create receptionist_notifications table:', err.message);
+  }
+);
+
+pool.query('DROP TRIGGER IF EXISTS insurance_change_requests_create_notification', () => {
+  pool.query(`CREATE TRIGGER insurance_change_requests_create_notification
+AFTER INSERT ON insurance_change_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_name VARCHAR(120) DEFAULT '';
+    DECLARE v_action_label VARCHAR(24) DEFAULT 'change';
+    SELECT CONCAT(p_first_name, ' ', p_last_name) INTO v_patient_name
+    FROM patients
+    WHERE patient_id = NEW.patient_id
+    LIMIT 1;
+    IF NEW.change_type = 'ADD' THEN
+        SET v_action_label = 'add';
+    ELSEIF NEW.change_type = 'UPDATE' THEN
+        SET v_action_label = 'update';
+    ELSEIF NEW.change_type = 'REMOVE' THEN
+        SET v_action_label = 'remove';
+    END IF;
+    INSERT INTO receptionist_notifications (
+        source_table,
+        source_request_id,
+        patient_id,
+        notification_type,
+        message,
+        created_by,
+        updated_by
+    ) VALUES (
+        'insurance_change_requests',
+        NEW.request_id,
+        NEW.patient_id,
+        'INSURANCE_CHANGE_REQUEST',
+        CONCAT('Insurance ', v_action_label, ' request submitted by ', COALESCE(v_patient_name, 'a patient')),
+        'SYSTEM_TRIGGER',
+        'SYSTEM_TRIGGER'
+    );
+END`, (err) => { if (err) console.error('Create insurance_change_requests_create_notification trigger error:', err.message); });
+});
+
+pool.query('DROP TRIGGER IF EXISTS pharmacy_change_requests_create_notification', () => {
+  pool.query(`CREATE TRIGGER pharmacy_change_requests_create_notification
+AFTER INSERT ON pharmacy_change_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_name VARCHAR(120) DEFAULT '';
+    DECLARE v_action_label VARCHAR(24) DEFAULT 'change';
+    SELECT CONCAT(p_first_name, ' ', p_last_name) INTO v_patient_name
+    FROM patients
+    WHERE patient_id = NEW.patient_id
+    LIMIT 1;
+    IF NEW.change_type = 'ADD' THEN
+        SET v_action_label = 'add';
+    ELSEIF NEW.change_type = 'REMOVE' THEN
+        SET v_action_label = 'remove';
+    END IF;
+    INSERT INTO receptionist_notifications (
+        source_table,
+        source_request_id,
+        patient_id,
+        notification_type,
+        message,
+        created_by,
+        updated_by
+    ) VALUES (
+        'pharmacy_change_requests',
+        NEW.request_id,
+        NEW.patient_id,
+        'PHARMACY_CHANGE_REQUEST',
+        CONCAT('Pharmacy ', v_action_label, ' request submitted by ', COALESCE(v_patient_name, 'a patient')),
+        'SYSTEM_TRIGGER',
+        'SYSTEM_TRIGGER'
+    );
+END`, (err) => { if (err) console.error('Create pharmacy_change_requests_create_notification trigger error:', err.message); });
+});
+
+
+// Parse JSON body
+
 function parseJSON(req, callback) {
   let body = '';
+
+  function tryParseFirstJsonObject(value) {
+    let start = value.indexOf('{');
+    if (start < 0) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < value.length; i++) {
+      const ch = value[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === '{') {
+        depth += 1;
+      } else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          return value.slice(start, i + 1);
+        }
+      }
+    }
+    return null;
+  }
+
   req.on('data', chunk => {
     body += chunk.toString();
   });
   req.on('end', () => {
+    const raw = String(body || '')
+      .replace(/^\uFEFF/, '')
+      .replace(/\u0000/g, '')
+      .trim();
     try {
-      const data = body ? JSON.parse(body) : {};
+      const data = raw ? JSON.parse(raw) : {};
       callback(null, data);
     } catch (err) {
+      if (raw) {
+        const firstObject = tryParseFirstJsonObject(raw);
+        if (firstObject) {
+          try {
+            return callback(null, JSON.parse(firstObject));
+          } catch (_firstObjectErr) {
+            // Continue to additional fallbacks.
+          }
+        }
+
+        // If a JSON payload is wrapped in extra transport noise, salvage the JSON segment.
+        const objectStart = raw.indexOf('{');
+        const objectEnd = raw.lastIndexOf('}');
+        if (objectStart >= 0 && objectEnd > objectStart) {
+          try {
+            const objectSlice = raw.slice(objectStart, objectEnd + 1);
+            return callback(null, JSON.parse(objectSlice));
+          } catch (_objectSliceErr) {
+            // Continue to additional fallbacks.
+          }
+        }
+
+        const arrayStart = raw.indexOf('[');
+        const arrayEnd = raw.lastIndexOf(']');
+        if (arrayStart >= 0 && arrayEnd > arrayStart) {
+          try {
+            const arraySlice = raw.slice(arrayStart, arrayEnd + 1);
+            return callback(null, JSON.parse(arraySlice));
+          } catch (_arraySliceErr) {
+            // Continue to additional fallbacks.
+          }
+        }
+      }
+
+      // Some proxies/clients send URL-encoded JSON payload strings.
+      if (raw && /^%7B|%5B/i.test(raw)) {
+        try {
+          const decoded = decodeURIComponent(raw);
+          const data = JSON.parse(decoded);
+          return callback(null, data);
+        } catch (_decodeErr) {
+          // Continue to additional fallbacks below.
+        }
+      }
+
+      const contentType = String(req.headers['content-type'] || '').toLowerCase();
+      const looksUrlEncoded = contentType.includes('application/x-www-form-urlencoded')
+        || (/^[^\s{}\[]+=[\s\S]*$/.test(raw) && raw.includes('='));
+
+      if (looksUrlEncoded) {
+        try {
+          const params = new URLSearchParams(raw);
+          const parsed = {};
+          for (const [key, value] of params.entries()) {
+            parsed[key] = value;
+          }
+
+          if (typeof parsed.staffId === 'string' && /^\d+$/.test(parsed.staffId)) {
+            parsed.staffId = Number(parsed.staffId);
+          }
+          if (typeof parsed.entries === 'string') {
+            try {
+              parsed.entries = JSON.parse(parsed.entries);
+            } catch (_innerErr) {
+              parsed.entries = [];
+            }
+          }
+
+          return callback(null, parsed);
+        } catch (_urlErr) {
+          // fall through to invalid JSON callback
+        }
+      }
+
+      console.warn('parseJSON failed', {
+        path: req.url,
+        method: req.method,
+        contentType,
+        parseError: err.message,
+        bodyLength: raw.length,
+        bodyPreview: raw.slice(0, 200),
+        bodyTail: raw.slice(Math.max(0, raw.length - 200))
+      });
+
+      err.message = `parseJSON failed: ${err.message}`;
+      err.contentType = contentType;
+      err.bodyLength = raw.length;
+      err.bodyPreview = raw.slice(0, 200);
       callback(err, null);
     }
   });
 }
 
-// ============================================================================
-// MIDDLEWARE: CORS headers
-// ============================================================================
+
+// CORS headers
 function setCORS(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -322,9 +955,8 @@ function sendJSON(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
-// ============================================================================
-// HELPER: Extract path and method
-// ============================================================================
+
+// HELPER: Path Extraction and Method
 function parsePath(pathname) {
   const parts = pathname.split('/').filter(p => p);
   return { parts, path: parts.join('/') };
@@ -372,8 +1004,16 @@ const patientPortalRoutes = createPatientPortalRoutes({
   cancelPatientAppointment: patientCoreHandlers.cancelPatientAppointment,
   getDepartments: patientCoreHandlers.getDepartments,
   getInsuranceCompanies: patientCoreHandlers.getInsuranceCompanies,
+  submitInsuranceChangeRequest: patientCoreHandlers.submitInsuranceChangeRequest,
+  getInsuranceChangeRequests: patientCoreHandlers.getInsuranceChangeRequests,
+  resolveInsuranceChangeRequest: patientCoreHandlers.resolveInsuranceChangeRequest,
+  submitPharmacyChangeRequest: patientCoreHandlers.submitPharmacyChangeRequest,
+  getPharmacyChangeRequests: patientCoreHandlers.getPharmacyChangeRequests,
+  resolvePharmacyChangeRequest: patientCoreHandlers.resolvePharmacyChangeRequest,
   updatePatientProfile: patientCoreHandlers.updatePatientProfile,
   addPatientInsurance: patientCoreHandlers.addPatientInsurance,
+  setPrimaryInsurance: patientCoreHandlers.setPrimaryInsurance,
+  removePatientInsurance: patientCoreHandlers.removePatientInsurance,
   changeUserPassword: patientCoreHandlers.changeUserPassword,
   registerPatient: patientIntakeHandlers.registerPatient,
   getPainSymptoms: patientIntakeHandlers.getPainSymptoms,
@@ -385,13 +1025,13 @@ const patientPortalRoutes = createPatientPortalRoutes({
   revertAppointmentPreferenceRequest: appointmentPreferenceHandlers.revertAppointmentPreferenceRequest
 });
 
-// ============================================================================
-// ROUTES
-// ============================================================================
 
-// ============================================================================
+// ROUTES
+
+
+
 // MAIN REQUEST HANDLER
-// ============================================================================
+
 const server = http.createServer((req, res) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -412,9 +1052,9 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  // ============================================================================
+
   // ROUTE MATCHING
-  // ============================================================================
+
 
   // Patient billing and invoices routes
   if (patientBillingRoutes.handlePatientBillingRoutes(req, res, method, parts, parseJSON)) {

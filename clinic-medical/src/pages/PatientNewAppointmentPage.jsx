@@ -8,6 +8,7 @@ const MAX_QUIT_HISTORY_ROWS = 3;
 const APPOINTMENT_LOOKAHEAD_DAYS = 365;
 const WEEKDAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const TIME_PREFERENCE_OPTIONS = [
+  { value: '08:00', label: '8:00 AM' },
   { value: '09:00', label: '9:00 AM' },
   { value: '10:00', label: '10:00 AM' },
   { value: '11:00', label: '11:00 AM' },
@@ -398,6 +399,10 @@ function PatientNewAppointmentPage() {
     setMedications((prev) => [...prev, { name: '', dosage: '', frequency: '', reason: '' }]);
   };
 
+  const removeMedicationRow = (index) => {
+    setMedications((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const updateDentalFindings = (field) => {
     setDentalFindings((prev) => ({ ...prev, [field]: !prev[field] }));
   };
@@ -651,7 +656,7 @@ function PatientNewAppointmentPage() {
             <fieldset className="form-section">
               <legend>Current Medications</legend>
               <table className="medicines-table">
-                <thead><tr><th>Medication Name</th><th>Dosage</th><th>Frequency</th><th>Reason for Use</th></tr></thead>
+                <thead><tr><th>Medication Name</th><th>Dosage</th><th>Frequency</th><th>Reason for Use</th><th></th></tr></thead>
                 <tbody>
                   {medications.map((med, idx) => (
                     <tr key={idx}>
@@ -659,6 +664,7 @@ function PatientNewAppointmentPage() {
                       <td><input type="text" value={med.dosage} onChange={(e) => updateMedicationRow(idx, 'dosage', e.target.value)} placeholder="e.g., 400mg" /></td>
                       <td><input type="text" value={med.frequency} onChange={(e) => updateMedicationRow(idx, 'frequency', e.target.value)} placeholder="e.g., Twice daily" /></td>
                       <td><input type="text" value={med.reason} onChange={(e) => updateMedicationRow(idx, 'reason', e.target.value)} placeholder="e.g., Pain relief" /></td>
+                      <td><button type="button" onClick={() => removeMedicationRow(idx)} style={{ background: 'none', border: 'none', color: '#a53030', cursor: 'pointer', fontSize: '1.1rem' }} aria-label="Remove medication">&times;</button></td>
                     </tr>
                   ))}
                 </tbody>

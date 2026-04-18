@@ -27,8 +27,16 @@ function createPatientPortalRoutes(handlers) {
     getInsuranceCompanies,
     updatePatientProfile,
     addPatientInsurance,
+    setPrimaryInsurance,
+    removePatientInsurance,
     getLocations,
-    changeUserPassword
+    changeUserPassword,
+    submitInsuranceChangeRequest,
+    getInsuranceChangeRequests,
+    resolveInsuranceChangeRequest,
+    submitPharmacyChangeRequest,
+    getPharmacyChangeRequests,
+    resolvePharmacyChangeRequest
   } = handlers;
 
   function handlePatientPortalRoutes(req, res, method, parts, parseJSON) {
@@ -271,6 +279,20 @@ function createPatientPortalRoutes(handlers) {
       return true;
     }
 
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'insurance' && parts[4] && parts[5] === 'set-primary') {
+      const patientId = parseInt(parts[2], 10);
+      const insuranceId = parseInt(parts[4], 10);
+      setPrimaryInsurance(req, patientId, insuranceId, res);
+      return true;
+    }
+
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'insurance' && parts[4]) {
+      const patientId = parseInt(parts[2], 10);
+      const insuranceId = parseInt(parts[4], 10);
+      removePatientInsurance(req, patientId, insuranceId, res);
+      return true;
+    }
+
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'prescriptions') {
       const patientId = parseInt(parts[2], 10);
       pool.query(
@@ -311,6 +333,7 @@ function createPatientPortalRoutes(handlers) {
       const patientId = parseInt(parts[2], 10);
       pool.query(
         `SELECT
+          pp.patient_pharmacy_id,
           ph.pharm_id,
           ph.pharm_name,
           ph.pharm_phone,
@@ -329,6 +352,29 @@ function createPatientPortalRoutes(handlers) {
             console.error('Error fetching patient pharmacy:', err);
             return sendJSON(res, 500, { error: 'Database error' });
           }
+          sendJSON(res, 200, rows || []);
+        }
+      );
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'insurance' && !parts[4]) {
+      const patientId = parseInt(parts[2], 10);
+      pool.query(
+        `SELECT
+          i.insurance_id,
+          i.company_id,
+          i.member_id,
+          i.group_number,
+          i.is_primary,
+          ic.company_name
+        FROM insurance i
+        LEFT JOIN insurance_companies ic ON ic.company_id = i.company_id
+        WHERE i.patient_id = ?
+        ORDER BY i.is_primary DESC, i.insurance_id ASC`,
+        [patientId],
+        (err, rows) => {
+          if (err) return sendJSON(res, 500, { error: 'Database error' });
           sendJSON(res, 200, rows || []);
         }
       );
@@ -430,6 +476,89 @@ function createPatientPortalRoutes(handlers) {
         }
         changeUserPassword(req, userId, data, res);
       });
+      return true;
+    }
+
+    // Insurance change requests
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'insurance-change-requests') {
+      const patientId = parseInt(parts[2], 10);
+      parseJSON(req, (err, data) => {
+        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        submitInsuranceChangeRequest(req, patientId, data, res);
+      });
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'insurance-change-requests') {
+      const patientId = parseInt(parts[2], 10);
+      if (!Number.isInteger(patientId) || patientId <= 0) {
+        return sendJSON(res, 400, { error: 'Invalid patient id' });
+      }
+
+      pool.query(
+        `SELECT
+          icr.request_id,
+          icr.change_type,
+          icr.request_status,
+          icr.member_id,
+          icr.group_number,
+          icr.is_primary,
+          icr.patient_note,
+          icr.created_at,
+          ic.company_name AS new_company_name,
+          ic2.company_name AS current_company_name,
+          i.member_id AS current_member_id,
+          i.group_number AS current_group_number
+         FROM insurance_change_requests icr
+         LEFT JOIN insurance_companies ic ON ic.company_id = icr.company_id
+         LEFT JOIN insurance i ON i.insurance_id = icr.insurance_id
+         LEFT JOIN insurance_companies ic2 ON ic2.company_id = i.company_id
+         WHERE icr.patient_id = ?
+           AND icr.request_status = 'PENDING'
+         ORDER BY icr.created_at DESC`,
+        [patientId],
+        (err, rows) => {
+          if (err) {
+            console.error('Error fetching patient insurance change requests:', err);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          sendJSON(res, 200, rows || []);
+        }
+      );
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'insurance-change-requests') {
+      getInsuranceChangeRequests(req, res);
+      return true;
+    }
+
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'insurance-change-requests' && parts[3] && parts[4]) {
+      const requestId = parseInt(parts[3], 10);
+      const action = String(parts[4]).toUpperCase();
+      resolveInsuranceChangeRequest(req, requestId, action, res);
+      return true;
+    }
+
+    // Pharmacy change requests
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'patients' && parts[2] && parts[3] === 'pharmacy-change-requests') {
+      const patientId = parseInt(parts[2], 10);
+      parseJSON(req, (err, data) => {
+        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        submitPharmacyChangeRequest(req, patientId, data, res);
+      });
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'pharmacy-change-requests') {
+      getPharmacyChangeRequests(req, res);
+      return true;
+    }
+
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'pharmacy-change-requests' && parts[3] && parts[4]) {
+      const requestId = parseInt(parts[3], 10);
+      const action = String(parts[4]).toUpperCase();
+      resolvePharmacyChangeRequest(req, requestId, action, res);
       return true;
     }
 
