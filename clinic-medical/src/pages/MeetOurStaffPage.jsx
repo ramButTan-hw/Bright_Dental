@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
+import '../styles/MeetOurStaffPage.css';
 
 const API_BASE_URL = resolveApiBaseUrl();
 
@@ -32,123 +33,78 @@ function MeetOurStaffPage() {
   }, []);
 
   return (
-    <main style={{ paddingTop: '90px', minHeight: '100vh', background: '#f7faf9' }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem 4rem' }}>
-        <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
-          <p style={{ color: '#005050', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-            About Us
-          </p>
-          <h1 style={{ fontSize: '2.25rem', fontWeight: 800, color: '#181c1c', margin: 0, fontFamily: "'Manrope', sans-serif" }}>
-            Meet Our Staff
-          </h1>
-          <p style={{ color: '#3e4948', marginTop: '0.75rem', fontSize: '1.05rem', maxWidth: 600, marginLeft: 'auto', marginRight: 'auto' }}>
+    <main className="staff-page">
+      <div className="staff-container">
+        <div className="staff-hero">
+          <p className="staff-kicker">About Us</p>
+          <h1 className="staff-title">Meet Our Staff</h1>
+          <p className="staff-intro">
             Get to know the dedicated professionals behind Bright Dental. Our team is committed to providing you with exceptional care.
           </p>
         </div>
 
         {loading ? (
-          <p style={{ textAlign: 'center', color: '#666', padding: '3rem 0' }}>Loading staff...</p>
+          <p className="staff-status">Loading staff...</p>
         ) : grouped.length === 0 ? (
-          <p style={{ textAlign: 'center', color: '#666', padding: '3rem 0' }}>No staff information available.</p>
+          <p className="staff-status">No staff information available.</p>
         ) : (
           grouped.map(({ role, label, members }) => (
-            <section key={role} style={{ marginBottom: '3rem' }}>
-              <h2 style={{
-                fontSize: '1.5rem',
-                fontWeight: 700,
-                color: '#005050',
-                borderBottom: '3px solid #84d4d3',
-                paddingBottom: '0.5rem',
-                marginBottom: '1.5rem',
-                fontFamily: "'Manrope', sans-serif"
-              }}>
-                {label}
-              </h2>
+            <section key={role} className="staff-group">
+              <h2 className="staff-group__title">{label}</h2>
 
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '1.5rem'
-              }}>
+              <div className="staff-grid">
                 {members.map((m) => {
                   const locations = m.locations ? m.locations.split('||') : [];
                   const hasImage = m.profile_image_base64 && m.profile_image_base64 !== 'NULL';
                   const initials = `${(m.first_name || '')[0] || ''}${(m.last_name || '')[0] || ''}`.toUpperCase();
 
                   return (
-                    <div key={m.staff_id} style={{
-                      background: '#fff',
-                      borderRadius: '12px',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.07)',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      transition: 'box-shadow 0.25s, transform 0.25s'
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.13)'; e.currentTarget.style.transform = 'translateY(-3px)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.07)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-                    >
-                      {/* Image banner */}
+                    <article key={m.staff_id} className="staff-card">
                       {hasImage ? (
-                        <div style={{ width: '100%', height: 200, overflow: 'hidden' }}>
+                        <div className="staff-card__banner">
                           <img
                             src={`data:image/jpeg;base64,${m.profile_image_base64}`}
                             alt={`${m.first_name} ${m.last_name}`}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            className="staff-card__photo"
                           />
                         </div>
                       ) : (
-                        <div style={{
-                          background: 'linear-gradient(135deg, #005050, #006a6a)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          height: 200
-                        }}>
-                          <span style={{ fontSize: '2.5rem', fontWeight: 700, color: '#fff', opacity: 0.7 }}>
-                            {initials}
-                          </span>
+                        <div className="staff-card__placeholder">
+                          <span className="staff-card__initials">{initials}</span>
                         </div>
                       )}
 
-                      {/* Info */}
-                      <div style={{ padding: '1.25rem 1.25rem 1.5rem', flex: 1 }}>
-                        <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#181c1c' }}>
+                      <div className="staff-card__body">
+                        <h3 className="staff-card__name">
                           {role === 'DOCTOR' ? 'Dr. ' : ''}{m.first_name} {m.last_name}
                         </h3>
-                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#005050', fontWeight: 600 }}>
+                        <p className="staff-card__role">
                           {role === 'DOCTOR' ? 'Dentist' : role === 'RECEPTIONIST' ? 'Receptionist' : 'Administrator'}
                         </p>
 
-                        {/* Contact */}
-                        <div style={{ marginTop: '0.85rem', fontSize: '0.88rem', color: '#3e4948' }}>
+                        <div className="staff-card__contact">
                           {m.user_email && (
-                            <p style={{ margin: '0.25rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                              <span style={{ opacity: 0.6 }}>Email:</span> {m.user_email}
+                            <p className="staff-card__contact-row">
+                              <span className="staff-card__contact-label">Email:</span> {m.user_email}
                             </p>
                           )}
                           {m.phone_number && (
-                            <p style={{ margin: '0.25rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                              <span style={{ opacity: 0.6 }}>Phone:</span> {m.phone_number}
+                            <p className="staff-card__contact-row">
+                              <span className="staff-card__contact-label">Phone:</span> {m.phone_number}
                             </p>
                           )}
                         </div>
 
-                        {/* Locations */}
                         {locations.length > 0 && (
-                          <div style={{ marginTop: '0.75rem' }}>
-                            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#005050', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                              Locations
-                            </p>
+                          <div className="staff-card__locations">
+                            <p className="staff-card__locations-label">Locations</p>
                             {locations.map((loc, i) => (
-                              <p key={i} style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#555' }}>
-                                {loc}
-                              </p>
+                              <p key={i} className="staff-card__location">{loc}</p>
                             ))}
                           </div>
                         )}
                       </div>
-                    </div>
+                    </article>
                   );
                 })}
               </div>
