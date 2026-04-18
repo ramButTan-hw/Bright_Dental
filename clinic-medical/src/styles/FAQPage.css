@@ -67,3 +67,9 @@
 .faq-entry__answer a:hover {
   color: #006a6a;
 }
+
+@media (max-width: 600px) {
+  .faq-container {
+    padding: 20px;
+  }
+}
