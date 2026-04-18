@@ -55,8 +55,8 @@ export default function Services() {
         </div>
 
         <div className="services-grid">
-          {services.map((service, index) => (
-            <div key={index} className="service-card">
+          {services.map((service) => (
+            <div key={service.title} className="service-card">
               <div className="service-icon-wrapper">
                 <div className="service-icon" aria-hidden="true">{service.marker}</div>
               </div>

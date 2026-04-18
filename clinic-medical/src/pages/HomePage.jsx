@@ -46,7 +46,7 @@ function HomePage() {
         <div className="slides-container">
           {slides.map((slide, index) => (
             <div
-              key={index}
+              key={slide.pitch}
               className={`slide ${index === currentSlide ? 'active' : ''}`}
               style={{
                 backgroundImage: `url('${slide.image}')`,
@@ -70,9 +70,9 @@ function HomePage() {
 
         {/* Slide Indicators */}
         <div className="slide-indicators">
-          {slides.map((_, index) => (
+          {slides.map((slide, index) => (
             <div
-              key={index}
+              key={slide.pitch}
               className={`indicator ${index === currentSlide ? 'active' : ''}`}
               onClick={() => setCurrentSlide(index)}
             ></div>
