@@ -140,10 +140,18 @@ const queries = {
       COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS amount_refunded,
       GREATEST(i.patient_amount - COALESCE(SUM(pay.payment_amount), 0), 0) AS amount_due,
       i.payment_status,
+      i.fee_note,
       i.created_at,
       a.appointment_id,
       a.appointment_date,
-      a.appointment_time
+      a.appointment_time,
+      (
+        SELECT GROUP_CONCAT(COALESCE(apc.description, tp.procedure_code) ORDER BY tp.plan_id SEPARATOR ', ')
+        FROM treatment_plans tp
+        LEFT JOIN ada_procedure_codes apc ON apc.procedure_code = tp.procedure_code
+        WHERE tp.patient_id = a.patient_id
+          AND tp.start_date = DATE(a.appointment_date)
+      ) AS procedure_reasons
     FROM invoices i
     JOIN appointments a ON i.appointment_id = a.appointment_id
     LEFT JOIN payments pay ON pay.invoice_id = i.invoice_id
@@ -154,10 +162,12 @@ const queries = {
       i.insurance_covered_amount,
       i.patient_amount,
       i.payment_status,
+      i.fee_note,
       i.created_at,
       a.appointment_id,
       a.appointment_date,
-      a.appointment_time
+      a.appointment_time,
+      a.patient_id
     ORDER BY i.created_at DESC
   `,
 
