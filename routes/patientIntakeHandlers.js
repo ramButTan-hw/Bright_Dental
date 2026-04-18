@@ -8,6 +8,13 @@ function createPatientIntakeHandlers(deps) {
     preferredTimeOptions
   } = deps;
 
+  function normalizeTenDigitPhone(value) {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+    if (!digits) return null;
+    if (digits.length !== 10) return '';
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
   function getPainSymptoms(req, res) {
     pool.query(
       'SELECT pain_symptom_id, symptom_label, display_order FROM intake_pain_symptoms WHERE is_active = TRUE ORDER BY display_order ASC',
@@ -56,15 +63,14 @@ function createPatientIntakeHandlers(deps) {
       return sendJSON(res, 400, { error: 'Please select a valid gender.' });
     }
 
-    const phonePattern = /^\(\d{3}\) \d{3}-\d{4}$/;
-    const normalizedPhone = String(phone).trim();
-    const normalizedEmergencyContactPhone = String(emergencyContactPhone).trim();
+    const normalizedPhone = normalizeTenDigitPhone(phone);
+    const normalizedEmergencyContactPhone = normalizeTenDigitPhone(emergencyContactPhone);
 
-    if (!phonePattern.test(normalizedPhone)) {
-      return sendJSON(res, 400, { error: 'Phone must be in the format (XXX) XXX-XXXX' });
+    if (!normalizedPhone) {
+      return sendJSON(res, 400, { error: 'Phone must contain exactly 10 digits' });
     }
-    if (!phonePattern.test(normalizedEmergencyContactPhone)) {
-      return sendJSON(res, 400, { error: 'Emergency contact phone must be in the format (XXX) XXX-XXXX' });
+    if (!normalizedEmergencyContactPhone) {
+      return sendJSON(res, 400, { error: 'Emergency contact phone must contain exactly 10 digits' });
     }
 
     const normalizedSsn = String(ssn).trim();
@@ -72,7 +78,7 @@ function createPatientIntakeHandlers(deps) {
     const normalizedAddress = String(address || '').trim();
     const normalizedCity = String(city || '').trim();
     const normalizedState = String(state || '').trim().toUpperCase();
-    const normalizedZipcode = String(zipcode || '').trim();
+    const normalizedZipcode = String(zipcode || '').replace(/\D/g, '');
     const normalizedEmergencyContactName = String(emergencyContactName).trim();
     const ssnPattern = /^\d{3}-\d{2}-\d{4}$/;
     const driversLicensePattern = /^[A-Z0-9-]{5,20}$/;
@@ -99,7 +105,7 @@ function createPatientIntakeHandlers(deps) {
     if (!normalizedState || !/^[A-Z]{2}$/.test(normalizedState)) {
       return sendJSON(res, 400, { error: 'State must be a 2-letter abbreviation (e.g., TX)' });
     }
-    if (!normalizedZipcode || !/^\d{5}(-\d{4})?$/.test(normalizedZipcode)) {
+    if (!normalizedZipcode || !/^\d{5}$/.test(normalizedZipcode)) {
       return sendJSON(res, 400, { error: 'Zip code must be 5 digits (e.g., 77004)' });
     }
 
@@ -204,7 +210,7 @@ function createPatientIntakeHandlers(deps) {
     }
 
     if (preferredTimes.length === 0) {
-      return sendJSON(res, 400, { error: 'Please choose at least one available time between 9:00 AM and 7:00 PM' });
+      return sendJSON(res, 400, { error: 'Please choose at least one available time between 8:00 AM and 7:00 PM' });
     }
 
     pool.getConnection((err, conn) => {
@@ -220,7 +226,7 @@ function createPatientIntakeHandlers(deps) {
         }
 
         const userQuery = 'INSERT INTO users (user_username, password_hash, user_email, user_phone, user_role) VALUES (?, SHA2(?, 256), ?, ?, ?)';
-        conn.query(userQuery, [username, password, email, phone, 'PATIENT'], (userErr, userResult) => {
+        conn.query(userQuery, [username, password, email, normalizedPhone, 'PATIENT'], (userErr, userResult) => {
           if (userErr) {
             return conn.rollback(() => {
               conn.release();
@@ -255,7 +261,7 @@ function createPatientIntakeHandlers(deps) {
               lastName,
               dob,
               numericGender,
-              phone,
+              normalizedPhone,
               email,
               normalizedSsn,
               normalizedDriversLicense,
@@ -368,8 +374,8 @@ function createPatientIntakeHandlers(deps) {
 
                       if (Number.isInteger(insuranceCompanyId) && insuranceCompanyId > 0 && insuranceMemberId) {
                         conn.query(
-                          `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, created_by, updated_by)
-                           VALUES (?, ?, ?, ?, TRUE, 'PORTAL', 'PORTAL')`,
+                          `INSERT INTO insurance (patient_id, company_id, member_id, group_number, is_primary, effective_date, created_by, updated_by)
+                           VALUES (?, ?, ?, ?, TRUE, CURDATE(), 'PORTAL', 'PORTAL')`,
                           [patientId, insuranceCompanyId, insuranceMemberId, String(insurance.groupNumber || '').trim() || null],
                           (insuranceErr) => {
                             if (insuranceErr) {
@@ -473,7 +479,7 @@ function createPatientIntakeHandlers(deps) {
     }
 
     if (preferredTimes.length === 0) {
-      return sendJSON(res, 400, { error: 'Please choose at least one available time between 9:00 AM and 7:00 PM.' });
+      return sendJSON(res, 400, { error: 'Please choose at least one available time between 8:00 AM and 7:00 PM.' });
     }
 
     pool.getConnection((err, conn) => {
@@ -552,6 +558,21 @@ function createPatientIntakeHandlers(deps) {
             }
           };
 
+        const deleteDoctorTimeOffNotificationTask = (callback) => {
+          if (!isReschedule || !appointmentId) {
+            return callback();
+          }
+
+          conn.query(
+            `DELETE FROM receptionist_notifications
+             WHERE patient_id = ?
+               AND notification_type = 'DOCTOR_TIME_OFF'
+               AND source_table = 'doctor_time_off'`,
+            [patientId],
+            (notificationErr) => callback(notificationErr)
+          );
+        };
+
         enforceCreateRulesTask((ruleErr) => {
           if (ruleErr) {
             return conn.rollback(() => {
@@ -573,85 +594,95 @@ function createPatientIntakeHandlers(deps) {
                 });
             }
 
-            saveIntakeData(
-                conn,
-                patientId,
-                medicalHistory,
-                medicalHistoryOtherText,
-                adverseReactions,
-                medications,
-                dentalFindings,
-                dentalHistory,
-                sleepSocial,
-                tobacco,
-                caffeine,
-                painAssessment,
-                (intakeErr) => {
-                  if (intakeErr) {
-                    return conn.rollback(() => {
-                      conn.release();
-                      console.error('Error saving updated intake data:', intakeErr);
-                      sendJSON(res, 500, { error: 'Failed to save updated medical information' });
-                    });
-                  }
-      
-                  conn.query(
-                    `INSERT INTO appointment_preference_requests (
-                      patient_id,
-                      preferred_date,
-                      preferred_time,
-                      preferred_location,
-                      available_days,
-                      available_times,
-                      appointment_reason,
-                      request_status,
-                      created_by,
-                      updated_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
-                    [
-                      patientId,
-                      preferredDate,
-                      preferredTime,
-                      normalizedPreferredLocation,
-                      preferredWeekdays.join(', '),
-                      preferredTimes.join(', '),
-                      String(reason).trim()
-                    ],
-                    (preferenceErr, preferenceResult) => {
-                      if (preferenceErr) {
-                        return conn.rollback(() => {
-                          conn.release();
-                          console.error('Error saving new appointment preference request:', preferenceErr);
-                          sendJSON(res, 500, { error: 'Failed to save appointment preference' });
-                        });
-                      }
-      
-                      conn.commit((commitErr) => {
+            deleteDoctorTimeOffNotificationTask((notificationErr) => {
+              if (notificationErr) {
+                return conn.rollback(() => {
+                  conn.release();
+                  console.error('Error clearing doctor time off notification:', notificationErr);
+                  sendJSON(res, 500, { error: 'Failed to update doctor time off notification' });
+                });
+              }
+
+              saveIntakeData(
+                  conn,
+                  patientId,
+                  medicalHistory,
+                  medicalHistoryOtherText,
+                  adverseReactions,
+                  medications,
+                  dentalFindings,
+                  dentalHistory,
+                  sleepSocial,
+                  tobacco,
+                  caffeine,
+                  painAssessment,
+                  (intakeErr) => {
+                    if (intakeErr) {
+                      return conn.rollback(() => {
                         conn.release();
-                        if (commitErr) {
+                        console.error('Error saving updated intake data:', intakeErr);
+                        sendJSON(res, 500, { error: 'Failed to save updated medical information' });
+                      });
+                    }
+      
+                    conn.query(
+                      `INSERT INTO appointment_preference_requests (
+                        patient_id,
+                        preferred_date,
+                        preferred_time,
+                        preferred_location,
+                        available_days,
+                        available_times,
+                        appointment_reason,
+                        request_status,
+                        created_by,
+                        updated_by
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
+                      [
+                        patientId,
+                        preferredDate,
+                        preferredTime,
+                        normalizedPreferredLocation,
+                        preferredWeekdays.join(', '),
+                        preferredTimes.join(', '),
+                        String(reason).trim()
+                      ],
+                      (preferenceErr, preferenceResult) => {
+                        if (preferenceErr) {
                           return conn.rollback(() => {
-                            console.error('Commit failed:', commitErr);
-                            sendJSON(res, 500, { error: 'Failed to submit new appointment request' });
+                            conn.release();
+                            console.error('Error saving new appointment preference request:', preferenceErr);
+                            sendJSON(res, 500, { error: 'Failed to save appointment preference' });
                           });
                         }
       
-                        sendJSON(res, 201, {
-                          message: 'New appointment request submitted successfully.',
-                          appointmentPreferenceRequestId: preferenceResult.insertId,
-                          appointmentConfirmation: {
-                            date: preferredDate,
-                            startTime: preferredTime,
-                            availabilityDays: preferredWeekdays,
-                            availabilityTimes: preferredTimes,
-                            status: 'PREFERRED_PENDING',
-                            note: 'Your updated medical details and availability were received. Our receptionist will contact you to finalize your appointment.'
+                        conn.commit((commitErr) => {
+                          conn.release();
+                          if (commitErr) {
+                            return conn.rollback(() => {
+                              console.error('Commit failed:', commitErr);
+                              sendJSON(res, 500, { error: 'Failed to submit new appointment request' });
+                            });
                           }
+      
+                          sendJSON(res, 201, {
+                            message: 'New appointment request submitted successfully.',
+                            appointmentPreferenceRequestId: preferenceResult.insertId,
+                            appointmentConfirmation: {
+                              date: preferredDate,
+                              startTime: preferredTime,
+                              availabilityDays: preferredWeekdays,
+                              availabilityTimes: preferredTimes,
+                              status: 'PREFERRED_PENDING',
+                              note: 'Your updated medical details and availability were received. Our receptionist will contact you to finalize your appointment.'
+                            }
+                          });
                         });
-                      });
-                    }
-                  );
-                }
-              );
+                      }
+                    );
+                  }
+                );
+            });
           });
         });
       });
@@ -671,23 +702,48 @@ function createPatientIntakeHandlers(deps) {
           return sendJSON(res, 500, { error: 'Database error' });
         }
 
-        let snapshot = null;
-        if (snapshotRows?.[0]?.snapshot_json) {
-          try {
-            snapshot = typeof snapshotRows[0].snapshot_json === 'string'
-              ? JSON.parse(snapshotRows[0].snapshot_json)
-              : snapshotRows[0].snapshot_json;
-          } catch {
-            snapshot = null;
-          }
-        }
+        pool.query(
+          `SELECT medication_name, dosage, frequency, reason_for_use
+           FROM patient_current_medications
+           WHERE patient_id = ? AND is_active = 1
+           ORDER BY created_at DESC`,
+          [patientId],
+          (medErr, medRows) => {
+            if (medErr) {
+              console.error('Error fetching patient current medications:', medErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
 
-        const latestPreference = prefRows?.[0] || null;
-        sendJSON(res, 200, {
-          patientId,
-          snapshot,
-          latestPreference
-        });
+            let snapshot = null;
+            if (snapshotRows?.[0]?.snapshot_json) {
+              try {
+                snapshot = typeof snapshotRows[0].snapshot_json === 'string'
+                  ? JSON.parse(snapshotRows[0].snapshot_json)
+                  : snapshotRows[0].snapshot_json;
+              } catch {
+                snapshot = null;
+              }
+            }
+
+            // Always seed medications from the live DB table so edits are reflected
+            if (medRows && medRows.length > 0) {
+              if (!snapshot) snapshot = {};
+              snapshot.medications = medRows.map((m) => ({
+                name: m.medication_name,
+                dosage: m.dosage || '',
+                frequency: m.frequency || '',
+                reason: m.reason_for_use || ''
+              }));
+            }
+
+            const latestPreference = prefRows?.[0] || null;
+            sendJSON(res, 200, {
+              patientId,
+              snapshot,
+              latestPreference
+            });
+          }
+        );
       });
     });
   }
@@ -718,6 +774,7 @@ function createPatientIntakeHandlers(deps) {
         medicalHistory: medicalHistory || {},
         medicalHistoryOtherText: medicalHistoryOtherText || '',
         adverseReactions: adverseReactions || {},
+        medications: filteredMedications,
         dentalFindings: dentalFindings || {},
         dentalHistory: dentalHistory || {},
         sleepSocial: sleepSocial || {},
@@ -772,11 +829,16 @@ function createPatientIntakeHandlers(deps) {
         ]
       );
 
+      // Replace all active medications with the submitted list
+      await db.query(
+        `UPDATE patient_current_medications SET is_active = 0, updated_by = 'PORTAL' WHERE patient_id = ?`,
+        [patientId]
+      );
       for (const med of filteredMedications) {
         await db.query(
           `INSERT INTO patient_current_medications (
-            patient_id, medication_name, dosage, frequency, reason_for_use, created_by, updated_by
-          ) VALUES (?, ?, ?, ?, ?, 'PORTAL', 'PORTAL')`,
+            patient_id, medication_name, dosage, frequency, reason_for_use, is_active, created_by, updated_by
+          ) VALUES (?, ?, ?, ?, ?, 1, 'PORTAL', 'PORTAL')`,
           [patientId, med.name, med.dosage || null, med.frequency || null, med.reason || null]
         );
       }

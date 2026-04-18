@@ -33,6 +33,17 @@
   gap: 0.8rem;
 }
 
+.admin-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.admin-panel-header h2 {
+  margin: 0;
+}
+
 .admin-date-filter {
   display: grid;
   gap: 0.35rem;
@@ -80,6 +91,39 @@
   border-color: #0f6965;
 }
 
+.admin-tab-bar {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0.25rem 0 1rem;
+  border-bottom: 2px solid #dce8e7;
+  padding-bottom: 0.5rem;
+}
+
+.admin-tab-bar button {
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: #4a6c6a;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.admin-tab-bar button:hover {
+  background: #f0f8f7;
+  color: #0f6965;
+}
+
+.admin-tab-bar button.is-active {
+  background: #fff;
+  color: #0f6965;
+  border-color: #dce8e7 #dce8e7 #fff;
+  margin-bottom: -2px;
+}
+
 .admin-error,
 .admin-message,
 .admin-loading {
@@ -114,6 +158,71 @@
   align-items: flex-end;
 }
 
+.clinic-filter-grid {
+  margin-top: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.clinic-filter-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.clinic-filter-chips {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.clinic-filter-chip {
+  border: 1px solid #c5dcda;
+  border-radius: 999px;
+  padding: 0.28rem 0.65rem;
+  background: #f4faf9;
+  color: #17403e;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.recall-header-row {
+  align-items: flex-start;
+}
+
+.recall-header-copy {
+  flex: 1 1 380px;
+}
+
+.recall-primary-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.recall-filter-grid {
+  margin-top: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.recall-search-field {
+  grid-column: span 1;
+}
+
+.recall-generated-at {
+  margin-top: 0.65rem;
+}
+
+.clinic-generated-at {
+  margin: 0.4rem 0 0;
+}
+
 .admin-error {
   color: #9a1f1f;
 }
@@ -124,7 +233,7 @@
 
 .admin-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.8rem;
   margin-bottom: 1rem;
 }
@@ -155,8 +264,8 @@
 }
 
 .admin-grid-two {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
 
@@ -228,6 +337,30 @@
   font-size: 0.9rem;
 }
 
+.admin-inline-filter input {
+  border-radius: 10px;
+  border: 1px solid #b9d0ce;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.9rem;
+  min-width: 0;
+}
+
+.admin-btn {
+  border: 1px solid #0f6965;
+  border-radius: 10px;
+  background: #0f6965;
+  color: #fff;
+  padding: 0.48rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
 .notification-list {
   margin: 0;
   padding-left: 1rem;
@@ -237,6 +370,110 @@
   color: #5a2500;
 }
 
+.admin-toast-stack {
+  position: fixed;
+  right: clamp(1rem, 2.5vw, 2rem);
+  bottom: clamp(1rem, 2.5vw, 2rem);
+  z-index: 1200;
+  width: min(360px, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-toast-card {
+  border-radius: 14px;
+  border: 1px solid #d7dee8;
+  background: #ffffff;
+  box-shadow: 0 14px 28px rgba(9, 30, 66, 0.14);
+  padding: 0.8rem 0.9rem;
+}
+
+.admin-toast-card--info {
+  border-left: 4px solid #2563eb;
+}
+
+.admin-toast-card--warning {
+  border-left: 4px solid #d97706;
+}
+
+.admin-toast-card--critical {
+  border-left: 4px solid #dc2626;
+}
+
+.admin-toast-card__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.admin-toast-card__eyebrow {
+  margin: 0;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7280;
+}
+
+.admin-toast-card h3 {
+  margin: 0.1rem 0 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.admin-toast-card__message {
+  margin: 0.55rem 0 0.6rem;
+  color: #334155;
+  font-size: 0.92rem;
+}
+
+.admin-toast-card__close {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.admin-toast-card__action {
+  border: none;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  cursor: pointer;
+}
+
+.overview-grid {
+  gap: 1rem;
+}
+
+.overview-queue-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.overview-queue-item {
+  border: 1px solid #d6e7e5;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.overview-queue-item strong {
+  color: #153736;
+  font-size: 0.92rem;
+}
+
+.overview-queue-item .muted {
+  margin: 0.2rem 0 0;
+}
+
 .muted {
   color: #506463;
   font-size: 0.9rem;
@@ -244,6 +481,25 @@
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.report-table-wrap {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.report-table-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 0.7rem;
+}
+
+.report-table-pager span {
+  color: #2a4f4d;
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
 table {
@@ -282,6 +538,18 @@ th {
   border: 1px solid #b9d0ce;
   padding: 0.55rem 0.65rem;
   font-size: 0.9rem;
+}
+
+.admin-form .admin-input-error {
+  border-color: #b42318;
+  box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.12);
+}
+
+.admin-field-error {
+  margin: -0.1rem 0 0.25rem;
+  color: #b42318;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .admin-form button {
@@ -333,11 +601,29 @@ th {
   .admin-grid-two {
     grid-template-columns: 1fr;
   }
+
+  .clinic-filter-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .admin-page {
     padding-top: 8rem;
+  }
+
+  .admin-toast-stack {
+    right: 0.7rem;
+    left: 0.7rem;
+    width: auto;
+  }
+
+  .clinic-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recall-filter-grid {
+    grid-template-columns: 1fr;
   }
 
   .admin-header {

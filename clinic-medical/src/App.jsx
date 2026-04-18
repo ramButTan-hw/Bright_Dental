@@ -18,6 +18,7 @@ import DentistPatientProfilePage from './pages/DentistPatientProfilePage';
 import ReceptionistPage from './pages/ReceptionistPage';
 import ReceptionistProfilePage from './pages/ReceptionistProfilePage';
 import ReceptionistPatientProfilePage from './pages/ReceptionistPatientProfilePage';
+import ReceptionistRecallPage from './pages/ReceptionistRecallPage';
 import CreateAppointmentPage from './pages/CreateAppointmentPage';
 import RegisterPatientPage from './pages/RegisterPatientPage';
 import AssignAppointmentPage from './pages/AssignAppointmentPage';
@@ -88,6 +89,14 @@ function App() {
           element={
             <RequireStaff>
               <ReceptionistProfilePage />
+            </RequireStaff>
+          }
+        />
+        <Route
+          path="/receptionist/recall"
+          element={
+            <RequireStaff>
+              <ReceptionistRecallPage />
             </RequireStaff>
           }
         />

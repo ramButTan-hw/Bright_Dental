@@ -1,10 +1,6 @@
 # Medical Clinic Project
 Team 1 COSC 3380
-
-## Prerequisites
-- Node.js (v14+)
-- MySQL (local or remote)
-- npm or yarn
+bright-dental.up.railway.app
 
 ## Setup Instructions
 
@@ -31,7 +27,7 @@ cd ..
 
 ### 3. Initialize Database
 ```bash
-# Run schema migrations
+# Run schema migrations (auto-applies any pending migrations)
 node database/init-db.js
 ```
 
@@ -59,52 +55,51 @@ npm run dev
 cd clinic-medical
 npm run build
 
-# Serve backend (frontend static files must be served separately or integrated)
+# Serve backend
 node server.js
 ```
 
-## API Endpoints
+## Login Credentials For Live Server
 
-- **POST** `/api/patients/check-email` - Verify if email exists
-- **POST** `/api/patients/register` - Register new patient
-- **GET** `/api/intake/pain-symptoms` - Fetch pain assessment symptoms
-
-## Configuring Frontend API URL
-
-The frontend by default connects to `http://localhost:3001`. To change this:
-
-1. Create/edit `.env` file in `clinic-medical/`:
-```
-VITE_API_URL=http://your-api-url:port
-```
-
-2. Rebuild the frontend:
 ```bash
-cd clinic-medical
-npm run build
+MiaBorbon12
+Password1!
+Adrian12
+Password1!
+Christian12
+Password1!
+patient_tz_b
+Password123!
+admin
+password
 ```
 
-## Troubleshooting
+## Features
 
-### "We could not verify your email right now" Error
-1. **Check backend is running**: Ensure `node server.js` is running on port 3001
-2. **Check frontend can reach backend**: Verify `http://localhost:3001/api/patients/check-email` is accessible
-3. **Check browser console**: Open DevTools and look for network/error messages
-4. **Check server logs**: Look for error messages in the terminal running `node server.js`
-5. **Verify VITE_API_URL**: If using custom URL, make sure it's correctly set in `.env`
+### Patient Portal
+- Book, reschedule, and cancel appointments
+- View billing & invoices with procedure reasons and fee notes
+- Pay outstanding invoices online
+- View dental findings and treatment plans
+- Manage insurance and pharmacy preferences
 
-### Database Connection Issues
-- Verify MySQL service is running
-- Check `.env` database credentials
-- Ensure `DB_NAME=medical-clinic` database exists
-- Check firewall/network connectivity to database host
+### Receptionist Portal
+- View and manage daily appointments by date
+- Check in patients (with confirmation prompt)
+- Mark late arrivals — applies a **$25.00 late arrival fee** to the invoice
+- Mark no-shows — applies a **$50.00 no-show fee** to the invoice
+- Schedule new appointments and manage preference requests
+- Handle insurance and pharmacy change requests
 
-## Development Notes
-- Backend uses plain Node.js HTTP server (no Express.js)
-- Frontend uses React with Vite build tool
-- Database: MySQL with normalized intake schemas
-- CORS is enabled for all origins during development
+### Dentist Portal
+- View assigned patient profiles
+- Add, edit, and delete dental findings
+- Create and manage treatment plans
+- Record completed procedures
 
-## Git Workflow
-- Create a feature branch before making changes
-- Push changes to branch before merging to main branch
+### Admin Dashboard
+- Staff and location management (activate/deactivate dentists and receptionists)
+- Appointment reports with filters (date range, provider, location, payment status)
+- Financial Detail report showing per-appointment invoice breakdown (gross charge, insurance covered, patient responsibility, payments, refunds, balance, fee notes)
+- Metric cards: Total Charged, Insurance Covered, Patient Responsibility, Amount Paid, Refunded, Amount Due
+

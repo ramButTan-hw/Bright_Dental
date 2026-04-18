@@ -1,145 +1,21 @@
 const url = require('url');
+const { createReportHelpers } = require('./reportHelpers');
 
 function createDentistAppointmentRoutes({ pool, sendJSON }) {
+  const { createReportFiltersFromQuery, fetchTreatmentRowsForReport, fetchFindingRowsForReport, buildGroupedReport } = createReportHelpers({ pool });
+
   function normalizeDateParam(value) {
     const raw = String(value || '').trim();
     return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
   }
 
-  function normalizeOptionalFilter(value) {
-    return String(value || '').trim();
+  function normalizeDateValue(value) {
+    const raw = String(value || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
   }
 
-  function createReportFiltersFromQuery(query) {
-    const fromDate = normalizeDateParam(query.fromDate);
-    const toDate = normalizeDateParam(query.toDate);
-    const procedureCode = normalizeOptionalFilter(query.procedureCode).toUpperCase();
-    const toothNumber = normalizeOptionalFilter(query.toothNumber);
-    const surface = normalizeOptionalFilter(query.surface).toUpperCase();
-
-    if (!fromDate || !toDate) {
-      return { error: 'fromDate and toDate are required in YYYY-MM-DD format' };
-    }
-    if (new Date(`${fromDate}T00:00:00`).getTime() > new Date(`${toDate}T00:00:00`).getTime()) {
-      return { error: 'fromDate must be before or equal to toDate' };
-    }
-
-    return {
-      fromDate,
-      toDate,
-      procedureCode,
-      toothNumber,
-      surface
-    };
-  }
-
-  function fetchTreatmentRowsForReport({ patientId = null, fromDate, toDate, procedureCode, toothNumber, surface }, callback) {
-    const includeAllPatients = !Number.isInteger(patientId) || patientId <= 0;
-    pool.query(
-      `SELECT
-        tp.plan_id AS treatment_id,
-        tp.patient_id,
-        CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
-        tp.start_date AS visit_date,
-        tp.procedure_code,
-        apc.description AS treatment_description,
-        tp.tooth_number,
-        tp.surface,
-        tp.estimated_cost AS treatment_cost,
-        tp.notes,
-        tp.created_at
-      FROM treatment_plans tp
-      JOIN patients p ON p.patient_id = tp.patient_id
-      LEFT JOIN ada_procedure_codes apc ON apc.procedure_code = tp.procedure_code
-      WHERE (? = TRUE OR tp.patient_id = ?)
-        AND tp.start_date BETWEEN ? AND ?
-        AND (? = '' OR tp.procedure_code = ?)
-        AND (? = '' OR tp.tooth_number = ?)
-        AND (? = '' OR UPPER(COALESCE(tp.surface, '')) = ?)
-      ORDER BY tp.start_date DESC, tp.created_at DESC, tp.plan_id DESC`,
-      [includeAllPatients, patientId || 0, fromDate, toDate, procedureCode, procedureCode, toothNumber, toothNumber, surface, surface],
-      (err, rows) => callback(err, rows || [])
-    );
-  }
-
-  function fetchFindingRowsForReport({ patientId = null, fromDate, toDate, toothNumber, surface }, callback) {
-    const includeAllPatients = !Number.isInteger(patientId) || patientId <= 0;
-    pool.query(
-      `SELECT
-        df.patient_id,
-        COALESCE(a.appointment_date, DATE(df.date_logged)) AS visit_date,
-        GROUP_CONCAT(
-          CONCAT(
-            'Tooth ', COALESCE(df.tooth_number, 'N/A'),
-            CASE WHEN COALESCE(df.surface, '') <> '' THEN CONCAT(' (', df.surface, ')') ELSE '' END,
-            ': ', COALESCE(df.condition_type, 'Finding'),
-            CASE WHEN COALESCE(df.notes, '') <> '' THEN CONCAT(' - ', df.notes) ELSE '' END
-          )
-          ORDER BY df.finding_id ASC SEPARATOR ' | '
-        ) AS finding_summary
-      FROM dental_findings df
-      LEFT JOIN appointments a ON a.appointment_id = df.appointment_id
-      WHERE (? = TRUE OR df.patient_id = ?)
-        AND COALESCE(a.appointment_date, DATE(df.date_logged)) BETWEEN ? AND ?
-        AND (? = '' OR df.tooth_number = ?)
-        AND (? = '' OR UPPER(COALESCE(df.surface, '')) = ?)
-      GROUP BY df.patient_id, COALESCE(a.appointment_date, DATE(df.date_logged))
-      ORDER BY visit_date DESC`,
-      [includeAllPatients, patientId || 0, fromDate, toDate, toothNumber, toothNumber, surface, surface],
-      (err, rows) => callback(err, rows || [])
-    );
-  }
-
-  function buildGroupedReport(treatmentRows, findingRows) {
-    const findingMap = new Map();
-    findingRows.forEach((item) => {
-      const dateKey = (item.visit_date instanceof Date ? item.visit_date.toISOString().slice(0, 10) : String(item.visit_date || '').slice(0, 10)) || 'Unknown date';
-      const key = `${Number(item.patient_id || 0)}::${dateKey}`;
-      findingMap.set(key, String(item.finding_summary || ''));
-    });
-
-    const grouped = new Map();
-
-    treatmentRows.forEach((row) => {
-      const dateKey = (row.visit_date instanceof Date ? row.visit_date.toISOString().slice(0, 10) : String(row.visit_date || '').slice(0, 10)) || 'Unknown date';
-      const patientId = Number(row.patient_id || 0);
-      const patientName = String(row.patient_name || 'Unknown patient');
-      const groupKey = `${patientId}::${dateKey}`;
-
-      if (!grouped.has(groupKey)) {
-        grouped.set(groupKey, {
-          patientId,
-          patientName,
-          visitDate: dateKey,
-          visitCost: 0,
-          entries: []
-        });
-      }
-
-      const bucket = grouped.get(groupKey);
-      const numericCost = Number(row.treatment_cost);
-      if (Number.isFinite(numericCost) && numericCost > 0) {
-        bucket.visitCost += numericCost;
-      }
-
-      bucket.entries.push({
-        treatmentId: row.treatment_id,
-        procedureCode: row.procedure_code,
-        treatmentDescription: row.treatment_description,
-        toothNumber: row.tooth_number,
-        surface: row.surface,
-        cost: Number.isFinite(numericCost) ? numericCost : 0,
-        finding: findingMap.get(groupKey) || '',
-        notes: row.notes,
-        createdAt: row.created_at
-      });
-    });
-
-    return Array.from(grouped.values()).sort((a, b) => {
-      const dateCompare = String(b.visitDate).localeCompare(String(a.visitDate));
-      if (dateCompare !== 0) return dateCompare;
-      return a.patientName.localeCompare(b.patientName);
-    });
+  function normalizeBooleanValue(value) {
+    return value === true || value === 1 || String(value).toLowerCase() === 'true';
   }
 
   function getDentistSinglePatientReport(req, res) {
@@ -178,45 +54,6 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
             ...filters
           },
           summary: {
-            totalVisits: groupedVisits.length,
-            totalEntries: treatmentRows.length,
-            totalCost
-          },
-          visits: groupedVisits
-        });
-      });
-    });
-  }
-
-  function getDentistMultiPatientReport(req, res) {
-    const parsedUrl = url.parse(req.url, true);
-    const filters = createReportFiltersFromQuery(parsedUrl.query);
-    if (filters.error) {
-      return sendJSON(res, 400, { error: filters.error });
-    }
-
-    fetchTreatmentRowsForReport({ ...filters }, (treatmentErr, treatmentRows) => {
-      if (treatmentErr) {
-        console.error('Error generating multi-patient treatment report:', treatmentErr);
-        return sendJSON(res, 500, { error: 'Database error' });
-      }
-
-      fetchFindingRowsForReport({ ...filters }, (findingErr, findingRows) => {
-        if (findingErr) {
-          console.error('Error generating multi-patient finding report:', findingErr);
-          return sendJSON(res, 500, { error: 'Database error' });
-        }
-
-        const groupedVisits = buildGroupedReport(treatmentRows, findingRows);
-        const uniquePatients = new Set(groupedVisits.map((visit) => visit.patientId));
-        const totalCost = groupedVisits.reduce((sum, visit) => sum + Number(visit.visitCost || 0), 0);
-
-        return sendJSON(res, 200, {
-          reportType: 'MULTI_PATIENT_TREATMENT_FINDING',
-          generatedAt: new Date().toISOString(),
-          filters,
-          summary: {
-            totalPatients: uniquePatients.size,
             totalVisits: groupedVisits.length,
             totalEntries: treatmentRows.length,
             totalCost
@@ -320,119 +157,132 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     });
   }
 
-  function generateInvoiceForAppointment(appointmentId, callback) {
-    // Check if invoice already exists for this appointment
+  function computeInvoiceBreakdownForAppointment(appointmentId, callback) {
     pool.query(
-      'SELECT invoice_id FROM invoices WHERE appointment_id = ? LIMIT 1',
+      `SELECT a.patient_id, a.appointment_date
+       FROM appointments a
+       WHERE a.appointment_id = ?
+       LIMIT 1`,
       [appointmentId],
-      (checkErr, existing) => {
-        if (checkErr) return callback(checkErr);
-        if (existing?.length) return callback(null); // already has invoice
+      (apptErr, apptRows) => {
+        if (apptErr) return callback(apptErr);
+        if (!apptRows?.length) return callback(null, null);
 
-        // Get appointment details (patient, date) and treatment costs
+        const { patient_id: patientId, appointment_date: apptDate } = apptRows[0];
+        const dateStr = apptDate instanceof Date
+          ? apptDate.toISOString().slice(0, 10)
+          : String(apptDate || '').slice(0, 10);
+
         pool.query(
-          `SELECT a.patient_id, a.appointment_date
-           FROM appointments a
-           WHERE a.appointment_id = ?
-           LIMIT 1`,
-          [appointmentId],
-          (apptErr, apptRows) => {
-            if (apptErr) return callback(apptErr);
-            if (!apptRows?.length) return callback(null);
+          `SELECT tp.procedure_code, tp.estimated_cost
+           FROM treatment_plans tp
+           WHERE tp.patient_id = ? AND tp.start_date = ?`,
+          [patientId, dateStr],
+          (tpErr, treatmentRows) => {
+            if (tpErr) return callback(tpErr);
 
-            const { patient_id: patientId, appointment_date: apptDate } = apptRows[0];
-            const dateStr = apptDate instanceof Date
-              ? apptDate.toISOString().slice(0, 10)
-              : String(apptDate || '').slice(0, 10);
+            const totalAmountRaw = (treatmentRows || []).reduce((sum, row) => {
+              const cost = Number(row.estimated_cost || 0);
+              return sum + (Number.isFinite(cost) ? cost : 0);
+            }, 0);
+            const totalAmount = Math.round(Math.max(totalAmountRaw, 0) * 100) / 100;
 
-            // Get all treatment plans for this patient on this appointment date
+            if (totalAmount <= 0) {
+              return callback(null, {
+                patientId,
+                insuranceId: null,
+                totalAmount: 0,
+                insuranceCovered: 0,
+                patientAmount: 0
+              });
+            }
+
             pool.query(
-              `SELECT tp.procedure_code, tp.estimated_cost
-               FROM treatment_plans tp
-               WHERE tp.patient_id = ? AND tp.start_date = ?`,
-              [patientId, dateStr],
-              (tpErr, treatmentRows) => {
-                if (tpErr) return callback(tpErr);
-
-                const totalAmount = treatmentRows.reduce((sum, row) => {
-                  const cost = Number(row.estimated_cost || 0);
-                  return sum + (Number.isFinite(cost) ? cost : 0);
-                }, 0);
-
-                if (totalAmount <= 0) {
-                  // No treatments with cost — still create a zero invoice
-                  return insertInvoice(appointmentId, patientId, null, 0, 0, 0, callback);
+              `SELECT i.insurance_id, i.company_id
+               FROM insurance i
+               WHERE i.patient_id = ? AND i.is_primary = TRUE
+               ORDER BY i.insurance_id DESC
+               LIMIT 1`,
+              [patientId],
+              (insErr, insRows) => {
+                if (insErr) return callback(insErr);
+                if (!insRows?.length) {
+                  return callback(null, {
+                    patientId,
+                    insuranceId: null,
+                    totalAmount,
+                    insuranceCovered: 0,
+                    patientAmount: totalAmount
+                  });
                 }
 
-                // Get patient's primary insurance
+                const { insurance_id: insuranceId, company_id: companyId } = insRows[0];
+                const procedureCodes = (treatmentRows || [])
+                  .map((row) => (row.procedure_code ? String(row.procedure_code).trim().toUpperCase() : null))
+                  .filter(Boolean);
+
+                if (!procedureCodes.length) {
+                  return callback(null, {
+                    patientId,
+                    insuranceId,
+                    totalAmount,
+                    insuranceCovered: 0,
+                    patientAmount: totalAmount
+                  });
+                }
+
+                const placeholders = procedureCodes.map(() => '?').join(',');
                 pool.query(
-                  `SELECT i.insurance_id, i.company_id
-                   FROM insurance i
-                   WHERE i.patient_id = ? AND i.is_primary = TRUE
-                   LIMIT 1`,
-                  [patientId],
-                  (insErr, insRows) => {
-                    if (insErr) return callback(insErr);
+                  `SELECT procedure_code, coverage_percent, copay_amount
+                   FROM insurance_coverage
+                   WHERE company_id = ? AND procedure_code IN (${placeholders})`,
+                  [companyId, ...procedureCodes],
+                  (covErr, covRows) => {
+                    if (covErr) return callback(covErr);
 
-                    if (!insRows?.length) {
-                      // No insurance — patient pays full amount
-                      return insertInvoice(appointmentId, patientId, null, totalAmount, 0, totalAmount, callback);
-                    }
+                    const coverageMap = new Map();
+                    (covRows || []).forEach((row) => {
+                      coverageMap.set(String(row.procedure_code).toUpperCase(), {
+                        percent: Number(row.coverage_percent || 0),
+                        copay: Number(row.copay_amount || 0)
+                      });
+                    });
 
-                    const { insurance_id: insuranceId, company_id: companyId } = insRows[0];
+                    let insuranceCovered = 0;
+                    let patientAmount = 0;
 
-                    // Calculate coverage from insurance_coverage table
-                    const procedureCodes = treatmentRows
-                      .map((row) => row.procedure_code)
-                      .filter(Boolean);
+                    (treatmentRows || []).forEach((row) => {
+                      const cost = Number(row.estimated_cost || 0);
+                      if (!Number.isFinite(cost) || cost <= 0) return;
 
-                    if (!procedureCodes.length) {
-                      // No procedure codes — no coverage lookup possible
-                      return insertInvoice(appointmentId, patientId, insuranceId, totalAmount, 0, totalAmount, callback);
-                    }
+                      const code = row.procedure_code ? String(row.procedure_code).trim().toUpperCase() : null;
+                      const cov = code ? coverageMap.get(code) : null;
 
-                    const placeholders = procedureCodes.map(() => '?').join(',');
-                    pool.query(
-                      `SELECT procedure_code, coverage_percent, copay_amount
-                       FROM insurance_coverage
-                       WHERE company_id = ? AND procedure_code IN (${placeholders})`,
-                      [companyId, ...procedureCodes],
-                      (covErr, covRows) => {
-                        if (covErr) return callback(covErr);
-
-                        const coverageMap = new Map();
-                        (covRows || []).forEach((row) => {
-                          coverageMap.set(row.procedure_code, {
-                            percent: Number(row.coverage_percent || 0),
-                            copay: Number(row.copay_amount || 0)
-                          });
-                        });
-
-                        let insuranceCovered = 0;
-                        let patientOwes = 0;
-
-                        treatmentRows.forEach((row) => {
-                          const cost = Number(row.estimated_cost || 0);
-                          if (!Number.isFinite(cost) || cost <= 0) return;
-
-                          const cov = coverageMap.get(row.procedure_code);
-                          if (cov) {
-                            const covered = cost * (cov.percent / 100);
-                            const patientPortion = cost - covered + cov.copay;
-                            insuranceCovered += covered;
-                            patientOwes += patientPortion;
-                          } else {
-                            // No coverage record — patient pays full
-                            patientOwes += cost;
-                          }
-                        });
-
-                        insuranceCovered = Math.round(insuranceCovered * 100) / 100;
-                        patientOwes = Math.round(patientOwes * 100) / 100;
-
-                        insertInvoice(appointmentId, patientId, insuranceId, totalAmount, insuranceCovered, patientOwes, callback);
+                      if (!cov) {
+                        patientAmount += cost;
+                        return;
                       }
-                    );
+
+                      const coveredByPercent = Math.max(0, Math.min(cost, cost * (cov.percent / 100)));
+                      const minimumPatient = Math.max(0, Math.min(cost, cov.copay || 0));
+                      const basePatient = Math.max(0, cost - coveredByPercent);
+                      const finalPatient = Math.max(basePatient, minimumPatient);
+                      const finalInsurance = Math.max(0, cost - finalPatient);
+
+                      patientAmount += finalPatient;
+                      insuranceCovered += finalInsurance;
+                    });
+
+                    insuranceCovered = Math.round(insuranceCovered * 100) / 100;
+                    patientAmount = Math.round(patientAmount * 100) / 100;
+
+                    callback(null, {
+                      patientId,
+                      insuranceId,
+                      totalAmount,
+                      insuranceCovered,
+                      patientAmount
+                    });
                   }
                 );
               }
@@ -443,16 +293,94 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     );
   }
 
-  function insertInvoice(appointmentId, patientId, insuranceId, amount, insuranceCovered, patientAmount, callback) {
-    const paymentStatus = patientAmount <= 0 ? 'Paid' : 'Unpaid';
+  function upsertInvoiceForAppointment(appointmentId, callback) {
+    computeInvoiceBreakdownForAppointment(appointmentId, (calcErr, breakdown) => {
+      if (calcErr) return callback(calcErr);
+      if (!breakdown) return callback(null, null);
+
+      pool.query(
+        `SELECT i.invoice_id,
+                COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS total_paid,
+                COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS total_refunded
+         FROM invoices i
+         WHERE i.appointment_id = ?
+         LIMIT 1`,
+        [appointmentId],
+        (existingErr, existingRows) => {
+          if (existingErr) return callback(existingErr);
+
+          const existing = existingRows?.[0];
+          const netPaid = existing ? (Number(existing.total_paid || 0) - Number(existing.total_refunded || 0)) : 0;
+          const paymentStatus = breakdown.patientAmount <= 0
+            ? 'Paid'
+            : netPaid >= breakdown.patientAmount
+              ? 'Paid'
+              : netPaid > 0
+                ? 'Partial'
+                : 'Unpaid';
+
+          if (!existing) {
+            return insertInvoice(
+              appointmentId,
+              breakdown.insuranceId,
+              breakdown.totalAmount,
+              breakdown.insuranceCovered,
+              breakdown.patientAmount,
+              paymentStatus,
+              callback
+            );
+          }
+
+          pool.query(
+            `UPDATE invoices
+             SET insurance_id = ?,
+                 amount = ?,
+                 insurance_covered_amount = ?,
+                 patient_amount = ?,
+                 payment_status = ?,
+                 updated_by = 'SYSTEM_AUTO_RECALC'
+             WHERE invoice_id = ?`,
+            [
+              breakdown.insuranceId,
+              breakdown.totalAmount,
+              breakdown.insuranceCovered,
+              breakdown.patientAmount,
+              paymentStatus,
+              existing.invoice_id
+            ],
+            (updateErr) => {
+              if (updateErr) return callback(updateErr);
+              callback(null, {
+                invoiceId: Number(existing.invoice_id),
+                ...breakdown,
+                paymentStatus,
+                netPaid
+              });
+            }
+          );
+        }
+      );
+    });
+  }
+
+  function generateInvoiceForAppointment(appointmentId, callback) {
+    upsertInvoiceForAppointment(appointmentId, (err) => callback(err || null));
+  }
+
+  function insertInvoice(appointmentId, insuranceId, amount, insuranceCovered, patientAmount, paymentStatus, callback) {
     pool.query(
       `INSERT INTO invoices (appointment_id, insurance_id, amount, insurance_covered_amount, patient_amount, payment_status, created_by, updated_by)
        VALUES (?, ?, ?, ?, ?, ?, 'SYSTEM_AUTO', 'SYSTEM_AUTO')`,
       [appointmentId, insuranceId, amount, insuranceCovered, patientAmount, paymentStatus],
       (err, result) => {
         if (err) return callback(err);
-        console.log(`Auto-generated invoice #${result.insertId} for appointment ${appointmentId}: total=$${amount.toFixed(2)}, insurance=$${insuranceCovered.toFixed(2)}, patient=$${patientAmount.toFixed(2)}`);
-        callback(null);
+        callback(null, {
+          invoiceId: Number(result.insertId),
+          totalAmount: amount,
+          insuranceCovered,
+          patientAmount,
+          paymentStatus
+        });
       }
     );
   }
@@ -516,39 +444,44 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
 
     pool.query(
       `SELECT
-        a.appointment_id,
-        a.appointment_date,
-        a.appointment_time,
-        ast.status_name,
-        ast.display_name AS appointment_status,
-        a.patient_id,
+        p.patient_id,
         CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
-        a.doctor_id,
-        CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
-        (a.doctor_id = ?) AS can_open_in_dentist_portal
-      FROM appointments a
-      LEFT JOIN appointment_statuses ast ON ast.status_id = a.status_id
-      JOIN patients p ON p.patient_id = a.patient_id
-      LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
-      LEFT JOIN staff st ON st.staff_id = d.staff_id
-      WHERE a.patient_id IN (
-        SELECT DISTINCT p2.patient_id
-        FROM patients p2
-        JOIN appointments a2 ON a2.patient_id = p2.patient_id
-        WHERE a2.doctor_id = ?
-          AND (
-            CONCAT(p2.p_first_name, ' ', p2.p_last_name) LIKE ?
-            OR p2.p_email LIKE ?
-            OR p2.p_phone LIKE ?
-            OR (? > 0 AND p2.patient_id = ?)
-          )
+        p.p_email AS patient_email,
+        p.p_phone AS patient_phone,
+        (
+          SELECT a3.appointment_id
+          FROM appointments a3
+          WHERE a3.patient_id = p.patient_id AND a3.doctor_id = ?
+          ORDER BY a3.appointment_date DESC, a3.appointment_time DESC, a3.appointment_id DESC
+          LIMIT 1
+        ) AS latest_appointment_id,
+        (
+          SELECT COALESCE(ast2.display_name, ast2.status_name)
+          FROM appointments a4
+          LEFT JOIN appointment_statuses ast2 ON ast2.status_id = a4.status_id
+          WHERE a4.patient_id = p.patient_id AND a4.doctor_id = ?
+          ORDER BY a4.appointment_date DESC, a4.appointment_time DESC, a4.appointment_id DESC
+          LIMIT 1
+        ) AS latest_appointment_status
+      FROM patients p
+      WHERE EXISTS (
+        SELECT 1
+        FROM appointments a2
+        WHERE a2.patient_id = p.patient_id
+          AND a2.doctor_id = ?
       )
-      ORDER BY a.appointment_date DESC, a.appointment_time DESC, a.appointment_id DESC
-      LIMIT 500`,
-      [doctorId, doctorId, sqlLike, sqlLike, sqlLike, numericPatientId, numericPatientId],
+        AND (
+          CONCAT(p.p_first_name, ' ', p.p_last_name) LIKE ?
+          OR p.p_email LIKE ?
+          OR p.p_phone LIKE ?
+          OR (? > 0 AND p.patient_id = ?)
+        )
+      ORDER BY p.p_last_name ASC, p.p_first_name ASC, p.patient_id ASC
+      LIMIT 100`,
+      [doctorId, doctorId, doctorId, sqlLike, sqlLike, sqlLike, numericPatientId, numericPatientId],
       (err, rows) => {
         if (err) {
-          console.error('Error searching dentist patient appointment history:', err);
+          console.error('Error searching dentist patients:', err);
           return sendJSON(res, 500, { error: 'Database error' });
         }
         return sendJSON(res, 200, rows || []);
@@ -627,6 +560,8 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                 tp.tooth_number,
                 tp.surface,
                 tp.priority,
+                tp.follow_up_required,
+                tp.follow_up_date,
                 tp.start_date,
                 tp.created_at,
                 tp.notes,
@@ -717,35 +652,54 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                                   }
                                 }
 
-                                const completedTreatments = (treatmentRows || []).filter((item) => String(item.status_name || '').toUpperCase() === 'COMPLETED');
+                                pool.query(
+                                  `SELECT
+                                    medication_name,
+                                    dosage,
+                                    frequency,
+                                    reason_for_use
+                                  FROM patient_current_medications
+                                  WHERE patient_id = ? AND is_active = 1
+                                  ORDER BY created_at DESC`,
+                                  [patientId],
+                                  (medErr, medRows) => {
+                                    if (medErr) {
+                                      console.error('Error fetching patient medications:', medErr);
+                                      return sendJSON(res, 500, { error: 'Database error' });
+                                    }
 
-                                sendJSON(res, 200, {
-                                  appointment: base,
-                                  patientProfile: {
-                                    patient_id: base.patient_id,
-                                    first_name: base.p_first_name,
-                                    last_name: base.p_last_name,
-                                    date_of_birth: base.p_dob,
-                                    gender: base.p_gender,
-                                    race: base.p_race,
-                                    ethnicity: base.p_ethnicity,
-                                    phone: base.p_phone,
-                                    email: base.p_email,
-                                    address: base.p_address,
-                                    city: base.p_city,
-                                    state: base.p_state,
-                                    zipcode: base.p_zipcode,
-                                    country: base.p_country,
-                                    emergency_contact_name: base.p_emergency_contact_name,
-                                    emergency_contact_phone: base.p_emergency_contact_phone
-                                  },
-                                  intakeSnapshot,
-                                  pastAppointments: pastRows || [],
-                                  treatmentPlans: treatmentRows || [],
-                                  completedTreatments,
-                                  dentalFindings: findingRows || [],
-                                  prescriptions: rxRows || []
-                                });
+                                    const completedTreatments = (treatmentRows || []).filter((item) => String(item.status_name || '').toUpperCase() === 'COMPLETED');
+
+                                    sendJSON(res, 200, {
+                                      appointment: base,
+                                      patientProfile: {
+                                        patient_id: base.patient_id,
+                                        first_name: base.p_first_name,
+                                        last_name: base.p_last_name,
+                                        date_of_birth: base.p_dob,
+                                        gender: base.p_gender,
+                                        race: base.p_race,
+                                        ethnicity: base.p_ethnicity,
+                                        phone: base.p_phone,
+                                        email: base.p_email,
+                                        address: base.p_address,
+                                        city: base.p_city,
+                                        state: base.p_state,
+                                        zipcode: base.p_zipcode,
+                                        country: base.p_country,
+                                        emergency_contact_name: base.p_emergency_contact_name,
+                                        emergency_contact_phone: base.p_emergency_contact_phone
+                                      },
+                                      intakeSnapshot,
+                                      currentMedications: medRows || [],
+                                      pastAppointments: pastRows || [],
+                                      treatmentPlans: treatmentRows || [],
+                                      completedTreatments,
+                                      dentalFindings: findingRows || [],
+                                      prescriptions: rxRows || []
+                                    });
+                                  }
+                                );
                               }
                             );
                       }
@@ -898,7 +852,13 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
     const hasManualEstimatedCost = Number.isFinite(estimatedCostInput) && estimatedCostInput > 0;
     const priority = data?.priority ? String(data.priority).trim() : null;
     const notes = data?.notes ? String(data.notes).trim() : null;
+    const followUpRequired = normalizeBooleanValue(data?.followUpRequired);
+    const followUpDate = followUpRequired ? normalizeDateValue(data?.followUpDate) : null;
     const requestedStatus = data?.statusName ? String(data.statusName).trim().toUpperCase() : 'COMPLETED';
+
+    if (followUpRequired && !followUpDate) {
+      return sendJSON(res, 400, { error: 'Follow-up date is required when follow-up is enabled' });
+    }
 
     getAppointmentContext(appointmentId, doctorId, (ctxErr, context) => {
       if (ctxErr) {
@@ -963,12 +923,14 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                 tooth_number,
                 estimated_cost,
                 priority,
+                follow_up_required,
+                follow_up_date,
                 start_date,
                 notes,
                 created_by,
                 updated_by
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DENTIST_PORTAL', 'DENTIST_PORTAL')`,
-              [context.patient_id, doctorId, surface, safeProcedureCode, statusId, toothNumber, autoEstimatedCost, priority, context.appointment_date || null, notes],
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DENTIST_PORTAL', 'DENTIST_PORTAL')`,
+              [context.patient_id, doctorId, surface, safeProcedureCode, statusId, toothNumber, autoEstimatedCost, priority, followUpRequired ? 1 : 0, followUpDate, context.appointment_date || null, notes],
               (insertErr, insertResult) => {
                 if (insertErr) {
                   conn.release();
@@ -1002,11 +964,6 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
   function handleDentistAppointmentRoutes(req, res, method, parts, parseJSON) {
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'reports' && parts[3] === 'patient') {
       getDentistSinglePatientReport(req, res);
-      return true;
-    }
-
-    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'reports' && parts[3] === 'patients') {
-      getDentistMultiPatientReport(req, res);
       return true;
     }
 
@@ -1217,6 +1174,50 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
       return true;
     }
 
+    // PUT /api/dentist/findings/:findingId — edit a dental finding
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'findings' && parts[3]) {
+      const findingId = Number(parts[3]);
+      if (!Number.isInteger(findingId) || findingId <= 0) {
+        sendJSON(res, 400, { error: 'Valid findingId is required' });
+        return true;
+      }
+      parseJSON(req, (err, data) => {
+        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        const doctorId = Number(data.doctorId || 0);
+        if (!Number.isInteger(doctorId) || doctorId <= 0) {
+          return sendJSON(res, 400, { error: 'Valid doctorId is required' });
+        }
+        const updates = {};
+        if (data.conditionType !== undefined) updates.condition_type = String(data.conditionType).trim() || null;
+        if (data.toothNumber !== undefined) updates.tooth_number = String(data.toothNumber).trim() || null;
+        if (data.surface !== undefined) updates.surface = String(data.surface).trim() || null;
+        if (data.notes !== undefined) updates.notes = String(data.notes).trim() || null;
+
+        if (Object.keys(updates).length === 0) {
+          return sendJSON(res, 400, { error: 'No fields provided to update' });
+        }
+
+        const setClauses = Object.keys(updates).map((col) => `${col} = ?`).join(', ');
+        const values = [...Object.values(updates), findingId, doctorId];
+
+        pool.query(
+          `UPDATE dental_findings SET ${setClauses} WHERE finding_id = ? AND doctor_id = ?`,
+          values,
+          (updateErr, result) => {
+            if (updateErr) {
+              console.error('Error updating dental finding:', updateErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            if (!result.affectedRows) {
+              return sendJSON(res, 404, { error: 'Dental finding not found' });
+            }
+            return sendJSON(res, 200, { message: 'Dental finding updated' });
+          }
+        );
+      });
+      return true;
+    }
+
     // PUT /api/dentist/treatments/:planId — edit a completed treatment and recalculate invoice
     if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'dentist' && parts[2] === 'treatments' && parts[3]) {
       const planId = Number(parts[3]);
@@ -1237,6 +1238,12 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
         if (data.estimatedCost !== undefined) updates.estimated_cost = Number(data.estimatedCost) || 0;
         if (data.priority !== undefined) updates.priority = String(data.priority).trim() || null;
         if (data.notes !== undefined) updates.notes = String(data.notes).trim() || null;
+        if (data.followUpRequired !== undefined) updates.follow_up_required = normalizeBooleanValue(data.followUpRequired) ? 1 : 0;
+        if (data.followUpRequired !== undefined) updates.follow_up_date = normalizeBooleanValue(data.followUpRequired) ? normalizeDateValue(data.followUpDate) : null;
+
+        if (updates.follow_up_required && !updates.follow_up_date) {
+          return sendJSON(res, 400, { error: 'Follow-up date is required when follow-up is enabled' });
+        }
 
         if (Object.keys(updates).length === 0) {
           return sendJSON(res, 400, { error: 'No fields to update' });
@@ -1257,8 +1264,10 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
               ? lookupRows[0].start_date.toISOString().slice(0, 10)
               : String(lookupRows[0].start_date || '').slice(0, 10);
 
-            const setClauses = Object.keys(updates).map((col) => `${col} = ?`).join(', ');
-            const values = [...Object.values(updates), planId, doctorId];
+            const ALLOWED_COLS = new Set(['procedure_code', 'tooth_number', 'surface', 'estimated_cost', 'priority', 'notes', 'follow_up_required', 'follow_up_date', 'updated_by']);
+            const safeKeys = Object.keys(updates).filter((col) => ALLOWED_COLS.has(col));
+            const setClauses = safeKeys.map((col) => `${col} = ?`).join(', ');
+            const values = [...safeKeys.map((col) => updates[col]), planId, doctorId];
 
             pool.query(
               `UPDATE treatment_plans SET ${setClauses} WHERE plan_id = ? AND doctor_id = ?`,
@@ -1275,64 +1284,47 @@ function createDentistAppointmentRoutes({ pool, sendJSON }) {
                   return sendJSON(res, 200, { message: 'Treatment updated successfully', costChanged: false });
                 }
 
-                // Recalculate invoice: find invoice for this appointment
+                // Recalculate invoice using coverage table for this appointment
                 pool.query(
-                  `SELECT i.invoice_id, i.amount, i.insurance_covered_amount, i.patient_amount, i.appointment_id,
-                          COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS total_paid,
-                          COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS total_refunded
-                   FROM invoices i
-                   JOIN appointments a ON a.appointment_id = i.appointment_id
-                   WHERE a.patient_id = ? AND a.appointment_date = ?
+                  `SELECT a.appointment_id
+                   FROM appointments a
+                   WHERE a.patient_id = ? AND a.doctor_id = ? AND a.appointment_date = ?
                    LIMIT 1`,
-                  [patientId, startDate],
-                  (invErr, invRows) => {
-                    if (invErr || !invRows?.length) {
-                      // No invoice found, still report success
+                  [patientId, doctorId, startDate],
+                  (apptErr, apptRows) => {
+                    if (apptErr || !apptRows?.length) {
                       return sendJSON(res, 200, { message: 'Treatment updated (no invoice to adjust)', costChanged: true, costDiff });
                     }
 
-                    const inv = invRows[0];
-                    const oldTotal = Number(inv.amount);
-                    const newTotal = oldTotal + costDiff;
-                    const oldInsurance = Number(inv.insurance_covered_amount);
-                    // Scale insurance proportionally
-                    const insuranceRatio = oldTotal > 0 ? oldInsurance / oldTotal : 0;
-                    const newInsurance = Math.round(newTotal * insuranceRatio * 100) / 100;
-                    const newPatientAmount = Math.round((newTotal - newInsurance) * 100) / 100;
-                    const totalPaid = Number(inv.total_paid);
-                    const totalRefunded = Number(inv.total_refunded);
-                    const netPaid = totalPaid - totalRefunded;
-
-                    // Determine if refund is needed (patient paid more than new amount)
-                    const refundNeeded = netPaid > newPatientAmount && newPatientAmount >= 0;
-                    const refundAmount = refundNeeded ? Math.round((netPaid - newPatientAmount) * 100) / 100 : 0;
-
-                    // Update invoice amounts
-                    const newPaymentStatus = newPatientAmount <= 0 ? 'Paid'
-                      : netPaid >= newPatientAmount ? 'Paid'
-                      : netPaid > 0 ? 'Partial' : 'Unpaid';
-
-                    pool.query(
-                      `UPDATE invoices SET amount = ?, insurance_covered_amount = ?, patient_amount = ?, payment_status = ?, updated_by = 'TREATMENT_EDIT'
-                       WHERE invoice_id = ?`,
-                      [Math.max(newTotal, 0), Math.max(newInsurance, 0), Math.max(newPatientAmount, 0), newPaymentStatus, inv.invoice_id],
-                      (updInvErr) => {
-                        if (updInvErr) console.error('Error updating invoice:', updInvErr);
-
-                        return sendJSON(res, 200, {
-                          message: 'Treatment updated and invoice recalculated',
-                          costChanged: true,
-                          costDiff,
-                          invoiceId: inv.invoice_id,
-                          oldTotal,
-                          newTotal: Math.max(newTotal, 0),
-                          newPatientAmount: Math.max(newPatientAmount, 0),
-                          totalPaid: netPaid,
-                          refundNeeded,
-                          refundAmount
-                        });
+                    const appointmentId = Number(apptRows[0].appointment_id);
+                    upsertInvoiceForAppointment(appointmentId, (recalcErr, invoiceInfo) => {
+                      if (recalcErr || !invoiceInfo) {
+                        if (recalcErr) {
+                          console.error('Error recalculating invoice from insurance coverage:', recalcErr);
+                        }
+                        return sendJSON(res, 200, { message: 'Treatment updated (invoice recalculation skipped)', costChanged: true, costDiff });
                       }
-                    );
+
+                      const oldTotal = Number((invoiceInfo.totalAmount || 0) - costDiff);
+                      const newTotal = Number(invoiceInfo.totalAmount || 0);
+                      const newPatientAmount = Number(invoiceInfo.patientAmount || 0);
+                      const totalPaid = Number(invoiceInfo.netPaid || 0);
+                      const refundNeeded = totalPaid > newPatientAmount && newPatientAmount >= 0;
+                      const refundAmount = refundNeeded ? Math.round((totalPaid - newPatientAmount) * 100) / 100 : 0;
+
+                      return sendJSON(res, 200, {
+                        message: 'Treatment updated and invoice recalculated',
+                        costChanged: true,
+                        costDiff,
+                        invoiceId: invoiceInfo.invoiceId,
+                        oldTotal,
+                        newTotal,
+                        newPatientAmount,
+                        totalPaid,
+                        refundNeeded,
+                        refundAmount
+                      });
+                    });
                   }
                 );
               }

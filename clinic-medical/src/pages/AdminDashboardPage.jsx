@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   formatDate,
   formatMoney,
@@ -33,6 +34,54 @@ const formatPhoneInput = (value) => {
   if (digits.length <= 3) return digits;
   if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
   return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+};
+
+const formatZipInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 5);
+
+const extractDigits = (value) => String(value || '').replace(/\D/g, '');
+
+const getLocationFieldErrors = (form) => {
+  const city = String(form?.city || '').trim();
+  const state = String(form?.state || '').trim().toUpperCase();
+  const streetNo = String(form?.streetNo || '').trim();
+  const streetName = String(form?.streetName || '').trim();
+  const zipCode = String(form?.zipCode || '').trim();
+
+  const errors = {};
+
+  if (!city || !state || !streetNo || !streetName || !zipCode) {
+    if (!streetNo) errors.streetNo = 'Street number is required.';
+    if (!streetName) errors.streetName = 'Street name is required.';
+    if (!city) errors.city = 'City is required.';
+    if (!state) errors.state = 'State is required.';
+    if (!zipCode) errors.zipCode = 'ZIP code is required.';
+  }
+
+  if (city && city.length > 20 && !errors.city) {
+    errors.city = 'City must be 20 characters or fewer.';
+  }
+
+  if (state && !/^[A-Z]{2}$/.test(state) && !errors.state) {
+    errors.state = 'State must be a 2-letter abbreviation (for example, TX).';
+  }
+
+  if (streetNo && streetNo.length > 20 && !errors.streetNo) {
+    errors.streetNo = 'Street number must be 20 characters or fewer.';
+  }
+
+  if (streetNo && !/^\d+[A-Za-z0-9\-\/]*$/.test(streetNo) && !errors.streetNo) {
+    errors.streetNo = 'Street number must start with digits (for example, 11606 or 11606A).';
+  }
+
+  if (streetName && streetName.length > 100 && !errors.streetName) {
+    errors.streetName = 'Street name must be 100 characters or fewer.';
+  }
+
+  if (zipCode && !/^\d{5}$/.test(zipCode) && !errors.zipCode) {
+    errors.zipCode = 'ZIP code must contain exactly 5 digits.';
+  }
+
+  return errors;
 };
 
 function useSortState() {
@@ -81,21 +130,67 @@ function SortTh({ sort, column, children, style }) {
   );
 }
 
+const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
+
 function AdminDashboardPage() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
+  const location = useLocation();
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [activeSection, setActiveSection] = useState('overview');
   const [reportStatus, setReportStatus] = useState('ALL');
   const [reportType, setReportType] = useState('patients');
-  const [staffReport, setStaffReport] = useState({ workload: [], schedule: [], timeOff: [] });
+  const [staffReport, setStaffReport] = useState({ workload: [], schedule: [] });
   const [reportDateFrom, setReportDateFrom] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
   });
   const [reportDateTo, setReportDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [clinicReportDateFrom, setClinicReportDateFrom] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().slice(0, 10);
+  });
+  const [clinicReportDateTo, setClinicReportDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [clinicPerformanceReport, setClinicPerformanceReport] = useState({
+    summary: null,
+    monthlyTrends: [],
+    providerPerformance: [],
+    newPatientsTrend: [],
+    newPatientRows: [],
+    outstandingPatients: [],
+    appointmentRows: [],
+    generatedAt: null
+  });
+  const [clinicPerformanceLoading, setClinicPerformanceLoading] = useState(false);
+  const [clinicPerformanceError, setClinicPerformanceError] = useState('');
+  const [clinicProcedureCodes, setClinicProcedureCodes] = useState([]);
+  const [clinicFilters, setClinicFilters] = useState({
+    locationId: 'ALL',
+    doctorId: 'ALL',
+    statusGroup: 'ALL',
+    paymentStatus: 'ALL',
+    patientState: 'ALL',
+    procedureCode: 'ALL'
+  });
+  const [recallReportAsOfDate, setRecallReportAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [recallReportWindowDays, setRecallReportWindowDays] = useState(90);
+  const [recallReport, setRecallReport] = useState({
+    summary: null,
+    items: [],
+    generatedAt: null,
+    asOfDate: null,
+    windowDays: 90
+  });
+  const [recallReportLoading, setRecallReportLoading] = useState(false);
+  const [recallReportError, setRecallReportError] = useState('');
+  const [recallDueFilter, setRecallDueFilter] = useState('ALL');
+  const [recallContactFilter, setRecallContactFilter] = useState('ALL');
+  const [recallScheduledFilter, setRecallScheduledFilter] = useState('ALL');
+  const [recallSearch, setRecallSearch] = useState('');
 
   const [summary, setSummary] = useState(null);
   const [queue, setQueue] = useState({ scheduledAppointments: [], pendingRequests: [], notificationCount: 0 });
+  const [followUpQueue, setFollowUpQueue] = useState({ summary: { overdue: 0, dueToday: 0, upcoming: 0, scheduled: 0, unscheduled: 0 }, items: [] });
+  const [includeScheduledFollowUps, setIncludeScheduledFollowUps] = useState(false);
 
   const [patientReport, setPatientReport] = useState({ summary: null, rows: [] });
   const [doctors, setDoctors] = useState([]);
@@ -107,6 +202,13 @@ function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
+  const [dismissedAdminAlertIds, setDismissedAdminAlertIds] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('dismissedAdminAlerts') || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
 
   const [scheduleRequests, setScheduleRequests] = useState([]);
   const [allStaffSchedules, setAllStaffSchedules] = useState([]);
@@ -143,15 +245,25 @@ function AdminDashboardPage() {
   const [allStaff, setAllStaff] = useState([]);
   const [resetPasswordStaffId, setResetPasswordStaffId] = useState(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [resetPasswordMessage, setResetPasswordMessage] = useState('');
   const [cancelledRequests, setCancelledRequests] = useState([]);
+  const [cancelledAppointments, setCancelledAppointments] = useState([]);
   const [refundHistory, setRefundHistory] = useState([]);
+  const [overpaidInvoices, setOverpaidInvoices] = useState([]);
   const [refundForm, setRefundForm] = useState({ invoiceId: '', amount: '', reason: '' });
   const [invoiceLookup, setInvoiceLookup] = useState(null);
   const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false);
-  const [schedulingPage, setSchedulingPage] = useState(0);
-  const schedulingPageSize = 15;
+  const [activeReportTab, setActiveReportTab] = useState('monthly');
+  const [monthlyTrendsSort, setMonthlyTrendsSort] = useState('date');
+  const [financialDetail, setFinancialDetail] = useState({ items: [], totals: null, generatedAt: null });
+  const [financialDetailLoading, setFinancialDetailLoading] = useState(false);
+  const [financialDetailError, setFinancialDetailError] = useState('');
+  const [financialDetailPatient, setFinancialDetailPatient] = useState('');
+  const [financialDetailPage, setFinancialDetailPage] = useState(0);
+  const [outstandingAccountsPage, setOutstandingAccountsPage] = useState(0);
   const [docSchedPage, setDocSchedPage] = useState(0);
   const docSchedPageSize = 20;
+  const reportPageSize = 8;
   const [docSchedSearch, setDocSchedSearch] = useState('');
   const filteredDocSchedule = useMemo(() => {
     const q = docSchedSearch.trim().toLowerCase();
@@ -160,25 +272,48 @@ function AdminDashboardPage() {
   }, [staffReport.schedule, docSchedSearch]);
 
   const sortFinancial = useSortState();
-  const sortScheduling = useSortState();
   const sortWorkload = useSortState();
   const sortDoctorSchedule = useSortState();
-  const sortTimeOff = useSortState();
-  const sortGenReport = useSortState();
   const sortRefund = useSortState();
 
-  // Generate Report state
-  const [genReportDateFrom, setGenReportDateFrom] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  });
-  const [genReportDateTo, setGenReportDateTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [genReportFilters, setGenReportFilters] = useState({
-    zipCode: '', locationId: '', patientCity: '', patientState: '', treatmentCode: '', departmentId: '', doctorId: ''
-  });
-  const [genReportData, setGenReportData] = useState(null);
-  const [genReportLoading, setGenReportLoading] = useState(false);
-  const [filterOptions, setFilterOptions] = useState({ locations: [], departments: [], doctors: [], treatments: [] });
+  useEffect(() => {
+    const requestedSection = String(location.state?.initialSection || '').toLowerCase();
+    if (requestedSection === 'recall' && activeSection !== 'recall') {
+      setActiveSection('recall');
+    }
+  }, [location.state, activeSection]);
+
+  useEffect(() => {
+    setOutstandingAccountsPage(0);
+  }, [clinicPerformanceReport.generatedAt]);
+
+  const paginateRows = (rows, page) => rows.slice(page * reportPageSize, (page + 1) * reportPageSize);
+
+const pagedOutstandingPatients = useMemo(
+    () => paginateRows(clinicPerformanceReport.outstandingPatients, outstandingAccountsPage),
+    [clinicPerformanceReport.outstandingPatients, outstandingAccountsPage]
+  );
+
+  const renderTablePager = (totalRows, page, setPage) => {
+    if (totalRows <= reportPageSize) return null;
+    const totalPages = Math.ceil(totalRows / reportPageSize);
+    return (
+      <div className="report-table-pager" role="navigation" aria-label="Table pagination">
+        <button type="button" className="admin-ghost-button" onClick={() => setPage((p) => Math.max(p - 1, 0))} disabled={page <= 0}>
+          {'< Prev'}
+        </button>
+        <span>Page {page + 1} of {totalPages}</span>
+        <button
+          type="button"
+          className="admin-ghost-button"
+          onClick={() => setPage((p) => Math.min(p + 1, totalPages - 1))}
+          disabled={page >= totalPages - 1}
+        >
+          {'Next >'}
+        </button>
+      </div>
+    );
+  };
 
   const [locationForm, setLocationForm] = useState({
     city: '',
@@ -187,6 +322,7 @@ function AdminDashboardPage() {
     streetName: '',
     zipCode: ''
   });
+  const [locationFieldErrors, setLocationFieldErrors] = useState({});
 
   const safeJson = async (response) => {
     const payload = await response.json().catch(() => ({}));
@@ -201,9 +337,10 @@ function AdminDashboardPage() {
     setError('');
 
     try {
-      const [summaryData, queueData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData, refundData] = await Promise.all([
+      const [summaryData, queueData, followUpData, reportData, doctorData, receptionistData, locationData, timeOffData, cancelledData, schedReqData, staffSchedData, gapsData, refundData, cancelledApptData, overpaidData] = await Promise.all([
         fetch(`${API_BASE_URL}/api/admin/dashboard/summary?date=${selectedDate}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/appointments/queue?date=${selectedDate}`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/follow-ups/queue?windowDays=365&includeScheduled=${includeScheduledFollowUps}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/doctors`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff/receptionists`).then(safeJson),
@@ -213,11 +350,17 @@ function AdminDashboardPage() {
         fetch(`${API_BASE_URL}/api/admin/schedule-requests`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff-schedules`).then(safeJson),
         fetch(`${API_BASE_URL}/api/admin/staff-schedules/gaps`).then(safeJson),
-        fetch(`${API_BASE_URL}/api/admin/refunds`).then(safeJson)
+        fetch(`${API_BASE_URL}/api/admin/refunds`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/cancelled-appointments`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/overpaid-invoices`).then(safeJson)
       ]);
 
       setSummary(summaryData);
       setQueue(queueData);
+      setFollowUpQueue({
+        summary: followUpData?.summary || { overdue: 0, dueToday: 0, upcoming: 0, scheduled: 0, unscheduled: 0 },
+        items: Array.isArray(followUpData?.items) ? followUpData.items : []
+      });
       setPatientReport(reportData);
       setDoctors(Array.isArray(doctorData) ? doctorData : []);
       setReceptionists(Array.isArray(receptionistData) ? receptionistData : []);
@@ -228,6 +371,8 @@ function AdminDashboardPage() {
       setAllStaffSchedules(Array.isArray(staffSchedData) ? staffSchedData : []);
       setScheduleGaps(Array.isArray(gapsData) ? gapsData : []);
       setRefundHistory(Array.isArray(refundData) ? refundData : []);
+      setCancelledAppointments(Array.isArray(cancelledApptData) ? cancelledApptData : []);
+      setOverpaidInvoices(Array.isArray(overpaidData) ? overpaidData : []);
     } catch (err) {
       setError(err.message || 'Unable to load admin data.');
     } finally {
@@ -269,12 +414,14 @@ function AdminDashboardPage() {
       setRefundForm({ invoiceId: '', amount: '', reason: '' });
       setInvoiceLookup(null);
       // Reload refund history and financial data
-      const [refundData, reportData] = await Promise.all([
+      const [refundData, reportData, overpaidData] = await Promise.all([
         fetch(`${API_BASE_URL}/api/admin/refunds`).then(safeJson),
-        fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson)
+        fetch(`${API_BASE_URL}/api/admin/reports/patients?date=${selectedDate}${reportStatus === 'ALL' ? '' : `&status=${reportStatus}`}`).then(safeJson),
+        fetch(`${API_BASE_URL}/api/admin/overpaid-invoices`).then(safeJson)
       ]);
       setRefundHistory(Array.isArray(refundData) ? refundData : []);
       setPatientReport(reportData);
+      setOverpaidInvoices(Array.isArray(overpaidData) ? overpaidData : []);
     } catch (err) {
       setError(err.message || 'Failed to process refund.');
     }
@@ -287,17 +434,128 @@ function AdminDashboardPage() {
       ).then(safeJson);
       setStaffReport({
         workload: Array.isArray(data.workload) ? data.workload : [],
-        schedule: Array.isArray(data.schedule) ? data.schedule : [],
-        timeOff: Array.isArray(data.timeOff) ? data.timeOff : []
+        schedule: Array.isArray(data.schedule) ? data.schedule : []
       });
     } catch (err) {
       setError(err.message || 'Unable to load staff report.');
     }
   };
 
+  const loadClinicPerformanceReport = async () => {
+    setClinicPerformanceLoading(true);
+    setClinicPerformanceError('');
+
+    try {
+      const params = new URLSearchParams({
+        dateFrom: clinicReportDateFrom,
+        dateTo: clinicReportDateTo
+      });
+
+      if (clinicFilters.locationId !== 'ALL') params.set('locationId', clinicFilters.locationId);
+      if (clinicFilters.doctorId !== 'ALL') params.set('doctorId', clinicFilters.doctorId);
+      if (clinicFilters.statusGroup !== 'ALL') params.set('statusGroup', clinicFilters.statusGroup);
+      if (clinicFilters.paymentStatus !== 'ALL') params.set('paymentStatus', clinicFilters.paymentStatus);
+      if (clinicFilters.patientState !== 'ALL') params.set('patientState', clinicFilters.patientState);
+      if (clinicFilters.procedureCode !== 'ALL') params.set('procedureCode', clinicFilters.procedureCode);
+
+      const data = await fetch(
+        `${API_BASE_URL}/api/admin/reports/performance?${params.toString()}`
+      ).then(safeJson);
+
+      setClinicPerformanceReport({
+        summary: data.summary || null,
+        monthlyTrends: Array.isArray(data.monthlyTrends) ? data.monthlyTrends : [],
+        providerPerformance: Array.isArray(data.providerPerformance) ? data.providerPerformance : [],
+        newPatientsTrend: Array.isArray(data.newPatientsTrend) ? data.newPatientsTrend : [],
+        newPatientRows: Array.isArray(data.newPatientRows) ? data.newPatientRows : [],
+        outstandingPatients: Array.isArray(data.outstandingPatients) ? data.outstandingPatients : [],
+        appointmentRows: Array.isArray(data.appointmentRows) ? data.appointmentRows : [],
+        generatedAt: data.generatedAt || null,
+        filters: data.filters || null
+      });
+    } catch (err) {
+      setClinicPerformanceError(err.message || 'Unable to load clinic performance report.');
+    } finally {
+      setClinicPerformanceLoading(false);
+    }
+  };
+
+  const loadClinicFilterOptions = async () => {
+    try {
+      const data = await fetch(`${API_BASE_URL}/api/admin/reports/filter-options`).then(safeJson);
+      const codes = (Array.isArray(data.treatments) ? data.treatments : [])
+        .map((item) => {
+          const code = String(item?.procedure_code || '').trim().toUpperCase();
+          const description = String(item?.description || '').trim();
+          if (!code) return null;
+          return {
+            code,
+            label: description ? `${code} - ${description}` : code
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.code.localeCompare(b.code));
+      setClinicProcedureCodes(codes);
+    } catch {
+      setClinicProcedureCodes([]);
+    }
+  };
+
+  const loadFinancialDetail = async () => {
+    setFinancialDetailLoading(true);
+    setFinancialDetailError('');
+    try {
+      const params = new URLSearchParams({ dateFrom: clinicReportDateFrom, dateTo: clinicReportDateTo });
+      if (financialDetailPatient) params.set('patient', financialDetailPatient);
+      if (clinicFilters.doctorId !== 'ALL') params.set('doctorId', clinicFilters.doctorId);
+      if (clinicFilters.locationId !== 'ALL') params.set('locationId', clinicFilters.locationId);
+      if (clinicFilters.statusGroup !== 'ALL') params.set('statusGroup', clinicFilters.statusGroup);
+      if (clinicFilters.paymentStatus !== 'ALL') params.set('paymentStatus', clinicFilters.paymentStatus);
+      if (clinicFilters.patientState !== 'ALL') params.set('patientState', clinicFilters.patientState);
+      const data = await fetch(`${API_BASE_URL}/api/admin/reports/financial-detail?${params.toString()}`).then(safeJson);
+      setFinancialDetail({
+        items: Array.isArray(data.items) ? data.items : [],
+        totals: data.totals || null,
+        generatedAt: data.generatedAt || null
+      });
+      setFinancialDetailPage(0);
+    } catch (err) {
+      setFinancialDetailError(err.message || 'Unable to load financial detail report.');
+    } finally {
+      setFinancialDetailLoading(false);
+    }
+  };
+
+  const loadRecallReport = async () => {
+    setRecallReportLoading(true);
+    setRecallReportError('');
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/admin/reports/recall?asOfDate=${recallReportAsOfDate}&windowDays=${recallReportWindowDays}`
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to load recall report.');
+      }
+
+      setRecallReport({
+        summary: data.summary || null,
+        items: Array.isArray(data.items) ? data.items : [],
+        generatedAt: data.generatedAt || null,
+        asOfDate: data.asOfDate || recallReportAsOfDate,
+        windowDays: Number(data.windowDays || recallReportWindowDays)
+      });
+    } catch (err) {
+      setRecallReportError(err.message || 'Unable to load recall report.');
+    } finally {
+      setRecallReportLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadAdminData();
-  }, [selectedDate, reportStatus]);
+  }, [selectedDate, reportStatus, includeScheduledFollowUps]);
 
   useEffect(() => {
     if (reportType === 'staff') {
@@ -305,9 +563,36 @@ function AdminDashboardPage() {
     }
   }, [reportType, reportDateFrom, reportDateTo]);
 
+  useEffect(() => {
+    if (activeSection === 'reports') {
+      loadClinicPerformanceReport();
+      if (!clinicProcedureCodes.length) {
+        loadClinicFilterOptions();
+      }
+    }
+  }, [activeSection, clinicReportDateFrom, clinicReportDateTo]);
+
+  useEffect(() => {
+    if (activeSection === 'reports') {
+      loadFinancialDetail();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection, clinicReportDateFrom, clinicReportDateTo, clinicFilters.doctorId, clinicFilters.locationId, clinicFilters.statusGroup, clinicFilters.paymentStatus, clinicFilters.patientState]);
+
+  useEffect(() => {
+    if (activeSection === 'reports' || activeSection === 'recall') {
+      loadRecallReport();
+    }
+  }, [activeSection, recallReportAsOfDate, recallReportWindowDays]);
+
   const handleDoctorSubmit = async (e) => {
     e.preventDefault();
     setActionMessage('');
+
+    if (extractDigits(doctorForm.phone).length !== 10) {
+      setActionMessage('Doctor phone number must contain exactly 10 digits.');
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/doctors`, {
@@ -333,6 +618,11 @@ function AdminDashboardPage() {
     e.preventDefault();
     setActionMessage('');
 
+    if (extractDigits(formState.phone).length !== 10) {
+      setActionMessage(`${roleLabel} phone number must contain exactly 10 digits.`);
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/staff/${rolePath}`, {
         method: 'POST',
@@ -357,19 +647,64 @@ function AdminDashboardPage() {
     e.preventDefault();
     setActionMessage('');
 
+    const locationErrors = getLocationFieldErrors(locationForm);
+    setLocationFieldErrors(locationErrors);
+    if (Object.keys(locationErrors).length) {
+      setActionMessage('Please correct the highlighted location fields.');
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/locations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(locationForm)
+        body: JSON.stringify({
+          city: String(locationForm.city || '').trim(),
+          state: String(locationForm.state || '').trim().toUpperCase(),
+          streetNo: String(locationForm.streetNo || '').trim(),
+          streetName: String(locationForm.streetName || '').trim(),
+          zipCode: String(locationForm.zipCode || '').trim()
+        })
       });
 
       await safeJson(response);
       setLocationForm({ city: '', state: '', streetNo: '', streetName: '', zipCode: '' });
+      setLocationFieldErrors({});
       setActionMessage('Location added successfully.');
       loadAdminData();
     } catch (err) {
       setActionMessage(err.message || 'Failed to add location.');
+    }
+  };
+
+  const updateLocationField = (field, value) => {
+    setLocationForm((prev) => {
+      const nextForm = { ...prev, [field]: value };
+      setLocationFieldErrors(getLocationFieldErrors(nextForm));
+      return nextForm;
+    });
+  };
+
+  const handleLocationDelete = async (location) => {
+    const locationId = Number(location?.location_id || 0);
+    if (!Number.isInteger(locationId) || locationId <= 0) {
+      setActionMessage('Invalid location id.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete this location?\n\n${location.full_address}\n\nThis removes the location from staff assignments and clears it from existing appointment records.`);
+    if (!confirmed) return;
+
+    setActionMessage('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/locations/${locationId}`, {
+        method: 'DELETE'
+      });
+      await safeJson(response);
+      setActionMessage('Location deleted successfully.');
+      loadAdminData();
+    } catch (err) {
+      setActionMessage(err.message || 'Failed to delete location.');
     }
   };
 
@@ -408,8 +743,20 @@ function AdminDashboardPage() {
   }, [expandedCards.manageStaff]);
 
   const handleResetPassword = async (staffId) => {
-    if (!resetPasswordValue || resetPasswordValue.length < 8 || !/[A-Z]/.test(resetPasswordValue) || !/[a-z]/.test(resetPasswordValue) || !/[0-9]/.test(resetPasswordValue)) {
-      setActionMessage('Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number.');
+    if (!resetPasswordValue || resetPasswordValue.length < 8) {
+      setResetPasswordMessage('Must be at least 8 characters.');
+      return;
+    }
+    if (!/[A-Z]/.test(resetPasswordValue)) {
+      setResetPasswordMessage('Must include at least 1 uppercase letter.');
+      return;
+    }
+    if (!/[a-z]/.test(resetPasswordValue)) {
+      setResetPasswordMessage('Must include at least 1 lowercase letter.');
+      return;
+    }
+    if (!/[0-9]/.test(resetPasswordValue)) {
+      setResetPasswordMessage('Must include at least 1 number.');
       return;
     }
     try {
@@ -419,11 +766,11 @@ function AdminDashboardPage() {
         body: JSON.stringify({ newPassword: resetPasswordValue })
       });
       await safeJson(response);
-      setActionMessage('Password reset successfully.');
-      setResetPasswordStaffId(null);
+      setResetPasswordMessage('Password changed successfully.');
       setResetPasswordValue('');
+      setTimeout(() => { setResetPasswordStaffId(null); setResetPasswordMessage(''); }, 2000);
     } catch (err) {
-      setActionMessage(err.message || 'Failed to reset password.');
+      setResetPasswordMessage(err.message || 'Failed to reset password.');
     }
   };
 
@@ -441,104 +788,6 @@ function AdminDashboardPage() {
     }
   };
 
-  const loadFilterOptions = async () => {
-    try {
-      const data = await fetch(`${API_BASE_URL}/api/admin/reports/filter-options`).then(safeJson);
-      setFilterOptions(data);
-    } catch (err) {
-      console.error('Failed to load filter options:', err);
-    }
-  };
-
-  const handleGenerateReport = async () => {
-    setGenReportLoading(true);
-    setGenReportData(null);
-    setError('');
-    try {
-      const params = new URLSearchParams({ dateFrom: genReportDateFrom, dateTo: genReportDateTo });
-      if (genReportFilters.zipCode) params.set('zipCode', genReportFilters.zipCode);
-      if (genReportFilters.locationId) params.set('locationId', genReportFilters.locationId);
-      if (genReportFilters.patientCity) params.set('patientCity', genReportFilters.patientCity);
-      if (genReportFilters.patientState) params.set('patientState', genReportFilters.patientState);
-      if (genReportFilters.treatmentCode) params.set('treatmentCode', genReportFilters.treatmentCode);
-      if (genReportFilters.departmentId) params.set('departmentId', genReportFilters.departmentId);
-      if (genReportFilters.doctorId) params.set('doctorId', genReportFilters.doctorId);
-      const data = await fetch(`${API_BASE_URL}/api/admin/reports/generate?${params.toString()}`).then(safeJson);
-      setGenReportData(data);
-    } catch (err) {
-      setError(err.message || 'Failed to generate report.');
-    } finally {
-      setGenReportLoading(false);
-    }
-  };
-
-  const exportReportCSV = () => {
-    if (!genReportData?.rows?.length) return;
-    const headers = ['Date', 'Time', 'Patient', 'Patient City', 'Patient State', 'Patient Zip', 'Doctor', 'Clinic Location', 'Clinic City', 'Clinic State', 'Clinic Zip', 'Treatment', 'Department', 'Payment Status', 'Invoice Total', 'Patient Amount'];
-    const csvRows = [headers.join(',')];
-    genReportData.rows.forEach((r) => {
-      csvRows.push([
-        r.appointment_date, r.appointment_time,
-        `"${(r.patient_name || '').replace(/"/g, '""')}"`,
-        `"${r.patient_city || ''}"`, r.patient_state || '', r.patient_zip || '',
-        `"${(r.doctor_name || '').replace(/"/g, '""')}"`,
-        `"${(r.clinic_location || '').replace(/"/g, '""')}"`,
-        r.clinic_city || '', r.clinic_state || '', r.clinic_zip || '',
-        `"${(r.treatment_name || 'N/A').replace(/"/g, '""')}"`,
-        `"${(r.department_name || 'N/A').replace(/"/g, '""')}"`,
-        r.payment_status, r.invoice_total, r.patient_amount
-      ].join(','));
-    });
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `clinic_report_${genReportDateFrom}_to_${genReportDateTo}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const exportReportJSON = () => {
-    if (!genReportData) return;
-    const blob = new Blob([JSON.stringify(genReportData, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `clinic_report_${genReportDateFrom}_to_${genReportDateTo}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const exportReportPDF = () => {
-    if (!genReportData?.rows?.length) return;
-    const printWin = window.open('', '_blank');
-    const rows = genReportData.rows;
-    const tableRows = rows.map((r) => `<tr>
-      <td>${r.appointment_date || ''}</td>
-      <td>${r.appointment_time || ''}</td>
-      <td>${r.patient_name || ''}</td>
-      <td>${r.patient_city || ''}${r.patient_state ? ', ' + r.patient_state : ''} ${r.patient_zip || ''}</td>
-      <td>${r.doctor_name || ''}</td>
-      <td>${r.clinic_location || ''}</td>
-      <td>${r.treatment_name || 'N/A'}</td>
-      <td>${r.department_name || 'N/A'}</td>
-      <td>${r.payment_status || ''}</td>
-    </tr>`).join('');
-    printWin.document.write(`<!DOCTYPE html><html><head><title>Clinic Report</title>
-      <style>body{font-family:Arial,sans-serif;margin:20px}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}th{background:#f0f0f0}h1{font-size:18px}p{font-size:12px;color:#555}</style>
-    </head><body>
-      <h1>Patient General Report</h1>
-      <p>Date Range: ${genReportDateFrom} to ${genReportDateTo} | Total Records: ${rows.length} | Generated: ${genReportData.generatedAt}</p>
-      <table><thead><tr><th>Date</th><th>Time</th><th>Patient</th><th>Patient Location</th><th>Doctor</th><th>Clinic Location</th><th>Treatment</th><th>Department</th><th>Payment</th></tr></thead><tbody>${tableRows}</tbody></table>
-      <script>window.onload=function(){window.print()}<\/script>
-    </body></html>`);
-    printWin.document.close();
-  };
-
-  useEffect(() => {
-    if (reportType === 'generate') {
-      loadFilterOptions();
-    }
-  }, [reportType]);
-
   const reportRows = Array.isArray(patientReport.rows) ? patientReport.rows : [];
   const financialFollowUpRows = Array.isArray(patientReport.financialFollowUp) ? patientReport.financialFollowUp : [];
   const [financialSearch, setFinancialSearch] = useState('');
@@ -551,7 +800,6 @@ function AdminDashboardPage() {
         (row.patient_name || '').toLowerCase().includes(query) ||
         (queryDigits.length > 0 && (row.p_phone || '').replace(/\D/g, '').includes(queryDigits)) ||
         (row.p_phone || '').toLowerCase().includes(query);
-      // Show all when searching, only unpaid when not searching
       if (hasSearch) return matchesSearch;
       return Number(row.total_outstanding || 0) > 0;
     });
@@ -560,24 +808,220 @@ function AdminDashboardPage() {
     (sum, row) => sum + Number(row.total_outstanding || 0), 0
   );
 
-  const pendingStaffOffDayNotifications = (staffTimeOffRequests || [])
-    .filter((item) => !item.is_approved)
-    .map((item) => {
-      const role = String(item.requester_role || 'staff').replace('_', ' ');
-      const dateLabel = item.start_datetime ? new Date(item.start_datetime).toLocaleDateString() : 'an upcoming date';
+  const todaysCancelledCount = useMemo(() => {
+    return (Array.isArray(cancelledAppointments) ? cancelledAppointments : []).filter((appt) => {
+      return String(appt.appointment_date || '').slice(0, 10) === selectedDate;
+    }).length;
+  }, [cancelledAppointments, selectedDate]);
+
+  const pendingTimeOffCount = Number(summary?.metrics?.pendingTimeOffCount || 0);
+  const waitingRequestsCount = Number(summary?.metrics?.waitingToSchedule || queue?.pendingRequests?.length || 0);
+  const overdueRecallCount = Number(followUpQueue?.summary?.overdue || 0);
+  const pendingScheduleRequestCount = Array.isArray(scheduleRequests)
+    ? scheduleRequests.filter((item) => String(item.request_status || '').toUpperCase() === 'PENDING').length
+    : 0;
+
+  const adminToastNotifications = useMemo(() => {
+    const alerts = [];
+
+    if (pendingTimeOffCount > 0) {
+      alerts.push({
+        id: 'pending-timeoff',
+        tone: 'warning',
+        title: 'Pending Time-Off Approvals',
+        message: `${pendingTimeOffCount} staff off-day request${pendingTimeOffCount === 1 ? '' : 's'} need admin review.`,
+        section: 'staffing',
+        action: 'Review Requests'
+      });
+    }
+
+    if (overdueRecallCount > 0) {
+      alerts.push({
+        id: 'overdue-recall',
+        tone: 'critical',
+        title: 'Overdue Recall Patients',
+        message: `${overdueRecallCount} patient${overdueRecallCount === 1 ? '' : 's'} are overdue for recall follow-up.`,
+        section: 'recall',
+        action: 'Open Recall Queue'
+      });
+    }
+
+
+    if (pendingScheduleRequestCount > 0) {
+      alerts.push({
+        id: 'pending-schedule-requests',
+        tone: 'warning',
+        title: 'Pending Staff Schedule Requests',
+        message: `${pendingScheduleRequestCount} shift update request${pendingScheduleRequestCount === 1 ? '' : 's'} are waiting for approval.`,
+        section: 'staff-scheduling',
+        action: 'Review Schedule Requests'
+      });
+    }
+
+    if (todaysCancelledCount >= 3) {
+      alerts.push({
+        id: 'high-cancellations',
+        tone: 'critical',
+        title: 'High Same-Day Cancellations',
+        message: `${todaysCancelledCount} appointments were cancelled today. Consider opening additional outreach and recall follow-up.`,
+        section: 'scheduling',
+        action: 'View Cancellations'
+      });
+    }
+
+    return alerts;
+  }, [pendingTimeOffCount, waitingRequestsCount, overdueRecallCount, pendingScheduleRequestCount, todaysCancelledCount]);
+
+  const visibleAdminToastNotifications = adminToastNotifications.filter((item) => !dismissedAdminAlertIds.has(item.id));
+
+  const dismissAdminToast = (alertId) => {
+    setDismissedAdminAlertIds((prev) => {
+      const next = new Set(prev);
+      next.add(alertId);
+      try {
+        localStorage.setItem('dismissedAdminAlerts', JSON.stringify([...next]));
+      } catch {
+        // Ignore storage failures.
+      }
+      return next;
+    });
+  };
+
+  const nextFiveAppointments = useMemo(() => {
+    const rows = Array.isArray(queue?.scheduledAppointments) ? queue.scheduledAppointments : [];
+    return rows.slice(0, 5);
+  }, [queue?.scheduledAppointments]);
+
+  const overviewCards = useMemo(() => {
+    const metrics = summary?.metrics || {};
+    return [
+      {
+        label: 'Scheduled Today',
+        value: Number(metrics.scheduledToday || queue?.scheduledAppointments?.length || 0),
+        hint: 'Appointments on today\'s book'
+      },
+      {
+        label: 'Patients Today',
+        value: Number(metrics.patientsScheduledToday || 0),
+        hint: 'Unique patients on the schedule'
+      },
+      {
+        label: 'Waiting Requests',
+        value: Number(metrics.waitingToSchedule || queue?.pendingRequests?.length || 0),
+        hint: 'Preference requests to assign'
+      },
+      {
+        label: 'Recall Overdue',
+        value: Number(followUpQueue?.summary?.overdue || 0),
+        hint: 'Patients overdue for follow-up'
+      },
+      {
+        label: 'Pending Time-Off',
+        value: Number(metrics.pendingTimeOffCount || 0),
+        hint: 'Requests awaiting approval'
+      },
+      {
+        label: 'Cancelled Today',
+        value: todaysCancelledCount,
+        hint: 'Same-day cancellations'
+      }
+    ];
+  }, [summary?.metrics, queue?.scheduledAppointments, queue?.pendingRequests, followUpQueue?.summary, todaysCancelledCount]);
+
+  const filteredRecallItems = useMemo(() => {
+    const items = Array.isArray(recallReport.items) ? recallReport.items : [];
+    const searchQuery = recallSearch.trim().toLowerCase();
+    const searchDigits = recallSearch.replace(/\D/g, '');
+
+    return items.filter((item) => {
+      const matchesDue = recallDueFilter === 'ALL' || item.dueState === recallDueFilter;
+      const matchesContact = recallContactFilter === 'ALL' || item.contactState === recallContactFilter;
+      const matchesScheduled = recallScheduledFilter === 'ALL'
+        || (recallScheduledFilter === 'SCHEDULED' && item.isScheduled)
+        || (recallScheduledFilter === 'UNSCHEDULED' && !item.isScheduled);
+
+      const matchesSearch = !searchQuery
+        || (item.patientName || '').toLowerCase().includes(searchQuery)
+        || (item.email || '').toLowerCase().includes(searchQuery)
+        || (searchDigits.length > 0 && String(item.phone || '').replace(/\D/g, '').includes(searchDigits));
+
+      return matchesDue && matchesContact && matchesScheduled && matchesSearch;
+    });
+  }, [recallReport.items, recallDueFilter, recallContactFilter, recallScheduledFilter, recallSearch]);
+
+  const filteredRecallSummary = useMemo(() => {
+    return filteredRecallItems.reduce((acc, item) => {
+      acc.totalPatientsDue += 1;
+      acc.pendingFollowUpItems += Number(item.pendingFollowUpItems || 0);
+      if (item.dueState === 'OVERDUE') acc.overdue += 1;
+      if (item.dueState === 'DUE_TODAY') acc.dueToday += 1;
+      if (item.dueState === 'DUE_30') acc.due30 += 1;
+      if (item.dueState === 'DUE_60') acc.due60 += 1;
+      if (item.dueState === 'DUE_90_PLUS') acc.due90Plus += 1;
+      if (item.isScheduled) acc.scheduled += 1;
+      else acc.unscheduled += 1;
+      if (item.contactState === 'CONTACTED') acc.contacted += 1;
+      else acc.uncontacted += 1;
+      return acc;
+    }, {
+      totalPatientsDue: 0,
+      pendingFollowUpItems: 0,
+      overdue: 0,
+      dueToday: 0,
+      due30: 0,
+      due60: 0,
+      due90Plus: 0,
+      scheduled: 0,
+      unscheduled: 0,
+      contacted: 0,
+      uncontacted: 0
+    });
+  }, [filteredRecallItems]);
+
+  const clinicProviderOptions = useMemo(() => {
+    return (Array.isArray(doctors) ? doctors : []).map((doctor) => {
+      const fullName = `${doctor.first_name || ''} ${doctor.last_name || ''}`.trim();
       return {
-        message: `${item.requester_name} (${role}) submitted an off-day request for ${dateLabel}.`
+        id: String(doctor.doctor_id),
+        name: fullName || doctor.doctor_name || `Doctor #${doctor.doctor_id}`
       };
     });
+  }, [doctors]);
 
-  const combinedNotifications = pendingStaffOffDayNotifications;
+  const clinicLocationOptions = useMemo(() => {
+    return (Array.isArray(locations) ? locations : []).map((location) => ({
+      id: String(location.location_id),
+      label: location.full_address || `${location.location_city || ''}, ${location.location_state || ''}`.trim()
+    }));
+  }, [locations]);
 
-  const schedulingActionRows = (queue.pendingRequests || []).map((row) => ({
-    ...row,
-    needsDateConfirmation: !String(row.preferred_date || '').trim(),
-    needsTimeConfirmation: !String(row.preferred_time || '').trim(),
-    needsLocationConfirmation: !String(row.preferred_location || '').trim()
-  }));
+  const clinicActiveFilterChips = useMemo(() => {
+    const chips = [];
+
+    if (clinicFilters.locationId !== 'ALL') {
+      const location = clinicLocationOptions.find((item) => item.id === clinicFilters.locationId);
+      chips.push(`Location: ${location ? location.label : clinicFilters.locationId}`);
+    }
+    if (clinicFilters.doctorId !== 'ALL') {
+      const provider = clinicProviderOptions.find((item) => item.id === clinicFilters.doctorId);
+      chips.push(`Provider: ${provider ? provider.name : clinicFilters.doctorId}`);
+    }
+    if (clinicFilters.statusGroup !== 'ALL') {
+      chips.push(`Visit Status: ${clinicFilters.statusGroup}`);
+    }
+    if (clinicFilters.paymentStatus !== 'ALL') {
+      chips.push(`Payment: ${clinicFilters.paymentStatus}`);
+    }
+    if (clinicFilters.patientState !== 'ALL') {
+      chips.push(`State: ${clinicFilters.patientState}`);
+    }
+    if (clinicFilters.procedureCode !== 'ALL') {
+      chips.push(`Procedure: ${clinicFilters.procedureCode}`);
+    }
+
+    return chips;
+  }, [clinicFilters, clinicLocationOptions, clinicProviderOptions]);
+
 
   return (
     <main className="admin-page">
@@ -587,12 +1031,6 @@ function AdminDashboardPage() {
           <h1>Operations Dashboard</h1>
         </div>
         <div className="admin-header-actions">
-          {activeSection !== 'staffing' && activeSection !== 'staff-scheduling' && (
-            <label className="admin-date-filter">
-              Dashboard Date
-              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
-            </label>
-          )}
         </div>
       </section>
 
@@ -600,6 +1038,7 @@ function AdminDashboardPage() {
         <button type="button" className={activeSection === 'overview' ? 'is-active' : ''} onClick={() => setActiveSection('overview')}>Overview</button>
         <button type="button" className={activeSection === 'scheduling' ? 'is-active' : ''} onClick={() => setActiveSection('scheduling')}>Scheduling</button>
         <button type="button" className={activeSection === 'reports' ? 'is-active' : ''} onClick={() => setActiveSection('reports')}>Reports</button>
+        <button type="button" className={activeSection === 'refunds' ? 'is-active' : ''} onClick={() => setActiveSection('refunds')}>Refunds</button>
         <button type="button" className={activeSection === 'staff-scheduling' ? 'is-active' : ''} onClick={() => setActiveSection('staff-scheduling')}>Staff Scheduling</button>
         <button type="button" className={activeSection === 'staffing' ? 'is-active' : ''} onClick={() => setActiveSection('staffing')}>Staffing & Locations</button>
       </nav>
@@ -610,47 +1049,116 @@ function AdminDashboardPage() {
 
       {!loading && summary && (
         <>
+          {visibleAdminToastNotifications.length > 0 && (
+            <aside className="admin-toast-stack" aria-live="polite" aria-label="Admin critical notifications">
+              {visibleAdminToastNotifications.map((alert) => (
+                <article key={alert.id} className={`admin-toast-card admin-toast-card--${alert.tone}`}>
+                  <div className="admin-toast-card__top">
+                    <div>
+                      <p className="admin-toast-card__eyebrow">Admin Alert</p>
+                      <h3>{alert.title}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      className="admin-toast-card__close"
+                      aria-label="Dismiss admin notification"
+                      onClick={() => dismissAdminToast(alert.id)}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <p className="admin-toast-card__message">{alert.message}</p>
+                  <button
+                    type="button"
+                    className="admin-toast-card__action"
+                    onClick={() => setActiveSection(alert.section)}
+                  >
+                    {alert.action} &rarr;
+                  </button>
+                </article>
+              ))}
+            </aside>
+          )}
+
           {activeSection === 'overview' && (
             <>
               <section className="admin-metrics-grid">
-                <article className="metric-card">
-                  <h2>Revenue Today</h2>
-                  <p>{formatMoney(summary.metrics?.clinicRevenueToday)}</p>
-                </article>
-                <article className="metric-card">
-                  <h2>Revenue All-Time</h2>
-                  <p>{formatMoney(summary.metrics?.clinicRevenueAllTime)}</p>
-                </article>
-                <article className="metric-card">
-                  <h2>Scheduled Today</h2>
-                  <p>{summary.metrics?.scheduledToday || 0}</p>
-                </article>
-                <article className="metric-card">
-                  <h2>Waiting Requests</h2>
-                  <p>{summary.metrics?.waitingToSchedule || 0}</p>
-                </article>
-                <article className="metric-card">
-                  <h2>Total Patients Today</h2>
-                  <p>{summary.metrics?.patientsScheduledToday || 0}</p>
-                </article>
-                <article className="metric-card">
-                  <h2>Dentists on Team</h2>
-                  <p>{summary.metrics?.doctorCount || 0}</p>
-                  {(summary.metrics?.doctorCount || 0) > 5 && <small>Above your baseline of 5 dentists</small>}
-                </article>
+                {overviewCards.map((card) => (
+                  <article className="metric-card" key={card.label}>
+                    <h2>{card.label}</h2>
+                    <p style={{ color: Number(card.value) > 0 ? 'inherit' : '#6d7e7d' }}>{card.value}</p>
+                    <small>{card.hint}</small>
+                  </article>
+                ))}
               </section>
 
-              <section className="admin-panel">
-                <h2>Notifications</h2>
-                {combinedNotifications.length ? (
-                  <ul className="notification-list">
-                    {combinedNotifications.map((note, idx) => (
-                      <li key={`${note.message}-${idx}`}>{note.message}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p>No scheduling alerts right now.</p>
-                )}
+              <section className="admin-grid-two overview-grid">
+                <article className="admin-panel">
+                  <div className="admin-panel-header-row">
+                    <h2>Priority Queue</h2>
+                    <span className="clinic-filter-chip">Date: {formatDate(selectedDate)}</span>
+                  </div>
+                  <div className="overview-queue-list">
+                    <div className="overview-queue-item">
+                      <div>
+                        <strong>Waiting appointment requests</strong>
+                        <p className="muted">{summary.metrics?.waitingToSchedule || 0} requests need assignment.</p>
+                      </div>
+                      <button type="button" className="admin-btn" onClick={() => setActiveSection('scheduling')}>View</button>
+                    </div>
+                    <div className="overview-queue-item">
+                      <div>
+                        <strong>Pending time-off approvals</strong>
+                        <p className="muted">{summary.metrics?.pendingTimeOffCount || 0} requests need review.</p>
+                      </div>
+                      <button type="button" className="admin-btn" onClick={() => setActiveSection('staff-scheduling')}>Review</button>
+                    </div>
+                    <div className="overview-queue-item">
+                      <div>
+                        <strong>Overdue recall follow-ups</strong>
+                        <p className="muted">{followUpQueue.summary?.overdue || 0} patients are overdue.</p>
+                      </div>
+                      <button type="button" className="admin-btn" onClick={() => setActiveSection('recall')}>Open Queue</button>
+                    </div>
+                    <div className="overview-queue-item">
+                      <div>
+                        <strong>Refund operations</strong>
+                        <p className="muted">Go to refunds to process or audit adjustments.</p>
+                      </div>
+                      <button type="button" className="admin-btn" onClick={() => setActiveSection('refunds')}>Process</button>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="admin-panel">
+                  <h2>Next 5 Appointments</h2>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Patient</th>
+                          <th>Dentist</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {nextFiveAppointments.length ? nextFiveAppointments.map((appt) => (
+                          <tr key={`overview-next-${appt.appointment_id}`}>
+                            <td>{formatTime(appt.appointment_time)}</td>
+                            <td>{appt.patient_name}</td>
+                            <td>{appt.doctor_name || 'TBD'}</td>
+                            <td>{appt.status_name}</td>
+                          </tr>
+                        )) : <tr><td colSpan="4">No scheduled appointments for this date.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: '0.65rem' }}>
+                    <button type="button" className="admin-ghost-button" onClick={() => setActiveSection('scheduling')}>Open Full Schedule</button>
+                  </div>
+                </article>
+
               </section>
             </>
           )}
@@ -658,7 +1166,13 @@ function AdminDashboardPage() {
           {activeSection === 'scheduling' && (
             <section className="admin-grid-two">
               <article className="admin-panel">
-                <h2>Appointments Scheduled</h2>
+                <div className="admin-panel-header">
+                  <h2>Appointments Scheduled</h2>
+                  <label className="admin-date-filter">
+                    Date
+                    <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
+                  </label>
+                </div>
                 <div className="table-wrap">
                   <table>
                     <thead>
@@ -667,41 +1181,23 @@ function AdminDashboardPage() {
                         <th>Patient</th>
                         <th>Dentist</th>
                         <th>Status</th>
-                        <th>Payment</th>
                         <th>Confirmed By</th>
                         <th>Location</th>
                       </tr>
                     </thead>
                     <tbody>
                       {queue.scheduledAppointments?.length ? queue.scheduledAppointments.map((appt) => {
-                        const payStatus = appt.payment_status || '';
-                        const amtDue = Number(appt.amount_due || 0);
                         return (
                           <tr key={appt.appointment_id}>
                             <td>{formatTime(appt.appointment_time)}</td>
                             <td>{appt.patient_name}</td>
                             <td>{appt.doctor_name || 'TBD'}</td>
                             <td>{appt.status_name}</td>
-                            <td>
-                              {payStatus ? (
-                                <span style={{
-                                  display: 'inline-block',
-                                  padding: '0.15rem 0.5rem',
-                                  borderRadius: '999px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  background: payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : '#f8d7da',
-                                  color: payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : '#721c24'
-                                }}>
-                                  {payStatus}{amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
-                                </span>
-                              ) : '—'}
-                            </td>
                             <td>{appt.receptionist_name || 'Unassigned'}</td>
                             <td>{appt.location_address || 'TBD'}</td>
                           </tr>
                         );
-                      }) : <tr><td colSpan="7">No scheduled appointments for this date.</td></tr>}
+                      }) : <tr><td colSpan="6">No scheduled appointments for this date.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -743,7 +1239,7 @@ function AdminDashboardPage() {
                         <th>Preferred Date</th>
                         <th>Preferred Time</th>
                         <th>Location</th>
-                        <th>Reason</th>
+                        <th>Appointment Reason</th>
                         <th style={{ width: '80px' }}></th>
                       </tr>
                     </thead>
@@ -778,595 +1274,854 @@ function AdminDashboardPage() {
                   </table>
                 </div>
               </article>
+
+              <article className="admin-panel">
+                <h2>Cancelled Appointments</h2>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Patient</th>
+                        <th>Dentist</th>
+                        <th>Location</th>
+                        <th>Cancel Reason</th>
+                        <th>Cancelled By</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cancelledAppointments.length ? cancelledAppointments.map((appt) => (
+                        <tr key={appt.appointment_id}>
+                          <td>{formatDate(appt.appointment_date)}</td>
+                          <td>{formatTime(appt.appointment_time)}</td>
+                          <td>{appt.patient_name}</td>
+                          <td>{appt.doctor_name}</td>
+                          <td>{appt.location || 'N/A'}</td>
+                          <td>{appt.cancel_reason || '—'}</td>
+                          <td>{appt.cancelled_by || '—'}</td>
+                        </tr>
+                      )) : <tr><td colSpan="7">No cancelled appointments.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+
             </section>
           )}
 
+
           {activeSection === 'reports' && (
             <>
-              {/* Report Type Selector */}
+
               <section className="admin-panel">
                 <div className="admin-panel-header-row">
-                  <div className="report-type-toggle">
-                    <button
-                      type="button"
-                      className={reportType === 'patients' ? 'report-type-btn is-active' : 'report-type-btn'}
-                      onClick={() => setReportType('patients')}
-                    >
-                      Patient Reports
-                    </button>
-                    <button
-                      type="button"
-                      className={reportType === 'staff' ? 'report-type-btn is-active' : 'report-type-btn'}
-                      onClick={() => setReportType('staff')}
-                    >
-                      Staff Reports
-                    </button>
-                    <button
-                      type="button"
-                      className={reportType === 'generate' ? 'report-type-btn is-active' : 'report-type-btn'}
-                      onClick={() => setReportType('generate')}
-                    >
-                      Patient General Report
+                  <div>
+                    <p className="admin-label" style={{ marginBottom: '0.25rem' }}>Clinic Performance</p>
+                    <h2 style={{ margin: 0 }}>How the practice is doing</h2>
+                    <p className="muted">Production, collections, provider output, patient growth, and outstanding balances for the selected range.</p>
+                  </div>
+                  <div className="report-date-range">
+                    <label className="admin-inline-filter">
+                      From
+                      <input type="date" value={clinicReportDateFrom} onChange={(e) => setClinicReportDateFrom(e.target.value)} />
+                    </label>
+                    <label className="admin-inline-filter">
+                      To
+                      <input type="date" value={clinicReportDateTo} onChange={(e) => setClinicReportDateTo(e.target.value)} />
+                    </label>
+                    <button type="button" className="admin-btn" onClick={loadClinicPerformanceReport} disabled={clinicPerformanceLoading}>
+                      {clinicPerformanceLoading ? 'Loading...' : 'Refresh'}
                     </button>
                   </div>
+                </div>
 
-                  {reportType === 'patients' && (
-                    <label className="admin-inline-filter">
-                      Status Filter
-                      <select value={reportStatus} onChange={(e) => setReportStatus(e.target.value)}>
-                        {reportStatusOptions.map((status) => (
-                          <option key={status} value={status}>{status.replace('_', ' ')}</option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
+                <div className="clinic-filter-grid">
+                  <label className="admin-inline-filter">
+                    Location
+                    <select
+                      value={clinicFilters.locationId}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, locationId: e.target.value }))}
+                    >
+                      <option value="ALL">All locations</option>
+                      {clinicLocationOptions.map((location) => (
+                        <option key={location.id} value={location.id}>{location.label}</option>
+                      ))}
+                    </select>
+                  </label>
 
-                  {reportType === 'staff' && (
-                    <div className="report-date-range">
-                      <label className="admin-inline-filter">
-                        From
-                        <input type="date" value={reportDateFrom} onChange={(e) => setReportDateFrom(e.target.value)} />
-                      </label>
-                      <label className="admin-inline-filter">
-                        To
-                        <input type="date" value={reportDateTo} onChange={(e) => setReportDateTo(e.target.value)} />
-                      </label>
+                  <label className="admin-inline-filter">
+                    Provider
+                    <select
+                      value={clinicFilters.doctorId}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, doctorId: e.target.value }))}
+                    >
+                      <option value="ALL">All providers</option>
+                      {clinicProviderOptions.map((provider) => (
+                        <option key={provider.id} value={provider.id}>{provider.name}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="admin-inline-filter">
+                    Visit Status
+                    <select
+                      value={clinicFilters.statusGroup}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, statusGroup: e.target.value }))}
+                    >
+                      <option value="ALL">All statuses</option>
+                      <option value="COMPLETED">Completed only</option>
+                      <option value="SCHEDULED">Scheduled pipeline</option>
+                      <option value="CANCELLED">Cancelled only</option>
+                      <option value="NO_SHOW">No-show only</option>
+                      <option value="MISSED">Missed visits (cancelled + no-show)</option>
+                    </select>
+                  </label>
+
+                  <label className="admin-inline-filter">
+                    Payment
+                    <select
+                      value={clinicFilters.paymentStatus}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, paymentStatus: e.target.value }))}
+                    >
+                      <option value="ALL">All payment states</option>
+                      <option value="PAID">Paid</option>
+                      <option value="PARTIAL">Partial</option>
+                      <option value="UNPAID">Unpaid</option>
+                      <option value="REFUNDED">Refunded</option>
+                    </select>
+                  </label>
+
+
+                  <label className="admin-inline-filter">
+                    Procedure Code
+                    <select
+                      value={clinicFilters.procedureCode}
+                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, procedureCode: e.target.value }))}
+                    >
+                      <option value="ALL">All procedure codes</option>
+                      {clinicProcedureCodes.map((item) => (
+                        <option key={item.code} value={item.code}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="clinic-filter-actions">
+                  <button
+                    type="button"
+                    className="admin-ghost-button"
+                    onClick={() => setClinicFilters({
+                      locationId: 'ALL',
+                      doctorId: 'ALL',
+                      statusGroup: 'ALL',
+                      paymentStatus: 'ALL',
+                      patientState: 'ALL',
+                      procedureCode: 'ALL'
+                    })}
+                  >
+                    Clear Filters
+                  </button>
+                  {clinicActiveFilterChips.length > 0 && (
+                    <div className="clinic-filter-chips">
+                      {clinicActiveFilterChips.map((chip) => (
+                        <span key={chip} className="clinic-filter-chip">{chip}</span>
+                      ))}
                     </div>
                   )}
                 </div>
+
+                {summary && (
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', margin: '1rem 0 0' }}>
+                    <article className="metric-card" style={{ flex: '1', minWidth: '160px' }}>
+                      <h2>Patient Collections</h2>
+                      <p>{formatMoney(summary.metrics?.patientCollected)}</p>
+                      <small>All-time from patients</small>
+                    </article>
+                    <article className="metric-card" style={{ flex: '1', minWidth: '160px' }}>
+                      <h2>Insurance Collections</h2>
+                      <p>{formatMoney(summary.metrics?.insuranceCollected)}</p>
+                      <small>All-time from other sources</small>
+                    </article>
+                  </div>
+                )}
+
+                {clinicPerformanceError && <p className="admin-error">{clinicPerformanceError}</p>}
+                {clinicPerformanceReport.generatedAt && (
+                  <p className="muted clinic-generated-at">Generated {new Date(clinicPerformanceReport.generatedAt).toLocaleString()}</p>
+                )}
               </section>
 
-              {/* ── PATIENT REPORTS ── */}
-              {reportType === 'patients' && (
+              {!clinicPerformanceLoading && clinicPerformanceReport.summary && (
+                <section className="admin-metrics-grid">
+                  <article className="metric-card">
+                    <h2>Production</h2>
+                    <p>{formatMoney(clinicPerformanceReport.summary.totalProduction)}</p>
+                    <small>Gross charges in range</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Collected</h2>
+                    <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
+                    <small>After refunds</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Collection Rate</h2>
+                    <p>{formatPercent(clinicPerformanceReport.summary.collectionRate)}</p>
+                    <small>Collected vs patient responsibility</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Outstanding A/R</h2>
+                    <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
+                      {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
+                    </p>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Completed Visits</h2>
+                    <p>{clinicPerformanceReport.summary.completedAppointments}</p>
+                    <small>{formatPercent(clinicPerformanceReport.summary.completionRate)} completion rate</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>No-Shows</h2>
+                    <p>{clinicPerformanceReport.summary.noShowAppointments}</p>
+                    <small>{formatPercent(clinicPerformanceReport.summary.noShowRate)} no-show rate</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>New Patients</h2>
+                    <p>{clinicPerformanceReport.summary.newPatients}</p>
+                    <small>Registered in range</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Active Patients</h2>
+                    <p>{clinicPerformanceReport.summary.activePatients}</p>
+                    <small>Seen in range</small>
+                  </article>
+                  {financialDetail.totals && (
+                    <>
+                      <article className="metric-card">
+                        <h2>Patient Responsibility</h2>
+                        <p>{formatMoney(financialDetail.totals.patient_responsibility)}</p>
+                        <small>What patients owe in range</small>
+                      </article>
+                      <article className="metric-card">
+                        <h2>Refunded</h2>
+                        <p>{formatMoney(financialDetail.totals.total_refunded)}</p>
+                        <small>Total refunds issued in range</small>
+                      </article>
+                    </>
+                  )}
+                </section>
+              )}
+
+              <div className="admin-tab-bar">
+                <button type="button" className={activeReportTab === 'monthly' ? 'is-active' : ''} onClick={() => setActiveReportTab('monthly')}>Monthly Trends</button>
+                <button type="button" className={activeReportTab === 'providers' ? 'is-active' : ''} onClick={() => setActiveReportTab('providers')}>Provider Productivity</button>
+                <button type="button" className={activeReportTab === 'growth' ? 'is-active' : ''} onClick={() => setActiveReportTab('growth')}>Patient Growth</button>
+                <button type="button" className={activeReportTab === 'outstanding' ? 'is-active' : ''} onClick={() => setActiveReportTab('outstanding')}>Outstanding A/R</button>
+                <button type="button" className={activeReportTab === 'financial' ? 'is-active' : ''} onClick={() => setActiveReportTab('financial')}>Financial Detail</button>
+              </div>
+
+              {clinicPerformanceLoading && <p className="admin-loading">Loading clinic performance report...</p>}
+
+              {!clinicPerformanceLoading && clinicPerformanceReport.summary && (
                 <>
-                  <section>
+                  {activeReportTab === 'monthly' && (
                     <article className="admin-panel">
-                      <h2>Report 1: Financial Follow-Up</h2>
-                      <p className="muted">
-                        Per-patient billing summary across all invoices — pulls from patients, appointments, invoices &amp; payments tables.
-                        Patients: {financialFollowUpRows.length} | Total Outstanding: {formatMoney(totalOutstandingAmount)}
-                        {!financialSearch.trim() && <> | Showing {filteredFinancialRows.length} unpaid</>}
-                      </p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.75rem 0' }}>
-                        <input
-                          type="text"
-                          placeholder="Search by patient name or phone..."
-                          value={financialSearch}
-                          onChange={(e) => setFinancialSearch(e.target.value)}
-                          style={{ flex: 1, maxWidth: '360px', padding: '0.45rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem' }}
-                        />
-                        {financialSearch.trim() && (
-                          <button type="button" onClick={() => setFinancialSearch('')} style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', background: '#f5f5f5', cursor: 'pointer', fontSize: '0.85rem' }}>
-                            Clear
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                        <h2 style={{ margin: 0 }}>Production & Collections by Month</h2>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <button
+                            type="button"
+                            className={`admin-btn${monthlyTrendsSort === 'date' ? ' is-active' : ''}`}
+                            onClick={() => setMonthlyTrendsSort('date')}
+                          >
+                            Sort by Date
                           </button>
-                        )}
-                        <span className="muted" style={{ fontSize: '0.8rem' }}>
-                          {financialSearch.trim() ? `${filteredFinancialRows.length} result${filteredFinancialRows.length !== 1 ? 's' : ''} (all statuses)` : 'Only unpaid shown — search to see all'}
-                        </span>
+                          <button
+                            type="button"
+                            className={`admin-btn${monthlyTrendsSort === 'alpha' ? ' is-active' : ''}`}
+                            onClick={() => setMonthlyTrendsSort('alpha')}
+                          >
+                            Sort A–Z
+                          </button>
+                        </div>
                       </div>
-                      <div className="table-wrap" style={{ maxHeight: '480px', overflowY: 'auto' }}>
+                      <div className="table-wrap report-table-wrap">
                         <table>
-                          <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                          <thead>
                             <tr>
-                              <SortTh sort={sortFinancial} column="patient_name">Patient</SortTh>
-                              <SortTh sort={sortFinancial} column="p_phone">Phone</SortTh>
-                              <SortTh sort={sortFinancial} column="total_invoices">Invoices</SortTh>
-                              <SortTh sort={sortFinancial} column="unpaid_invoices">Unpaid</SortTh>
-                              <SortTh sort={sortFinancial} column="total_charged">Total Charged</SortTh>
-                              <SortTh sort={sortFinancial} column="total_insurance_covered">Insurance Covered</SortTh>
-                              <SortTh sort={sortFinancial} column="total_patient_responsibility">Patient Owes</SortTh>
-                              <SortTh sort={sortFinancial} column="total_paid">Paid</SortTh>
-                              <SortTh sort={sortFinancial} column="total_outstanding">Outstanding</SortTh>
+                              <th>Month</th>
+                              <th>Appointments</th>
+                              <th>Completed</th>
+                              <th>Cancelled</th>
+                              <th>No-Show</th>
+                              <th>Scheduled</th>
+                              <th>Production</th>
+                              <th>Patient Collected</th>
+                              <th>Insurance Collected</th>
+                              <th>Collected</th>
+                              <th>Outstanding</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredFinancialRows.length ? sortFinancial.sorted(filteredFinancialRows).map((row) => {
-                              const outstanding = Number(row.total_outstanding || 0);
+                            {clinicPerformanceReport.monthlyTrends.length ? clinicPerformanceReport.monthlyTrends.map((month) => {
+                              const monthAppts = clinicPerformanceReport.appointmentRows
+                                .filter((a) => a.period_key === month.period_key)
+                                .sort((a, b) => {
+                                  const dateA = String(a.appointment_date || '').slice(0, 10);
+                                  const dateB = String(b.appointment_date || '').slice(0, 10);
+                                  const nameA = String(a.patient_name || '').toLowerCase();
+                                  const nameB = String(b.patient_name || '').toLowerCase();
+                                  if (monthlyTrendsSort === 'alpha') {
+                                    return nameA !== nameB ? nameA.localeCompare(nameB) : dateA.localeCompare(dateB);
+                                  }
+                                  return dateA !== dateB ? dateA.localeCompare(dateB) : nameA.localeCompare(nameB);
+                                });
                               return (
-                                <tr key={row.patient_id}>
-                                  <td>{row.patient_name}</td>
-                                  <td>{row.p_phone || 'N/A'}</td>
-                                  <td>{row.total_invoices}</td>
-                                  <td>
-                                    {Number(row.unpaid_invoices || 0) > 0 ? (
-                                      <span style={{
-                                        display: 'inline-block',
-                                        padding: '0.1rem 0.45rem',
-                                        borderRadius: '999px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 700,
-                                        background: '#f8d7da',
-                                        color: '#721c24'
-                                      }}>
-                                        {row.unpaid_invoices}
-                                      </span>
-                                    ) : (
-                                      <span style={{
-                                        display: 'inline-block',
-                                        padding: '0.1rem 0.45rem',
-                                        borderRadius: '999px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 700,
-                                        background: '#d4edda',
-                                        color: '#155724'
-                                      }}>
-                                        0
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td>{formatMoney(row.total_charged)}</td>
-                                  <td>{formatMoney(row.total_insurance_covered)}</td>
-                                  <td>{formatMoney(row.total_patient_responsibility)}</td>
-                                  <td>{formatMoney(row.total_paid)}</td>
-                                  <td style={{ fontWeight: outstanding > 0 ? 700 : 400, color: outstanding > 0 ? '#9d2e2e' : '#155724' }}>
-                                    {formatMoney(outstanding)}
-                                  </td>
-                                </tr>
+                                <>
+                                  <tr key={month.period_key} style={{ background: '#e8f2f0', fontWeight: 700 }}>
+                                    <td>{month.period_label}</td>
+                                    <td>{month.total_appointments}</td>
+                                    <td>{month.completed_appointments}</td>
+                                    <td>{month.cancelled_appointments}</td>
+                                    <td>{month.no_show_appointments}</td>
+                                    <td>{month.scheduled_appointments}</td>
+                                    <td>{formatMoney(month.total_production)}</td>
+                                    <td>{formatMoney(month.patient_collected)}</td>
+                                    <td>{formatMoney(month.insurance_collected)}</td>
+                                    <td>{formatMoney(month.total_collected)}</td>
+                                    <td>{formatMoney(month.total_outstanding)}</td>
+                                  </tr>
+                                  {monthAppts.length > 0 && (
+                                    <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>Date</td>
+                                      <td>Patient</td>
+                                      <td colSpan="9" />
+                                    </tr>
+                                  )}
+                                  {monthAppts.map((appt) => (
+                                    <tr key={appt.appointment_id} style={{ background: '#f9fdfb', fontSize: '0.87rem', color: '#334240' }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>
+                                        {String(appt.appointment_date || '').slice(0, 10)}
+                                      </td>
+                                      <td>{appt.patient_name}</td>
+                                      <td style={{ color: '#1d6b41', fontWeight: 600 }}>
+                                        {appt.status_name === 'COMPLETED' ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
+                                        {['CANCELED', 'CANCELLED'].includes(appt.status_name) ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
+                                        {appt.status_name === 'NO_SHOW' ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#4b6966', fontWeight: 600 }}>
+                                        {['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(appt.status_name) ? '✓' : ''}
+                                      </td>
+                                      <td>{formatMoney(appt.production)}</td>
+                                      <td>{formatMoney(appt.patient_collected)}</td>
+                                      <td>{formatMoney(appt.insurance_collected)}</td>
+                                      <td>{formatMoney(appt.total_collected)}</td>
+                                      <td>{formatMoney(appt.outstanding)}</td>
+                                    </tr>
+                                  ))}
+                                </>
                               );
-                            }) : <tr><td colSpan="9">{financialSearch.trim() ? 'No matching patients found.' : 'No unpaid invoices.'}</td></tr>}
+                            }) : <tr><td colSpan="11">No monthly trend data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>
                     </article>
+                  )}
 
-                  </section>
-
-                  <section className="admin-panel">
-                    <h2>Refund Management</h2>
-                    <p className="muted">Process refunds for overpaid invoices and view refund history. Total refunds: {refundHistory.length} | Total refunded: {formatMoney(refundHistory.reduce((s, r) => s + Number(r.refund_amount || 0), 0))}</p>
-
-                    <div style={{ margin: '0.75rem 0', padding: '0.75rem', border: '1px solid #d7e7e5', borderRadius: '10px', background: '#f9fcfb' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem' }}>
-                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Invoice ID
-                          <input type="number" placeholder="e.g. 5" value={refundForm.invoiceId} onChange={(e) => { setRefundForm((p) => ({ ...p, invoiceId: e.target.value })); lookupInvoice(e.target.value); }} style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
-                        </label>
-                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Refund Amount
-                          <input type="number" step="0.01" placeholder="0.00" value={refundForm.amount} onChange={(e) => setRefundForm((p) => ({ ...p, amount: e.target.value }))} style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
-                        </label>
-                        <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Reason
-                          <input type="text" placeholder="Treatment cost adjusted" value={refundForm.reason} onChange={(e) => setRefundForm((p) => ({ ...p, reason: e.target.value }))} style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
-                        </label>
-                        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                          <button type="button" onClick={processRefund} style={{ padding: '0.45rem 1rem', borderRadius: '6px', border: 'none', background: '#9d2e2e', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem', width: '100%' }}>
-                            Process Refund
+                  {activeReportTab === 'providers' && (
+                    <article className="admin-panel">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                        <h2 style={{ margin: 0 }}>Provider Productivity</h2>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <button
+                            type="button"
+                            className={`admin-btn${monthlyTrendsSort === 'date' ? ' is-active' : ''}`}
+                            onClick={() => setMonthlyTrendsSort('date')}
+                          >
+                            Sort by Date
+                          </button>
+                          <button
+                            type="button"
+                            className={`admin-btn${monthlyTrendsSort === 'alpha' ? ' is-active' : ''}`}
+                            onClick={() => setMonthlyTrendsSort('alpha')}
+                          >
+                            Sort A–Z
                           </button>
                         </div>
                       </div>
-                      {invoiceLookupLoading && <p className="muted" style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>Looking up invoice...</p>}
-                      {invoiceLookup && Number(refundForm.invoiceId) === invoiceLookup.invoice_id && (
-                        <div style={{ marginTop: '0.6rem', padding: '0.6rem', background: '#eef5f4', borderRadius: '8px', fontSize: '0.83rem' }}>
-                          <p style={{ margin: 0 }}><strong>{invoiceLookup.patient_name}</strong> — Invoice #{invoiceLookup.invoice_id} | Appt: {formatDate(invoiceLookup.appointment_date)}</p>
-                          <p style={{ margin: '0.2rem 0' }}>
-                            Charged: {formatMoney(invoiceLookup.amount)} | Patient responsibility: {formatMoney(invoiceLookup.patient_amount)} | Paid: {formatMoney(invoiceLookup.net_paid)} | Outstanding: {formatMoney(Math.max(Number(invoiceLookup.patient_amount) - invoiceLookup.net_paid, 0))} | Status: {invoiceLookup.payment_status}
-                          </p>
-                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
-                            {invoiceLookup.overpayment > 0 && (
-                              <button type="button" onClick={() => setRefundForm((p) => ({ ...p, amount: String(invoiceLookup.overpayment), reason: p.reason || 'Overpayment — treatment cost reduced' }))}
-                                style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', border: '1px solid #2a7d6e', background: '#d4edda', color: '#155724', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
-                                Difference: {formatMoney(invoiceLookup.overpayment)}
-                              </button>
-                            )}
-                            {invoiceLookup.max_refundable > 0 && (
-                              <button type="button" onClick={() => setRefundForm((p) => ({ ...p, amount: String(invoiceLookup.max_refundable), reason: p.reason || 'Full refund' }))}
-                                style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', border: '1px solid #9d2e2e', background: '#f8d7da', color: '#721c24', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
-                                Full Refund: {formatMoney(invoiceLookup.max_refundable)}
-                              </button>
-                            )}
-                            {invoiceLookup.max_refundable <= 0 && invoiceLookup.overpayment <= 0 && (
-                              <span style={{ color: '#6c757d', fontSize: '0.8rem' }}>No payments to refund.</span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {refundHistory.length > 0 && (
-                      <div className="table-wrap" style={{ maxHeight: '360px', overflowY: 'auto', marginTop: '0.5rem' }}>
+                      <div className="table-wrap report-table-wrap">
                         <table>
-                          <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                          <thead>
                             <tr>
-                              <SortTh sort={sortRefund} column="refund_id">ID</SortTh>
-                              <SortTh sort={sortRefund} column="patient_name">Patient</SortTh>
-                              <SortTh sort={sortRefund} column="invoice_id">Invoice</SortTh>
-                              <SortTh sort={sortRefund} column="refund_amount">Amount</SortTh>
-                              <SortTh sort={sortRefund} column="reason">Reason</SortTh>
-                              <SortTh sort={sortRefund} column="appointment_date">Appt Date</SortTh>
-                              <SortTh sort={sortRefund} column="created_at">Refunded On</SortTh>
+                              <th>Provider / Date</th>
+                              <th>Appointments</th>
+                              <th>Completed</th>
+                              <th>Cancelled</th>
+                              <th>No-Show</th>
+                              <th>Scheduled</th>
+                              <th>Production</th>
+                              <th>Patient Collected</th>
+                              <th>Insurance Collected</th>
+                              <th>Collected</th>
+                              <th>Collection Rate</th>
+                              <th>Outstanding</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {sortRefund.sorted(refundHistory).map((r) => (
-                              <tr key={r.refund_id}>
-                                <td>{r.refund_id}</td>
-                                <td>{r.patient_name}</td>
-                                <td>#{r.invoice_id}</td>
-                                <td style={{ fontWeight: 700, color: '#9d2e2e' }}>-{formatMoney(r.refund_amount)}</td>
-                                <td>{r.reason || 'N/A'}</td>
-                                <td>{formatDate(r.appointment_date)}</td>
-                                <td>{new Date(r.created_at).toLocaleDateString()}</td>
-                              </tr>
-                            ))}
+                            {clinicPerformanceReport.providerPerformance.length ? clinicPerformanceReport.providerPerformance.map((row) => {
+                              const collectionRate = Number(row.total_production || 0) > 0
+                                ? (Number(row.total_collected || 0) / Number(row.total_production || 0)) * 100
+                                : 0;
+                              const providerAppts = clinicPerformanceReport.appointmentRows
+                                .filter((a) => Number(a.doctor_id) === Number(row.doctor_id))
+                                .sort((a, b) => {
+                                  const dateA = String(a.appointment_date || '').slice(0, 10);
+                                  const dateB = String(b.appointment_date || '').slice(0, 10);
+                                  const nameA = String(a.patient_name || '').toLowerCase();
+                                  const nameB = String(b.patient_name || '').toLowerCase();
+                                  if (monthlyTrendsSort === 'alpha') {
+                                    return nameA !== nameB ? nameA.localeCompare(nameB) : dateA.localeCompare(dateB);
+                                  }
+                                  return dateA !== dateB ? dateA.localeCompare(dateB) : nameA.localeCompare(nameB);
+                                });
+                              return (
+                                <>
+                                  <tr key={row.doctor_id} style={{ background: '#e8f2f0', fontWeight: 700 }}>
+                                    <td>Dr. {row.doctor_name}</td>
+                                    <td>{row.total_appointments}</td>
+                                    <td>{row.completed_appointments}</td>
+                                    <td>{row.cancelled_appointments}</td>
+                                    <td>{row.no_show_appointments}</td>
+                                    <td>{row.scheduled_appointments}</td>
+                                    <td>{formatMoney(row.total_production)}</td>
+                                    <td>{formatMoney(row.patient_collected)}</td>
+                                    <td>{formatMoney(row.insurance_collected)}</td>
+                                    <td>{formatMoney(row.total_collected)}</td>
+                                    <td>{formatPercent(collectionRate)}</td>
+                                    <td>{formatMoney(row.total_outstanding)}</td>
+                                  </tr>
+                                  {providerAppts.length > 0 && (
+                                    <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>Date</td>
+                                      <td>Patient</td>
+                                      <td colSpan="10" />
+                                    </tr>
+                                  )}
+                                  {providerAppts.map((appt) => (
+                                    <tr key={appt.appointment_id} style={{ background: '#f9fdfb', fontSize: '0.87rem', color: '#334240' }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>
+                                        {String(appt.appointment_date || '').slice(0, 10)}
+                                      </td>
+                                      <td>{appt.patient_name}</td>
+                                      <td style={{ color: '#1d6b41', fontWeight: 600 }}>
+                                        {appt.status_name === 'COMPLETED' ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
+                                        {['CANCELED', 'CANCELLED'].includes(appt.status_name) ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
+                                        {appt.status_name === 'NO_SHOW' ? '✓' : ''}
+                                      </td>
+                                      <td style={{ color: '#4b6966', fontWeight: 600 }}>
+                                        {['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(appt.status_name) ? '✓' : ''}
+                                      </td>
+                                      <td>{formatMoney(appt.production)}</td>
+                                      <td>{formatMoney(appt.patient_collected)}</td>
+                                      <td>{formatMoney(appt.insurance_collected)}</td>
+                                      <td>{formatMoney(appt.total_collected)}</td>
+                                      <td />
+                                      <td>{formatMoney(appt.outstanding)}</td>
+                                    </tr>
+                                  ))}
+                                </>
+                              );
+                            }) : <tr><td colSpan="12">No provider productivity data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>
-                    )}
-                  </section>
+                    </article>
+                  )}
 
-                  <section className="admin-panel">
-                    <h2>Report 2: Scheduling Confirmation Needed</h2>
-                    <p className="muted">
-                      Pending requests where staff must confirm date/time/location — pulls from appointment_preference_requests &amp; patients tables.
-                      Count: {schedulingActionRows.length}
-                      {schedulingActionRows.length > schedulingPageSize && (<> | Page {schedulingPage + 1} of {Math.ceil(schedulingActionRows.length / schedulingPageSize)}</>)}
-                    </p>
-                    <div className="table-wrap" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                      <table>
-                        <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                          <tr>
-                            <SortTh sort={sortScheduling} column="patient_name">Patient</SortTh>
-                            <SortTh sort={sortScheduling} column="preferred_date">Preferred Date</SortTh>
-                            <SortTh sort={sortScheduling} column="preferred_time">Preferred Time</SortTh>
-                            <SortTh sort={sortScheduling} column="preferred_location">Preferred Location</SortTh>
-                            <th>Action Needed</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {schedulingActionRows.length ? sortScheduling.sorted(schedulingActionRows).slice(schedulingPage * schedulingPageSize, (schedulingPage + 1) * schedulingPageSize).map((row) => (
-                            <tr key={row.preference_request_id}>
-                              <td>{row.patient_name}</td>
-                              <td>{row.preferred_date ? formatDate(row.preferred_date) : 'Missing'}</td>
-                              <td>{row.preferred_time ? formatTime(row.preferred_time) : 'Missing'}</td>
-                              <td>{row.preferred_location || 'Missing'}</td>
-                              <td>
-                                {[
-                                  row.needsDateConfirmation ? 'Confirm date' : null,
-                                  row.needsTimeConfirmation ? 'Confirm time' : null,
-                                  row.needsLocationConfirmation ? 'Confirm location' : null
-                                ].filter(Boolean).join(', ') || 'Confirm final assignment'}
-                              </td>
+                  {activeReportTab === 'growth' && (
+                    <article className="admin-panel">
+                      <h2>Patient Growth</h2>
+                      <div className="table-wrap report-table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Month</th>
+                              <th>New Patients</th>
+                              <th>Patient Name</th>
+                              <th>Date Registered</th>
+                              <th>Phone</th>
+                              <th>Doctor</th>
+                              <th>Total Appts</th>
                             </tr>
-                          )) : <tr><td colSpan="5">No pending scheduling confirmations.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                    {schedulingActionRows.length > schedulingPageSize && (
-                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
-                        <button type="button" disabled={schedulingPage === 0} onClick={() => setSchedulingPage((p) => p - 1)}
-                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: schedulingPage === 0 ? '#eee' : '#fff', cursor: schedulingPage === 0 ? 'default' : 'pointer', fontSize: '0.85rem' }}>
-                          Previous
-                        </button>
-                        <button type="button" disabled={(schedulingPage + 1) * schedulingPageSize >= schedulingActionRows.length} onClick={() => setSchedulingPage((p) => p + 1)}
-                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: (schedulingPage + 1) * schedulingPageSize >= schedulingActionRows.length ? '#eee' : '#fff', cursor: (schedulingPage + 1) * schedulingPageSize >= schedulingActionRows.length ? 'default' : 'pointer', fontSize: '0.85rem' }}>
-                          Next
+                          </thead>
+                          <tbody>
+                            {clinicPerformanceReport.newPatientsTrend.length ? clinicPerformanceReport.newPatientsTrend.map((month) => {
+                              const monthPatients = clinicPerformanceReport.newPatientRows.filter(
+                                (p) => p.period_key === month.period_key
+                              );
+                              return (
+                                <>
+                                  <tr key={month.period_key} style={{ background: '#e8f2f0', fontWeight: 700 }}>
+                                    <td>{month.period_label}</td>
+                                    <td>{month.new_patients}</td>
+                                    <td colSpan="5" />
+                                  </tr>
+                                  {monthPatients.length > 0 && (
+                                    <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
+                                      <td colSpan="2" />
+                                      <td>Patient</td>
+                                      <td>Registered</td>
+                                      <td>Phone</td>
+                                      <td>Doctor</td>
+                                      <td>Total Appts</td>
+                                    </tr>
+                                  )}
+                                  {monthPatients.map((p) => (
+                                    <tr key={p.patient_id} style={{ background: '#f9fdfb', fontSize: '0.87rem', color: '#334240' }}>
+                                      <td colSpan="2" />
+                                      <td>{p.patient_name}</td>
+                                      <td>{String(p.registered_date || '').slice(0, 10)}</td>
+                                      <td>{p.p_phone || '—'}</td>
+                                      <td>{p.doctor_name ? `Dr. ${p.doctor_name}` : '—'}</td>
+                                      <td>{p.total_appointments}</td>
+                                    </tr>
+                                  ))}
+                                </>
+                              );
+                            }) : <tr><td colSpan="7">No patient growth data for this range.</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                    </article>
+                  )}
+
+                  {activeReportTab === 'outstanding' && (
+                    <article className="admin-panel">
+                      <h2>Outstanding Accounts</h2>
+                      <div className="table-wrap report-table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Patient</th>
+                              <th>Phone</th>
+                              <th>Invoices</th>
+                              <th>Charged</th>
+                              <th>Insurance</th>
+                              <th>Patient Owes</th>
+                              <th>Paid</th>
+                              <th>Due</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {clinicPerformanceReport.outstandingPatients.length ? pagedOutstandingPatients.map((row) => (
+                              <tr key={row.patient_id}>
+                                <td>{row.patient_name}</td>
+                                <td>{row.p_phone || 'N/A'}</td>
+                                <td>{row.total_invoices}</td>
+                                <td>{formatMoney(row.total_charged)}</td>
+                                <td>{formatMoney(row.insurance_covered)}</td>
+                                <td>{formatMoney(row.patient_responsibility)}</td>
+                                <td>{formatMoney(row.patient_paid)}</td>
+                                <td style={{ color: '#9d2e2e', fontWeight: 700 }}>{formatMoney(row.patient_due)}</td>
+                              </tr>
+                            )) : <tr><td colSpan="8">No outstanding balances to show.</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                      {renderTablePager(clinicPerformanceReport.outstandingPatients.length, outstandingAccountsPage, setOutstandingAccountsPage)}
+                    </article>
+                  )}
+
+                  {activeReportTab === 'financial' && (
+                    <article className="admin-panel">
+                      <h2 style={{ margin: '0 0 0.75rem' }}>Financial Detail Ledger</h2>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginBottom: '0.75rem', alignItems: 'flex-end' }}>
+                        <label className="admin-inline-filter">
+                          Patient
+                          <input type="text" placeholder="Search name…" value={financialDetailPatient} onChange={(e) => setFinancialDetailPatient(e.target.value)} />
+                        </label>
+                        <button type="button" className="admin-btn" onClick={loadFinancialDetail} disabled={financialDetailLoading}>
+                          {financialDetailLoading ? 'Loading…' : 'Search'}
                         </button>
                       </div>
-                    )}
-                  </section>
-                </>
-              )}
-
-              {/* ── GENERATE REPORT ── */}
-              {reportType === 'generate' && (
-                <>
-                  <section className="admin-panel">
-                    <h2>Patient General Report</h2>
-                    <p className="muted">View completed appointments. Select a date range and optional filters, then export as PDF, CSV, or JSON.</p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end', marginBottom: '1rem' }}>
-                      <label className="admin-inline-filter">
-                        From
-                        <input type="date" value={genReportDateFrom} onChange={(e) => setGenReportDateFrom(e.target.value)} required />
-                      </label>
-                      <label className="admin-inline-filter">
-                        To
-                        <input type="date" value={genReportDateTo} onChange={(e) => setGenReportDateTo(e.target.value)} required />
-                      </label>
-                      <label className="admin-inline-filter">
-                        Zip Code
-                        <input type="text" placeholder="e.g. 77004" maxLength={5} value={genReportFilters.zipCode} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, zipCode: e.target.value.replace(/\D/g, '').slice(0, 5) }))} />
-                      </label>
-                      <label className="admin-inline-filter">
-                        Clinic Location
-                        <select value={genReportFilters.locationId} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, locationId: e.target.value }))}>
-                          <option value="">All Locations</option>
-                          {filterOptions.locations.map((loc) => (
-                            <option key={loc.location_id} value={loc.location_id}>{loc.full_address}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="admin-inline-filter">
-                        Patient City
-                        <input type="text" placeholder="e.g. Houston" value={genReportFilters.patientCity} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, patientCity: e.target.value }))} />
-                      </label>
-                      <label className="admin-inline-filter">
-                        Patient State
-                        <input type="text" placeholder="e.g. TX" maxLength={2} value={genReportFilters.patientState} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, patientState: e.target.value.toUpperCase().slice(0, 2) }))} />
-                      </label>
-                      <label className="admin-inline-filter">
-                        Treatment
-                        <select value={genReportFilters.treatmentCode} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, treatmentCode: e.target.value }))}>
-                          <option value="">All Treatments</option>
-                          {filterOptions.treatments.map((t) => (
-                            <option key={t.procedure_code} value={t.procedure_code}>{t.procedure_code} - {t.description}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="admin-inline-filter">
-                        Department
-                        <select value={genReportFilters.departmentId} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, departmentId: e.target.value }))}>
-                          <option value="">All Departments</option>
-                          {filterOptions.departments.map((dep) => (
-                            <option key={dep.department_id} value={dep.department_id}>{dep.department_name}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="admin-inline-filter">
-                        Doctor
-                        <select value={genReportFilters.doctorId} onChange={(e) => setGenReportFilters((prev) => ({ ...prev, doctorId: e.target.value }))}>
-                          <option value="">All Doctors</option>
-                          {filterOptions.doctors.map((doc) => (
-                            <option key={doc.doctor_id} value={doc.doctor_id}>Dr. {doc.doctor_name}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <button type="button" className="report-type-btn is-active" onClick={handleGenerateReport} disabled={genReportLoading}>
-                        {genReportLoading ? 'Generating...' : 'Generate Report'}
-                      </button>
-                      {genReportData?.rows?.length > 0 && (
+                      {financialDetailError && <p className="admin-error">{financialDetailError}</p>}
+                      {financialDetailLoading && <p className="admin-loading">Loading financial detail…</p>}
+                      {!financialDetailLoading && financialDetail.totals && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem', background: '#f0f7f6', border: '1px solid #d7e7e5', borderRadius: '10px', padding: '0.6rem 1rem' }}>
+                          <span><strong>Patient Responsibility:</strong> {formatMoney(financialDetail.totals.patient_responsibility)}</span>
+                          <span style={{ color: '#555' }}>|</span>
+                          <span><strong>Refunded:</strong> {formatMoney(financialDetail.totals.total_refunded)}</span>
+                        </div>
+                      )}
+                      {!financialDetailLoading && financialDetail.items.length > 0 && (
                         <>
-                          <button type="button" className="report-type-btn" onClick={exportReportPDF}>Export PDF</button>
-                          <button type="button" className="report-type-btn" onClick={exportReportCSV}>Export CSV</button>
-                          <button type="button" className="report-type-btn" onClick={exportReportJSON}>Export JSON</button>
+                          <div className="table-wrap report-table-wrap">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Patient</th>
+                                  <th>Appt Date</th>
+                                  <th>Provider</th>
+                                  <th>Visit Status</th>
+                                  <th>Invoice #</th>
+                                  <th>Gross Charge</th>
+                                  <th>Insurance Paid</th>
+                                  <th>Patient Owes</th>
+                                  <th>Patient Paid</th>
+                                  <th>Refunded</th>
+                                  <th>Balance Due</th>
+                                  <th>Pay Status</th>
+                                  <th>Fee Note</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {financialDetail.items.slice(financialDetailPage * reportPageSize, (financialDetailPage + 1) * reportPageSize).map((row, i) => (
+                                  <tr key={`${row.appointment_id}-${i}`}>
+                                    <td>{row.patient_name}</td>
+                                    <td>{formatDate(row.appointment_date)}</td>
+                                    <td>{row.doctor_name}</td>
+                                    <td style={{ fontSize: '0.78rem' }}>{row.visit_status}</td>
+                                    <td>{row.invoice_id ? `#${row.invoice_id}` : '—'}</td>
+                                    <td>{formatMoney(row.gross_charge)}</td>
+                                    <td>{formatMoney(row.insurance_covered)}</td>
+                                    <td>{formatMoney(row.patient_responsibility)}</td>
+                                    <td>{formatMoney(row.patient_paid)}</td>
+                                    <td>{row.total_refunded > 0 ? formatMoney(row.total_refunded) : '—'}</td>
+                                    <td style={{ color: row.balance_due > 0 ? '#9d2e2e' : '#2a7a4f', fontWeight: 700 }}>{formatMoney(row.balance_due)}</td>
+                                    <td style={{ fontSize: '0.78rem' }}>{row.payment_status}</td>
+                                    <td style={{ fontSize: '0.78rem', color: row.fee_note ? '#7a5100' : '#aaa' }}>{row.fee_note || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {renderTablePager(financialDetail.items.length, financialDetailPage, setFinancialDetailPage)}
                         </>
                       )}
-                    </div>
-                  </section>
-
-                  {genReportData && (
-                    <section className="admin-panel">
-                      <h2>Report Results</h2>
-                      <p className="muted">
-                        Date Range: {genReportData.dateFrom} to {genReportData.dateTo} | Total Records: {genReportData.totalRows} | Generated: {new Date(genReportData.generatedAt).toLocaleString()}
-                      </p>
-                      {genReportData.rows.length > 0 ? (
-                        <div className="table-wrap">
-                          <table>
-                            <thead>
-                              <tr>
-                                <SortTh sort={sortGenReport} column="appointment_date">Date</SortTh>
-                                <SortTh sort={sortGenReport} column="appointment_time">Time</SortTh>
-                                <SortTh sort={sortGenReport} column="patient_name">Patient</SortTh>
-                                <SortTh sort={sortGenReport} column="patient_city">Patient Location</SortTh>
-                                <SortTh sort={sortGenReport} column="doctor_name">Doctor</SortTh>
-                                <SortTh sort={sortGenReport} column="clinic_location">Clinic Location</SortTh>
-                                <SortTh sort={sortGenReport} column="treatment_name">Treatment</SortTh>
-                                <SortTh sort={sortGenReport} column="department_name">Department</SortTh>
-                                <SortTh sort={sortGenReport} column="payment_status">Payment</SortTh>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {sortGenReport.sorted(genReportData.rows).slice(0, 100).map((row, idx) => (
-                                <tr key={idx}>
-                                  <td>{formatDate(row.appointment_date)}</td>
-                                  <td>{formatTime(row.appointment_time)}</td>
-                                  <td>{row.patient_name}</td>
-                                  <td>{row.patient_city || ''}{row.patient_state ? ', ' + row.patient_state : ''} {row.patient_zip || ''}</td>
-                                  <td>Dr. {row.doctor_name}</td>
-                                  <td>{row.clinic_location || 'N/A'}</td>
-                                  <td>{row.treatment_name || 'N/A'}</td>
-                                  <td>{row.department_name || 'N/A'}</td>
-                                  <td>
-                                    <span style={{
-                                      display: 'inline-block',
-                                      padding: '0.15rem 0.5rem',
-                                      borderRadius: '999px',
-                                      fontSize: '0.75rem',
-                                      fontWeight: 700,
-                                      background: row.payment_status === 'Paid' ? '#d4edda' : row.payment_status === 'Partial' ? '#fff3cd' : '#f8d7da',
-                                      color: row.payment_status === 'Paid' ? '#155724' : row.payment_status === 'Partial' ? '#856404' : '#721c24'
-                                    }}>
-                                      {row.payment_status}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {genReportData.rows.length > 100 && (
-                            <p className="muted" style={{ marginTop: '0.5rem' }}>Showing first 100 of {genReportData.rows.length} rows. Export for full data.</p>
-                          )}
-                        </div>
-                      ) : (
-                        <p>No records found matching your criteria.</p>
+                      {!financialDetailLoading && financialDetail.generatedAt && financialDetail.items.length === 0 && (
+                        <p className="muted">No appointments found for the selected filters.</p>
                       )}
-                    </section>
+                    </article>
                   )}
                 </>
               )}
+            </>
+          )}
 
-              {/* ── STAFF REPORTS ── */}
-              {reportType === 'staff' && (
-                <>
-                  <section className="admin-panel">
-                    <h2>Report 1: Doctor Workload Summary</h2>
-                    <p className="muted">
-                      Appointment counts per doctor for the selected date range — pulls from doctors, staff, appointments &amp; appointment_statuses tables.
-                    </p>
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <SortTh sort={sortWorkload} column="doctor_name">Doctor</SortTh>
-                            <SortTh sort={sortWorkload} column="phone_number">Phone</SortTh>
-                            <SortTh sort={sortWorkload} column="total_appointments">Total Appts</SortTh>
-                            <SortTh sort={sortWorkload} column="completed">Completed</SortTh>
-                            <SortTh sort={sortWorkload} column="upcoming">Upcoming</SortTh>
-                            <SortTh sort={sortWorkload} column="canceled">Canceled</SortTh>
-                            <SortTh sort={sortWorkload} column="no_show">No-Show</SortTh>
+          {activeSection === 'refunds' && (
+            <>
+              {overpaidInvoices.length > 0 && (
+                <section className="admin-panel">
+                  <div className="admin-panel-header">
+                    <h2>Overpaid Invoices <span style={{ fontSize: '0.8rem', fontWeight: 600, background: '#fde8a0', color: '#7a5100', borderRadius: '999px', padding: '0.15em 0.6em', marginLeft: '0.4rem' }}>{overpaidInvoices.length}</span></h2>
+                    <p className="muted">Patients who have paid more than their current invoice total. Click "Refund" to pre-fill the form below.</p>
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Invoice</th>
+                          <th>Patient</th>
+                          <th>Appt Date</th>
+                          <th>Doctor</th>
+                          <th>Invoice Total</th>
+                          <th>Net Paid</th>
+                          <th>Overpayment</th>
+                          <th>Reason</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overpaidInvoices.map((inv) => (
+                          <tr key={inv.invoice_id}>
+                            <td>#{inv.invoice_id}</td>
+                            <td>{inv.patient_name}</td>
+                            <td>{formatDate(inv.appointment_date)}</td>
+                            <td>{inv.doctor_name || '—'}</td>
+                            <td>{formatMoney(inv.patient_amount)}</td>
+                            <td>{formatMoney(inv.net_paid)}</td>
+                            <td style={{ color: '#9d2e2e', fontWeight: 700 }}>{formatMoney(inv.overpayment)}</td>
+                            <td style={{ color: '#555', fontSize: '0.82rem' }}>{inv.reason}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className="admin-btn"
+                                style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
+                                onClick={() => {
+                                  setRefundForm({ invoiceId: String(inv.invoice_id), amount: String(inv.overpayment), reason: inv.reason });
+                                  lookupInvoice(inv.invoice_id);
+                                  document.getElementById('process-refund-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }}
+                              >
+                                Refund
+                              </button>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {staffReport.workload.length ? sortWorkload.sorted(staffReport.workload).map((row) => (
-                            <tr key={row.doctor_id}>
-                              <td>Dr. {row.doctor_name}</td>
-                              <td>{row.phone_number || 'N/A'}</td>
-                              <td>{row.total_appointments}</td>
-                              <td>{row.completed}</td>
-                              <td>{row.upcoming}</td>
-                              <td>{row.canceled}</td>
-                              <td>{row.no_show}</td>
-                            </tr>
-                          )) : <tr><td colSpan="7">No doctor workload data for this range.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-
-                  <section className="admin-panel">
-                    <h2>Report 2: Doctor Appointment Schedule</h2>
-                    <p className="muted">
-                      Full appointment schedule by doctor for the selected range — pulls from doctors, staff, appointments, patients &amp; locations tables.
-                      Total: {staffReport.schedule.length} appointment(s)
-                      {filteredDocSchedule.length !== staffReport.schedule.length && (<> | Showing: {filteredDocSchedule.length}</>)}
-                      {filteredDocSchedule.length > docSchedPageSize && (<> | Page {docSchedPage + 1} of {Math.ceil(filteredDocSchedule.length / docSchedPageSize)}</>)}
-                    </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.75rem 0' }}>
-                      <input
-                        type="text"
-                        placeholder="Search by doctor name..."
-                        value={docSchedSearch}
-                        onChange={(e) => { setDocSchedSearch(e.target.value); setDocSchedPage(0); }}
-                        style={{ flex: 1, maxWidth: '320px', padding: '0.45rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem' }}
-                      />
-                      {docSchedSearch.trim() && (
-                        <button type="button" onClick={() => { setDocSchedSearch(''); setDocSchedPage(0); }} style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #ccc', background: '#f5f5f5', cursor: 'pointer', fontSize: '0.85rem' }}>
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <div className="table-wrap" style={{ maxHeight: '480px', overflowY: 'auto' }}>
-                      <table>
-                        <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                          <tr>
-                            <SortTh sort={sortDoctorSchedule} column="doctor_name">Doctor</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="appointment_date">Date</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="appointment_time">Time</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="patient_name">Patient</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="patient_phone">Patient Phone</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="status_name">Status</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="payment_status">Payment</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="receptionist_name">Confirmed By</SortTh>
-                            <SortTh sort={sortDoctorSchedule} column="location_address">Location</SortTh>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredDocSchedule.length ? sortDoctorSchedule.sorted(filteredDocSchedule).slice(docSchedPage * docSchedPageSize, (docSchedPage + 1) * docSchedPageSize).map((row, idx) => {
-                            const payStatus = row.payment_status || '';
-                            const amtDue = Number(row.amount_due || 0);
-                            return (
-                              <tr key={idx}>
-                                <td>Dr. {row.doctor_name}</td>
-                                <td>{formatDate(row.appointment_date)}</td>
-                                <td>{formatTime(row.appointment_time)}</td>
-                                <td>{row.patient_name}</td>
-                                <td>{row.patient_phone || 'N/A'}</td>
-                                <td>{row.status_name}</td>
-                                <td>
-                                  {payStatus ? (
-                                    <span style={{
-                                      display: 'inline-block',
-                                      padding: '0.15rem 0.5rem',
-                                      borderRadius: '999px',
-                                      fontSize: '0.75rem',
-                                      fontWeight: 700,
-                                      background: payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : '#f8d7da',
-                                      color: payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : '#721c24'
-                                    }}>
-                                      {payStatus}{amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
-                                    </span>
-                                  ) : '—'}
-                                </td>
-                                <td>{row.receptionist_name || 'Unassigned'}</td>
-                                <td>{row.location_address || 'TBD'}</td>
-                              </tr>
-                            );
-                          }) : <tr><td colSpan="9">No scheduled appointments for this range.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                    {filteredDocSchedule.length > docSchedPageSize && (
-                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
-                        <button type="button" disabled={docSchedPage === 0} onClick={() => setDocSchedPage((p) => p - 1)}
-                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: docSchedPage === 0 ? '#eee' : '#fff', cursor: docSchedPage === 0 ? 'default' : 'pointer', fontSize: '0.85rem' }}>
-                          Previous
-                        </button>
-                        <button type="button" disabled={(docSchedPage + 1) * docSchedPageSize >= filteredDocSchedule.length} onClick={() => setDocSchedPage((p) => p + 1)}
-                          style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid #ccc', background: (docSchedPage + 1) * docSchedPageSize >= filteredDocSchedule.length ? '#eee' : '#fff', cursor: (docSchedPage + 1) * docSchedPageSize >= filteredDocSchedule.length ? 'default' : 'pointer', fontSize: '0.85rem' }}>
-                          Next
-                        </button>
-                      </div>
-                    )}
-                  </section>
-
-                  <section className="admin-panel">
-                    <h2>Report 3: All Staff Time-Off Summary</h2>
-                    <p className="muted">
-                      All recorded doctor and staff time-off entries — pulls from doctor_time_off, staff_time_off_requests, staff, users &amp; locations tables.
-                    </p>
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <SortTh sort={sortTimeOff} column="requester_name">Staff Member</SortTh>
-                            <SortTh sort={sortTimeOff} column="requester_role">Role</SortTh>
-                            <SortTh sort={sortTimeOff} column="request_source">Source</SortTh>
-                            <SortTh sort={sortTimeOff} column="start_datetime">Start</SortTh>
-                            <SortTh sort={sortTimeOff} column="end_datetime">End</SortTh>
-                            <SortTh sort={sortTimeOff} column="location_address">Location</SortTh>
-                            <SortTh sort={sortTimeOff} column="reason">Reason</SortTh>
-                            <SortTh sort={sortTimeOff} column="is_approved">Approved</SortTh>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {staffReport.timeOff.length ? sortTimeOff.sorted(staffReport.timeOff).map((row) => (
-                            <tr key={row.request_key}>
-                              <td>{row.requester_name || 'Unknown staff'}</td>
-                              <td>{String(row.requester_role || 'STAFF').replaceAll('_', ' ')}</td>
-                              <td>{String(row.request_source || '').replaceAll('_', ' ') || 'TIME OFF'}</td>
-                              <td>{new Date(row.start_datetime).toLocaleString()}</td>
-                              <td>{new Date(row.end_datetime).toLocaleString()}</td>
-                              <td>{row.location_address}</td>
-                              <td>{row.reason || 'N/A'}</td>
-                              <td>{row.is_approved ? 'Yes' : 'Pending'}</td>
-                            </tr>
-                          )) : <tr><td colSpan="8">No time-off records found.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                </>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
               )}
+
+              <section className="admin-panel" id="process-refund-panel">
+                <div className="admin-panel-header">
+                  <h2>Process Refund</h2>
+                  <p className="muted">Enter an invoice ID to look up details and process a refund.</p>
+                </div>
+                <form
+                  className="admin-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const invoiceId = Number(refundForm.invoiceId);
+                    if (!invoiceId) {
+                      setError('Invoice ID is required');
+                      return;
+                    }
+                    try {
+                      const invResponse = await fetch(`${API_BASE_URL}/api/admin/invoices/${invoiceId}`);
+                      const invData = await invResponse.json();
+                      if (!invResponse.ok) throw new Error(invData.error || 'Invoice not found');
+                      setRefundForm((prev) => ({ ...prev, invoiceData: invData }));
+                    } catch (err) {
+                      setError(err.message || 'Failed to look up invoice');
+                    }
+                  }}
+                >
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem', alignItems: 'end' }}>
+                    <input
+                      type="number"
+                      placeholder="Invoice ID"
+                      value={refundForm.invoiceId}
+                      onChange={(e) => setRefundForm((prev) => ({ ...prev, invoiceId: e.target.value }))}
+                      required
+                    />
+                    <button type="submit">Look Up Invoice</button>
+                  </div>
+                </form>
+
+                {refundForm.invoiceData && (
+                  <div className="refund-invoice-details" style={{ marginTop: '1.5rem', padding: '1rem', background: '#f9f9f9', borderRadius: '4px', border: '1px solid #ddd' }}>
+                    <h3>Invoice Details</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                      <div>
+                        <p className="muted">Patient</p>
+                        <p className="bold">{refundForm.invoiceData.patient_name}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Appointment Date</p>
+                        <p className="bold">{formatDate(refundForm.invoiceData.appointment_date)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Invoice Total</p>
+                        <p className="bold">{formatMoney(refundForm.invoiceData.invoice_total)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Patient Share</p>
+                        <p className="bold">{formatMoney(refundForm.invoiceData.patient_amount)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Total Paid</p>
+                        <p className="bold">{formatMoney(refundForm.invoiceData.total_paid)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Total Refunded</p>
+                        <p className="bold" style={{ color: '#9d2e2e' }}>-{formatMoney(refundForm.invoiceData.total_refunded)}</p>
+                      </div>
+                      <div>
+                        <p className="muted">Net Paid</p>
+                        <p className="bold" style={{ color: refundForm.invoiceData.net_paid > refundForm.invoiceData.patient_amount ? '#27ae60' : 'inherit' }}>
+                          {formatMoney(refundForm.invoiceData.net_paid)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="muted">Max Refundable</p>
+                        <p className="bold">{formatMoney(refundForm.invoiceData.max_refundable)}</p>
+                      </div>
+                    </div>
+
+                    <form
+                      className="admin-form"
+                      onSubmit={processRefund}
+                      style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #ddd' }}
+                    >
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Refund Amount"
+                          value={refundForm.amount}
+                          onChange={(e) => setRefundForm((prev) => ({ ...prev, amount: e.target.value }))}
+                          min="0"
+                          max={refundForm.invoiceData.max_refundable}
+                          required
+                        />
+                        <input
+                          type="text"
+                          placeholder="Reason (optional)"
+                          value={refundForm.reason}
+                          onChange={(e) => setRefundForm((prev) => ({ ...prev, reason: e.target.value }))}
+                        />
+                      </div>
+                      <button type="submit" style={{ marginTop: '1rem' }}>Process Refund</button>
+                      <button
+                        type="button"
+                        onClick={() => setRefundForm({ invoiceId: '', amount: '', reason: '' })}
+                        style={{ marginTop: '1rem', marginLeft: '0.5rem', background: '#95a5a6' }}
+                      >
+                        Clear
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </section>
+
+              <section className="admin-panel">
+                <div className="admin-panel-header">
+                  <h2>Refund History</h2>
+                  <p className="muted">All refunds processed by administrators.</p>
+                </div>
+                {refundHistory.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Patient</th>
+                          <th>Invoice ID</th>
+                          <th>Refund Amount</th>
+                          <th>Invoice Total</th>
+                          <th>Reason</th>
+                          <th>Processed By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {refundHistory.map((refund) => (
+                          <tr key={refund.refund_id}>
+                            <td>{formatDate(refund.created_at)}</td>
+                            <td>{refund.patient_name}</td>
+                            <td>{refund.invoice_id}</td>
+                            <td style={{ color: '#9d2e2e' }}>-{formatMoney(refund.refund_amount)}</td>
+                            <td>{formatMoney(refund.invoice_total)}</td>
+                            <td>{refund.reason || '—'}</td>
+                            <td>{refund.refunded_by}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p>No refunds have been processed yet.</p>
+                )}
+              </section>
             </>
           )}
 
@@ -1470,9 +2225,9 @@ function AdminDashboardPage() {
                     const startEditing = () => {
                       const entries = ADMIN_DAYS.map((day) => {
                         const existing = staff.days.find((d) => d.day_of_week === day);
-                        if (existing && existing.is_off) return { day, startTime: '09:00', endTime: '17:00', isOff: true };
+                        if (existing && existing.is_off) return { day, startTime: '08:00', endTime: '17:00', isOff: true };
                         if (existing) return { day, startTime: String(existing.start_time || '').slice(0, 5), endTime: String(existing.end_time || '').slice(0, 5), isOff: false };
-                        return { day, startTime: '09:00', endTime: '17:00', isOff: true };
+                        return { day, startTime: '08:00', endTime: '17:00', isOff: true };
                       });
                       setEditingSchedules((prev) => ({ ...prev, [staff.staff_id]: entries }));
                     };
@@ -1691,16 +2446,71 @@ function AdminDashboardPage() {
                   {expandedCards.location && (
                     <div className="collapse-content">
                       <form className="admin-form" onSubmit={handleLocationSubmit}>
-                        <input placeholder="Street number" value={locationForm.streetNo} onChange={(e) => setLocationForm((prev) => ({ ...prev, streetNo: e.target.value }))} required />
-                        <input placeholder="Street name" value={locationForm.streetName} onChange={(e) => setLocationForm((prev) => ({ ...prev, streetName: e.target.value }))} required />
-                        <input placeholder="City" value={locationForm.city} onChange={(e) => setLocationForm((prev) => ({ ...prev, city: e.target.value }))} required />
-                        <input placeholder="State" maxLength="2" value={locationForm.state} onChange={(e) => setLocationForm((prev) => ({ ...prev, state: e.target.value }))} required />
-                        <input placeholder="ZIP" value={locationForm.zipCode} onChange={(e) => setLocationForm((prev) => ({ ...prev, zipCode: e.target.value }))} required />
+                        <input
+                          placeholder="Street number"
+                          maxLength={20}
+                          title="Use street number only, for example 11606 or 11606A"
+                          value={locationForm.streetNo}
+                          className={locationFieldErrors.streetNo ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('streetNo', e.target.value)}
+                          required
+                        />
+                        {locationFieldErrors.streetNo ? <p className="admin-field-error">{locationFieldErrors.streetNo}</p> : null}
+                        <input
+                          placeholder="Street name"
+                          maxLength={100}
+                          value={locationForm.streetName}
+                          className={locationFieldErrors.streetName ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('streetName', e.target.value)}
+                          required
+                        />
+                        {locationFieldErrors.streetName ? <p className="admin-field-error">{locationFieldErrors.streetName}</p> : null}
+                        <input
+                          placeholder="City"
+                          maxLength={20}
+                          value={locationForm.city}
+                          className={locationFieldErrors.city ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('city', e.target.value)}
+                          required
+                        />
+                        {locationFieldErrors.city ? <p className="admin-field-error">{locationFieldErrors.city}</p> : null}
+                        <input
+                          placeholder="State"
+                          maxLength={2}
+                          pattern="[A-Za-z]{2}"
+                          title="State must be 2 letters"
+                          value={locationForm.state}
+                          className={locationFieldErrors.state ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('state', String(e.target.value || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase())}
+                          required
+                        />
+                        {locationFieldErrors.state ? <p className="admin-field-error">{locationFieldErrors.state}</p> : null}
+                        <input
+                          placeholder="ZIP"
+                          value={locationForm.zipCode}
+                          inputMode="numeric"
+                          pattern="\d{5}"
+                          maxLength={5}
+                          className={locationFieldErrors.zipCode ? 'admin-input-error' : ''}
+                          onChange={(e) => updateLocationField('zipCode', formatZipInput(e.target.value))}
+                          required
+                        />
+                        {locationFieldErrors.zipCode ? <p className="admin-field-error">{locationFieldErrors.zipCode}</p> : null}
                         <button type="submit">Create Location</button>
                       </form>
                       <ul className="compact-list">
                         {locations.map((location) => (
-                          <li key={location.location_id}>{location.full_address}</li>
+                          <li key={location.location_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                            <span>{location.full_address}</span>
+                            <button
+                              type="button"
+                              className="admin-btn"
+                              style={{ padding: '0.3rem 0.6rem', backgroundColor: '#8f2d2d' }}
+                              onClick={() => handleLocationDelete(location)}
+                            >
+                              Remove
+                            </button>
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -1865,7 +2675,7 @@ function AdminDashboardPage() {
                                     background: member.is_deleted ? '#f8d7da' : '#d4edda',
                                     color: member.is_deleted ? '#721c24' : '#155724'
                                   }}>
-                                    {member.is_deleted ? 'Hidden' : 'Active'}
+                                    {member.is_deleted ? 'Deactivated' : 'Active'}
                                   </span>
                                 </td>
                                 <td>
@@ -1875,27 +2685,34 @@ function AdminDashboardPage() {
                                       className="admin-action-btn approve"
                                       onClick={() => handleToggleVisibility(member.staff_id)}
                                     >
-                                      {member.is_deleted ? 'Restore' : 'Hide'}
+                                      {member.is_deleted ? 'Restore' : 'Deactivate'}
                                     </button>
                                     {resetPasswordStaffId === member.staff_id ? (
-                                      <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-                                        <input
-                                          type="password"
-                                          placeholder="New password"
-                                          value={resetPasswordValue}
-                                          onChange={(e) => setResetPasswordValue(e.target.value)}
-                                          style={{ width: '160px', padding: '0.2rem 0.4rem', fontSize: '0.8rem' }}
-                                          minLength={8}
-                                          title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number"
-                                        />
-                                        <button type="button" className="admin-action-btn approve" onClick={() => handleResetPassword(member.staff_id)}>Set</button>
-                                        <button type="button" className="admin-action-btn deny" onClick={() => { setResetPasswordStaffId(null); setResetPasswordValue(''); }}>X</button>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                        <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                                          <input
+                                            type="password"
+                                            placeholder="New password"
+                                            value={resetPasswordValue}
+                                            onChange={(e) => { setResetPasswordValue(e.target.value); setResetPasswordMessage(''); }}
+                                            style={{ width: '160px', padding: '0.2rem 0.4rem', fontSize: '0.8rem' }}
+                                            minLength={8}
+                                            title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number"
+                                          />
+                                          <button type="button" className="admin-action-btn approve" onClick={() => handleResetPassword(member.staff_id)}>Set</button>
+                                          <button type="button" className="admin-action-btn deny" onClick={() => { setResetPasswordStaffId(null); setResetPasswordValue(''); setResetPasswordMessage(''); }}>X</button>
+                                        </div>
+                                        {resetPasswordMessage && (
+                                          <p style={{ margin: 0, fontSize: '0.78rem', color: resetPasswordMessage.includes('successfully') ? '#007a4d' : '#b91c1c' }}>
+                                            {resetPasswordMessage}
+                                          </p>
+                                        )}
                                       </div>
                                     ) : (
                                       <button
                                         type="button"
                                         className="admin-action-btn deny"
-                                        onClick={() => { setResetPasswordStaffId(member.staff_id); setResetPasswordValue(''); }}
+                                        onClick={() => { setResetPasswordStaffId(member.staff_id); setResetPasswordValue(''); setResetPasswordMessage(''); }}
                                       >
                                         Reset Password
                                       </button>

@@ -116,7 +116,7 @@ function DentistProfilePage() {
   const DAYS_OF_WEEK = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
   const SCHEDULE_TIME_OPTIONS = CLINIC_TIME_SELECT_OPTIONS;
   const [scheduleEntries, setScheduleEntries] = useState(
-    DAYS_OF_WEEK.map((d) => ({ day: d, startTime: '09:00', endTime: '19:00', isOff: false }))
+    DAYS_OF_WEEK.map((d) => ({ day: d, startTime: '08:00', endTime: '19:00', isOff: false }))
   );
   const [approvedSchedule, setApprovedSchedule] = useState([]);
   const [scheduleRequests, setScheduleRequests] = useState([]);
@@ -225,8 +225,18 @@ function DentistProfilePage() {
       (Array.isArray(approved) ? approved : []).forEach((s) => { approvedMap[s.day_of_week] = s; });
       setScheduleEntries(DAYS_OF_WEEK.map((d) => {
         const s = approvedMap[d];
-        if (s) return { day: d, startTime: String(s.start_time || '').slice(0, 5), endTime: String(s.end_time || '').slice(0, 5), isOff: s.is_off === 1 || s.is_off === true };
-        return { day: d, startTime: '09:00', endTime: '19:00', isOff: false };
+        if (s) {
+          const isOff = Number(s.is_off) === 1 || s.is_off === true || String(s.is_off).toLowerCase() === 'true';
+          const startTime = String(s.start_time || '').slice(0, 5);
+          const endTime = String(s.end_time || '').slice(0, 5);
+          return {
+            day: d,
+            startTime: isOff ? '' : (startTime || CLINIC_OPEN_TIME),
+            endTime: isOff ? '' : (endTime || CLINIC_CLOSE_TIME),
+            isOff
+          };
+        }
+        return { day: d, startTime: '08:00', endTime: '19:00', isOff: false };
       }));
     };
     loadScheduleData().catch(() => {});
@@ -238,13 +248,28 @@ function DentistProfilePage() {
     setIsSubmittingSchedule(true);
     setScheduleStatus('');
     try {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests`, {
+      const entriesPayload = scheduleEntries.map((entry) => {
+        const isOff = !!entry.isOff;
+        return {
+          day: String(entry.day || '').toUpperCase(),
+          startTime: isOff ? null : (String(entry.startTime || CLINIC_OPEN_TIME)),
+          endTime: isOff ? null : (String(entry.endTime || CLINIC_CLOSE_TIME)),
+          isOff
+        };
+      });
+
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests?staffId=${encodeURIComponent(Number(resolvedStaffId))}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ staffId: resolvedStaffId, entries: scheduleEntries.map((e) => ({ ...e, isOff: !!e.isOff })) })
+        body: JSON.stringify({ staffId: Number(resolvedStaffId), entries: entriesPayload })
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to submit schedule');
+      if (!response.ok) {
+        const detailText = payload.detail
+          ? (typeof payload.detail === 'string' ? payload.detail : JSON.stringify(payload.detail))
+          : '';
+        throw new Error(detailText ? `${payload.error || 'Failed to submit schedule'}: ${detailText}` : (payload.error || 'Failed to submit schedule'));
+      }
       setScheduleStatus('Schedule preference submitted for admin approval.');
       // Reload requests
       const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests?staffId=${resolvedStaffId}`).then((r) => r.json().catch(() => []));
@@ -257,7 +282,19 @@ function DentistProfilePage() {
   };
 
   const updateScheduleEntry = (idx, field, value) => {
-    setScheduleEntries((prev) => prev.map((entry, i) => i === idx ? { ...entry, [field]: value } : entry));
+    setScheduleEntries((prev) => prev.map((entry, i) => {
+      if (i !== idx) return entry;
+      if (field === 'isOff') {
+        const isOff = !!value;
+        return {
+          ...entry,
+          isOff,
+          startTime: isOff ? '' : (entry.startTime || CLINIC_OPEN_TIME),
+          endTime: isOff ? '' : (entry.endTime || CLINIC_CLOSE_TIME)
+        };
+      }
+      return { ...entry, [field]: value };
+    }));
   };
 
   const updateField = (field, value) => {
@@ -657,7 +694,7 @@ function DentistProfilePage() {
                 onChange={(event) => setTimeOffForm((prev) => ({ ...prev, startTime: event.target.value }))}
                 required
               >
-                <option value="">Select time (e.g., 09:00 AM)</option>
+                <option value="">Select time (e.g., 08:00 AM)</option>
                 {CLINIC_TIME_SELECT_OPTIONS.map((timeOption) => (
                   <option key={`dentist-profile-start-${timeOption.value}`} value={timeOption.value}>
                     {timeOption.label}

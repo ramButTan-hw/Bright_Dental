@@ -81,6 +81,29 @@ function normalizeDateKey(value) {
   return 'Unknown date';
 }
 
+function toDateInputValue(value) {
+  if (!value) {
+    return '';
+  }
+
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
+function addMonthsToDateInputValue(value, months) {
+  const baseDate = value ? new Date(`${toDateInputValue(value)}T00:00:00`) : new Date();
+  if (Number.isNaN(baseDate.getTime())) {
+    return '';
+  }
+
+  baseDate.setMonth(baseDate.getMonth() + months);
+  return baseDate.toISOString().slice(0, 10);
+}
+
 function dateSortValue(value) {
   if (!value) return 0;
   const ts = new Date(value).getTime();
@@ -96,7 +119,17 @@ function buildHistoryByDate(completedTreatments, dentalFindings) {
     tooth: item.tooth_number || 'N/A',
     surface: item.surface || 'N/A',
     label: item.procedure_code || 'Procedure',
-    description: item.procedure_description || item.notes || 'Completed treatment'
+    description: (() => {
+      const baseDescription = item.procedure_description || item.notes || 'Completed treatment';
+      if (!item.follow_up_required) {
+        return baseDescription;
+      }
+
+      const followUpText = item.follow_up_date
+        ? ` Follow-up due ${formatDate(item.follow_up_date)}`
+        : ' Follow-up required';
+      return `${baseDescription}.${followUpText}`;
+    })()
   }));
 
   const findingEntries = dentalFindings.map((item) => ({
@@ -156,6 +189,8 @@ function DentistPatientProfilePage() {
   const [procedureCodeOptions, setProcedureCodeOptions] = useState([]);
   const [editingTreatment, setEditingTreatment] = useState(null);
   const [editConfirmPending, setEditConfirmPending] = useState(false);
+  const [editingFinding, setEditingFinding] = useState(null);
+  const [editFindingConfirmPending, setEditFindingConfirmPending] = useState(false);
 
   const [findingForm, setFindingForm] = useState({
     surface: '',
@@ -170,6 +205,8 @@ function DentistPatientProfilePage() {
     estimatedCost: '',
     priority: '',
     notes: '',
+    followUpRequired: false,
+    followUpDate: '',
     statusName: 'COMPLETED'
   });
 
@@ -261,6 +298,10 @@ function DentistPatientProfilePage() {
         throw new Error('Please select an ADA procedure code for the treatment entry.');
       }
 
+      if (treatmentForm.followUpRequired && !treatmentForm.followUpDate) {
+        throw new Error('Please choose a follow-up date before saving the treatment.');
+      }
+
       let savedCount = 0;
 
       if (hasFindings) {
@@ -293,7 +334,9 @@ function DentistPatientProfilePage() {
 
       const treatmentRequestBody = {
         ...treatmentForm,
-        estimatedCost: treatmentForm.estimatedCost ? Number(treatmentForm.estimatedCost) : null
+        estimatedCost: treatmentForm.estimatedCost ? Number(treatmentForm.estimatedCost) : null,
+        followUpRequired: Boolean(treatmentForm.followUpRequired),
+        followUpDate: treatmentForm.followUpRequired ? treatmentForm.followUpDate : ''
       };
 
       const treatmentResponse = await fetch(`${API_BASE_URL}/api/dentist/appointments/${appointmentId}/treatments?doctorId=${doctorId}`, {
@@ -324,6 +367,8 @@ function DentistPatientProfilePage() {
         estimatedCost: '',
         priority: '',
         notes: '',
+        followUpRequired: false,
+        followUpDate: '',
         statusName: 'COMPLETED'
       });
       await loadDetail();
@@ -364,12 +409,19 @@ function DentistPatientProfilePage() {
   const tobaccoSummary = [];
   if (snapshot?.tobacco?.never) tobaccoSummary.push('Never used tobacco');
   if (snapshot?.tobacco?.quit) tobaccoSummary.push('Patient reports quitting tobacco');
-  (snapshot?.tobacco?.currentUses || []).forEach((entry) => {
-    tobaccoSummary.push(`${entry.type || 'Tobacco'} - ${entry.amount || 'N/A'} (${entry.frequency || 'N/A'})`);
-  });
-  (snapshot?.tobacco?.quitHistory || []).forEach((entry) => {
-    tobaccoSummary.push(`${entry.type || 'Tobacco'} quit on ${entry.quitDate || 'unknown date'}`);
-  });
+  if (!snapshot?.tobacco?.never) {
+    (snapshot?.tobacco?.currentUses || []).forEach((entry) => {
+      tobaccoSummary.push(`${entry.type || 'Tobacco'} - ${entry.amount || 'N/A'} (${entry.frequency || 'N/A'})`);
+    });
+  }
+  if (snapshot?.tobacco?.quit && !snapshot?.tobacco?.never) {
+    (snapshot?.tobacco?.quitHistory || []).forEach((entry) => {
+      const quitType = String(entry?.type || '').trim();
+      const quitDate = String(entry?.quitDate || '').trim();
+      if (!quitType && !quitDate) return;
+      tobaccoSummary.push(`${quitType || 'Tobacco'} quit on ${quitDate || 'unknown date'}`);
+    });
+  }
 
   const completedTreatments = Array.isArray(detail.completedTreatments) ? detail.completedTreatments : [];
   const dentalFindings = Array.isArray(detail.dentalFindings) ? detail.dentalFindings : [];
@@ -381,6 +433,16 @@ function DentistPatientProfilePage() {
       ...prev,
       procedureCode: value,
       estimatedCost: normalizeFeeValue(selected?.default_fees)
+    }));
+  };
+
+  const handleTreatmentFollowUpChange = (checked) => {
+    setTreatmentForm((prev) => ({
+      ...prev,
+      followUpRequired: checked,
+      followUpDate: checked
+        ? (prev.followUpDate || addMonthsToDateInputValue(detail?.appointment?.appointment_date || new Date(), 6))
+        : ''
     }));
   };
 
@@ -465,7 +527,9 @@ function DentistPatientProfilePage() {
       surface: treatment.surface || '',
       estimatedCost: treatment.default_fees != null ? String(treatment.default_fees) : String(treatment.estimated_cost || ''),
       priority: treatment.priority || '',
-      notes: treatment.notes || ''
+      notes: treatment.notes || '',
+      followUpRequired: Boolean(treatment.follow_up_required),
+      followUpDate: toDateInputValue(treatment.follow_up_date)
     });
     setEditConfirmPending(false);
   };
@@ -485,7 +549,9 @@ function DentistPatientProfilePage() {
           surface: editingTreatment.surface,
           estimatedCost: editingTreatment.estimatedCost,
           priority: editingTreatment.priority,
-          notes: editingTreatment.notes
+          notes: editingTreatment.notes,
+          followUpRequired: Boolean(editingTreatment.followUpRequired),
+          followUpDate: editingTreatment.followUpDate
         })
       });
       const payload = await response.json().catch(() => ({}));
@@ -504,6 +570,47 @@ function DentistPatientProfilePage() {
       await loadDetail();
     } catch (err) {
       setError(err.message || 'Failed to update treatment.');
+    }
+  };
+
+  const openEditFinding = (entry) => {
+    const findingId = String(entry.uniqueId).replace('finding-', '');
+    const finding = dentalFindings.find((f) => String(f.finding_id) === findingId);
+    if (!finding) return;
+    setEditingFinding({
+      findingId: Number(findingId),
+      conditionType: finding.condition_type || '',
+      toothNumber: finding.tooth_number || '',
+      surface: finding.surface || '',
+      notes: finding.notes || ''
+    });
+    setEditFindingConfirmPending(false);
+  };
+
+  const saveEditFinding = async () => {
+    if (!editingFinding) return;
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/dentist/findings/${editingFinding.findingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doctorId,
+          conditionType: editingFinding.conditionType,
+          toothNumber: editingFinding.toothNumber,
+          surface: editingFinding.surface,
+          notes: editingFinding.notes
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to update finding.');
+      setMessage('Finding updated successfully.');
+      setEditingFinding(null);
+      setEditFindingConfirmPending(false);
+      await loadDetail();
+    } catch (err) {
+      setError(err.message || 'Failed to update finding.');
     }
   };
 
@@ -541,6 +648,33 @@ function DentistPatientProfilePage() {
           <p><strong>Sleep Habits:</strong> {sleepHabits.join(', ') || 'None reported'}</p>
           <p><strong>Caffeine Habits:</strong> {caffeineHabits.join(', ') || 'None reported'}</p>
           <p><strong>Tobacco History:</strong> {tobaccoSummary.join('; ') || 'None reported'}</p>
+          <div style={{ marginTop: '0.75rem' }}>
+            <strong>Current Medications (Patient-Reported):</strong>
+            {(detail.currentMedications || []).length === 0 ? (
+              <span style={{ marginLeft: '0.4rem' }}>None reported</span>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '0.5rem', fontSize: '0.88rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #d7e7e5' }}>
+                    <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Medication</th>
+                    <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Dosage</th>
+                    <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Frequency</th>
+                    <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(detail.currentMedications || []).map((med, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <td style={{ padding: '0.3rem 0.5rem', fontWeight: 600 }}>{med.medication_name}</td>
+                      <td style={{ padding: '0.3rem 0.5rem' }}>{med.dosage || '—'}</td>
+                      <td style={{ padding: '0.3rem 0.5rem' }}>{med.frequency || '—'}</td>
+                      <td style={{ padding: '0.3rem 0.5rem' }}>{med.reason_for_use || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </article>
       </section>
 
@@ -670,6 +804,24 @@ function DentistPatientProfilePage() {
             ))}
           </select>
           <textarea className="dentist-note-box" placeholder="Treatment notes" value={treatmentForm.notes} onChange={(e) => setTreatmentForm((p) => ({ ...p, notes: e.target.value }))} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.92rem' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(treatmentForm.followUpRequired)}
+              onChange={(e) => handleTreatmentFollowUpChange(e.target.checked)}
+            />
+            Follow-up required
+          </label>
+          {treatmentForm.followUpRequired && (
+            <input
+              className="dentist-search-input"
+              type="date"
+              value={treatmentForm.followUpDate}
+              onChange={(e) => setTreatmentForm((p) => ({ ...p, followUpDate: e.target.value }))}
+              min={toDateInputValue(detail?.appointment?.appointment_date || new Date())}
+              required
+            />
+          )}
           <button type="submit" className="dentist-save-btn">Save Finding + Treatment</button>
         </form>
         )}
@@ -715,13 +867,23 @@ function DentistPatientProfilePage() {
                         </div>
                       )}
                       {entry.type === 'FINDING' && entry.uniqueId.startsWith('finding-') && (
-                        <button
-                          type="button"
-                          className="dentist-history-delete-btn"
-                          onClick={() => deleteFindingEntry(String(entry.uniqueId).replace('finding-', ''))}
-                        >
-                          Delete
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexDirection: 'column' }}>
+                          <button
+                            type="button"
+                            className="dentist-save-btn"
+                            style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
+                            onClick={() => openEditFinding(entry)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="dentist-history-delete-btn"
+                            onClick={() => deleteFindingEntry(String(entry.uniqueId).replace('finding-', ''))}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       )}
                     </li>
                   ))}
@@ -743,6 +905,56 @@ function DentistPatientProfilePage() {
           />
         </div>
       </section>
+
+      {/* ── Edit Finding Modal ── */}
+      {editingFinding && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: '#fff', borderRadius: '14px', padding: '1.5rem', width: '95%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            {!editFindingConfirmPending ? (
+              <>
+                <h2 style={{ marginTop: 0, color: '#2a4f4d' }}>Edit Finding</h2>
+                <div style={{ display: 'grid', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Condition Type
+                    <select
+                      className="dentist-search-input"
+                      value={editingFinding.conditionType}
+                      onChange={(e) => setEditingFinding((prev) => ({ ...prev, conditionType: e.target.value }))}
+                    >
+                      <option value="">Select condition</option>
+                      {FINDING_CONDITION_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Tooth Number
+                    <input className="dentist-search-input" value={editingFinding.toothNumber} onChange={(e) => setEditingFinding((prev) => ({ ...prev, toothNumber: e.target.value }))} />
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Surface
+                    <select className="dentist-search-input" value={editingFinding.surface} onChange={(e) => setEditingFinding((prev) => ({ ...prev, surface: e.target.value }))}>
+                      <option value="">Select surface</option>
+                      {SURFACE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Notes
+                    <textarea className="dentist-note-box" value={editingFinding.notes} onChange={(e) => setEditingFinding((prev) => ({ ...prev, notes: e.target.value }))} />
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                  <button type="button" className="dentist-history-delete-btn" onClick={() => { setEditingFinding(null); setEditFindingConfirmPending(false); }}>Cancel</button>
+                  <button type="button" className="dentist-save-btn" onClick={() => setEditFindingConfirmPending(true)}>Save Changes</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 style={{ marginTop: 0, color: '#9d2e2e' }}>Confirm Edit</h2>
+                <p>Are you sure you want to update this dental finding?</p>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                  <button type="button" className="dentist-history-delete-btn" onClick={() => setEditFindingConfirmPending(false)}>Go Back</button>
+                  <button type="button" className="dentist-save-btn" style={{ background: '#9d2e2e' }} onClick={saveEditFinding}>Yes, Update Finding</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Edit Treatment Modal ── */}
       {editingTreatment && (
@@ -791,6 +1003,31 @@ function DentistPatientProfilePage() {
                   <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Notes
                     <textarea className="dentist-note-box" value={editingTreatment.notes} onChange={(e) => setEditingTreatment((prev) => ({ ...prev, notes: e.target.value }))} />
                   </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(editingTreatment.followUpRequired)}
+                      onChange={(e) => setEditingTreatment((prev) => ({
+                        ...prev,
+                        followUpRequired: e.target.checked,
+                        followUpDate: e.target.checked
+                          ? (prev.followUpDate || addMonthsToDateInputValue(detail?.appointment?.appointment_date || new Date(), 6))
+                          : ''
+                      }))}
+                    />
+                    Follow-up required
+                  </label>
+                  {editingTreatment.followUpRequired && (
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Follow-up Date
+                      <input
+                        className="dentist-search-input"
+                        type="date"
+                        value={editingTreatment.followUpDate}
+                        min={toDateInputValue(detail?.appointment?.appointment_date || new Date())}
+                        onChange={(e) => setEditingTreatment((prev) => ({ ...prev, followUpDate: e.target.value }))}
+                      />
+                    </label>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
                   <button type="button" className="dentist-history-delete-btn" onClick={() => { setEditingTreatment(null); setEditConfirmPending(false); }}>Cancel</button>
