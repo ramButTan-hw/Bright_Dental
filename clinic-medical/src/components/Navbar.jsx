@@ -1,17 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
 import {
   clearAdminPortalSession,
   clearDentistPortalSession,
   clearPatientPortalSession,
   clearReceptionPortalSession,
-  clearHygienistPortalSession,
   getAdminPortalSession,
   getDentistPortalSession,
   getPatientPortalSession,
-  getReceptionPortalSession,
-  getHygienistPortalSession
+  getReceptionPortalSession
 } from '../utils/patientPortal';
 import '../styles/Navbar.css';
 
@@ -36,15 +34,32 @@ const LogoutIcon = () => (
 function Navbar() {
   const [aboutDropdown, setAboutDropdown] = useState(false);
   const [loginDropdown, setLoginDropdown] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [pendingLogout, setPendingLogout] = useState(null);
   const navigate = useNavigate();
+
+  function openLogoutModal(logoutFn) {
+    setPendingLogout(() => logoutFn);
+    setShowLogoutConfirm(true);
+  }
+
+  function handleLogoutConfirm() {
+    if (pendingLogout) pendingLogout();
+    setShowLogoutConfirm(false);
+    setPendingLogout(null);
+  }
+
+  function handleLogoutCancel() {
+    setShowLogoutConfirm(false);
+    setPendingLogout(null);
+  }
+  const location = useLocation();
   const [dentistAvatarUrl, setDentistAvatarUrl] = useState('');
   const [receptionAvatarUrl, setReceptionAvatarUrl] = useState('');
-  const [hygienistAvatarUrl, setHygienistAvatarUrl] = useState('');
   const isLoggedIn = Boolean(getPatientPortalSession()?.patientId);
   const isAdminLoggedIn = Boolean(getAdminPortalSession()?.isAdmin);
   const isDentistLoggedIn = Boolean(getDentistPortalSession()?.doctorId);
   const isReceptionLoggedIn = Boolean(getReceptionPortalSession()?.staffId);
-  const isHygienistLoggedIn = Boolean(getHygienistPortalSession()?.staffId);
 
   useEffect(() => {
     const apiBase = resolveApiBaseUrl();
@@ -70,20 +85,10 @@ function Navbar() {
         })
         .catch(() => {});
     }
-    const hygienistSession = getHygienistPortalSession();
-    if (hygienistSession?.staffId) {
-      fetch(`${apiBase}/api/staff/profile-image?staffId=${hygienistSession.staffId}`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.profile_image_base64) {
-            setHygienistAvatarUrl(`data:image/jpeg;base64,${data.profile_image_base64}`);
-          }
-        })
-        .catch(() => {});
-    }
-  }, []);
+  }, [location.pathname]);
 
   return (
+    <>
     <nav className="navbar">
       <div className="navbar-container">
         <div className="navbar-brand">
@@ -96,26 +101,20 @@ function Navbar() {
             <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
-              className="nav-link login-btn"
-              onClick={() => {
-                clearPatientPortalSession();
-                navigate('/patient-login');
-              }}
+              className="nav-link login-btn nav-icon-btn"
+              onClick={() => openLogoutModal(() => { clearPatientPortalSession(); navigate('/patient-login'); })}
+              title="Log Out"
             >
-              Log Out
+              <LogoutIcon />
             </button>
           </div>
         ) : isAdminLoggedIn ? (
           <div className="nav-menu">
             <Link to="/admin" className="nav-link">Admin Dashboard</Link>
-            <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
-              onClick={() => {
-                clearAdminPortalSession();
-                navigate('/staff-login');
-              }}
+              onClick={() => openLogoutModal(() => { clearAdminPortalSession(); navigate('/staff-login'); })}
               title="Staff Log Out"
             >
               <LogoutIcon />
@@ -124,7 +123,6 @@ function Navbar() {
         ) : isDentistLoggedIn ? (
           <div className="nav-menu">
             <Link to="/dentist-login" className="nav-link">Dentist Page</Link>
-            <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
               className="nav-profile-photo-btn"
@@ -141,40 +139,8 @@ function Navbar() {
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
-              onClick={() => {
-                clearDentistPortalSession();
-                navigate('/staff-login');
-              }}
+              onClick={() => openLogoutModal(() => { clearDentistPortalSession(); navigate('/staff-login'); })}
               title="Dentist Log Out"
-            >
-              <LogoutIcon />
-            </button>
-          </div>
-        ) : isHygienistLoggedIn ? (
-          <div className="nav-menu">
-            <Link to="/hygienist-login" className="nav-link">Hygienist Page</Link>
-            <Link to="/contact-us" className="nav-link">Contact Us</Link>
-            <button
-              type="button"
-              className="nav-profile-photo-btn"
-              onClick={() => navigate('/hygienist-profile')}
-              aria-label="Open hygienist profile"
-              title="Open hygienist profile"
-            >
-              {hygienistAvatarUrl ? (
-                <img className="nav-profile-photo" src={hygienistAvatarUrl} alt="Hygienist profile" />
-              ) : (
-                <div className="nav-profile-photo-placeholder">Hy</div>
-              )}
-            </button>
-            <button
-              type="button"
-              className="nav-link login-btn nav-icon-btn"
-              onClick={() => {
-                clearHygienistPortalSession();
-                navigate('/staff-login');
-              }}
-              title="Hygienist Log Out"
             >
               <LogoutIcon />
             </button>
@@ -182,7 +148,6 @@ function Navbar() {
         ) : isReceptionLoggedIn ? (
           <div className="nav-menu">
             <Link to="/receptionist" className="nav-link">Receptionist Page</Link>
-            <Link to="/contact-us" className="nav-link">Contact Us</Link>
             <button
               type="button"
               className="nav-profile-photo-btn"
@@ -199,10 +164,7 @@ function Navbar() {
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
-              onClick={() => {
-                clearReceptionPortalSession();
-                navigate('/staff-login');
-              }}
+              onClick={() => openLogoutModal(() => { clearReceptionPortalSession(); navigate('/staff-login'); })}
               title="Receptionist Log Out"
             >
               <LogoutIcon />
@@ -250,6 +212,24 @@ function Navbar() {
         )}
       </div>
     </nav>
+
+    {showLogoutConfirm && (
+      <div className="logout-modal-overlay" role="dialog" aria-modal="true" onClick={handleLogoutCancel}>
+        <div className="logout-modal-card" onClick={(e) => e.stopPropagation()}>
+          <h3>Log Out?</h3>
+          <p>Are you sure you want to log out?</p>
+          <div className="logout-modal-actions">
+            <button type="button" className="logout-confirm-btn" onClick={handleLogoutConfirm}>
+              Log Out
+            </button>
+            <button type="button" className="logout-cancel-btn" onClick={handleLogoutCancel}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

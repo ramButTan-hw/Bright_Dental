@@ -7,6 +7,7 @@ const MAX_QUIT_HISTORY_ROWS = 3;
 const APPOINTMENT_LOOKAHEAD_DAYS = 365;
 const WEEKDAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const TIME_PREFERENCE_OPTIONS = [
+  { value: '08:00', label: '8:00 AM' },
   { value: '09:00', label: '9:00 AM' },
   { value: '10:00', label: '10:00 AM' },
   { value: '11:00', label: '11:00 AM' },
@@ -351,6 +352,11 @@ function PatientRegistrationPage() {
       return;
     }
 
+    if (name === 'zipcode') {
+      setDetails((prev) => ({ ...prev, zipcode: value.replace(/\D/g, '').slice(0, 5) }));
+      return;
+    }
+
     setDetails((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -543,6 +549,26 @@ function PatientRegistrationPage() {
     setSubmitSuccess('');
     setSubmittingRegistration(true);
 
+    const phoneDigits = identity.phone.replace(/\D/g, '');
+    const emergencyPhoneDigits = details.emergencyContactPhone.replace(/\D/g, '');
+    const zipDigits = String(details.zipcode || '').replace(/\D/g, '');
+
+    if (phoneDigits.length !== 10) {
+      setSubmitError('Phone number must contain exactly 10 digits.');
+      setSubmittingRegistration(false);
+      return;
+    }
+    if (emergencyPhoneDigits.length !== 10) {
+      setSubmitError('Emergency contact phone must contain exactly 10 digits.');
+      setSubmittingRegistration(false);
+      return;
+    }
+    if (zipDigits.length !== 5) {
+      setSubmitError('ZIP code must contain exactly 5 digits.');
+      setSubmittingRegistration(false);
+      return;
+    }
+
     try {
       const filteredMedications = medications.filter((med) => med.name.trim() !== '');
 
@@ -658,7 +684,7 @@ function PatientRegistrationPage() {
               <label>Street Address<input type="text" name="address" placeholder="123 Main St" value={details.address} onChange={updateDetails} required /></label>
               <label>City<input type="text" name="city" placeholder="Houston" value={details.city} onChange={updateDetails} required /></label>
               <label>State<input type="text" name="state" placeholder="TX" value={details.state} onChange={updateDetails} maxLength="2" pattern="[A-Za-z]{2}" title="2-letter state abbreviation" required /></label>
-              <label>Zip Code<input type="text" name="zipcode" placeholder="77002" value={details.zipcode} onChange={updateDetails} maxLength="10" pattern="\d{5}(-\d{4})?" inputMode="numeric" title="5-digit zip code" required /></label>
+              <label>Zip Code<input type="text" name="zipcode" placeholder="77002" value={details.zipcode} onChange={updateDetails} maxLength="5" pattern="\d{5}" inputMode="numeric" title="ZIP must be 5 digits" required /></label>
               <label>Emergency Contact Name<input type="text" name="emergencyContactName" placeholder="e.g., Sarah Doe" value={details.emergencyContactName} onChange={updateDetails} pattern="[A-Za-z\s'\-]+" title="Letters, spaces, hyphens, and apostrophes only" required /></label>
               <label>Emergency Contact Number<input type="tel" name="emergencyContactPhone" placeholder="(555) 987-6543" value={details.emergencyContactPhone} onChange={updateDetails} pattern="\(\d{3}\) \d{3}-\d{4}" maxLength="14" inputMode="numeric" title="Use phone format: (555) 987-6543" required /></label>
               <label>Department

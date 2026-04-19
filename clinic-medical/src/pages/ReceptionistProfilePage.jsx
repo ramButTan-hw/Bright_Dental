@@ -63,6 +63,16 @@ function ReceptionistProfilePage() {
     return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
   };
 
+  const formatPhone = (value) => {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+    if (!digits) return '';
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+  };
+
+  const formatZip = (value) => String(value || '').replace(/\D/g, '').slice(0, 5);
+
   const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -116,7 +126,7 @@ function ReceptionistProfilePage() {
   const DAYS_OF_WEEK = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
   const SCHEDULE_TIME_OPTIONS = CLINIC_TIME_SELECT_OPTIONS;
   const [scheduleEntries, setScheduleEntries] = useState(
-    DAYS_OF_WEEK.map((d) => ({ day: d, startTime: '09:00', endTime: '19:00', isOff: false }))
+    DAYS_OF_WEEK.map((d) => ({ day: d, startTime: '08:00', endTime: '19:00', isOff: false }))
   );
   const [approvedSchedule, setApprovedSchedule] = useState([]);
   const [scheduleRequests, setScheduleRequests] = useState([]);
@@ -144,12 +154,12 @@ function ReceptionistProfilePage() {
           firstName: profile.first_name || '',
           lastName: profile.last_name || '',
           email: profile.user_email || '',
-          phone: profile.phone_number || '',
+          phone: formatPhone(profile.phone_number || ''),
           dateOfBirth: String(profile.date_of_birth || '').slice(0, 10),
           address: profile.s_address || '',
           city: profile.s_city || '',
           state: profile.s_state || '',
-          zipcode: profile.s_zipcode || '',
+          zipcode: formatZip(profile.s_zipcode || ''),
           country: profile.s_country || '',
           emergencyContactName: profile.emergency_contact_name || '',
           emergencyContactPhone: formatEmergencyPhone(profile.emergency_contact_phone)
@@ -221,8 +231,18 @@ function ReceptionistProfilePage() {
       (Array.isArray(approved) ? approved : []).forEach((s) => { approvedMap[s.day_of_week] = s; });
       setScheduleEntries(DAYS_OF_WEEK.map((d) => {
         const s = approvedMap[d];
-        if (s) return { day: d, startTime: String(s.start_time || '').slice(0, 5), endTime: String(s.end_time || '').slice(0, 5), isOff: s.is_off === 1 || s.is_off === true };
-        return { day: d, startTime: '09:00', endTime: '19:00', isOff: false };
+        if (s) {
+          const isOff = Number(s.is_off) === 1 || s.is_off === true || String(s.is_off).toLowerCase() === 'true';
+          const startTime = String(s.start_time || '').slice(0, 5);
+          const endTime = String(s.end_time || '').slice(0, 5);
+          return {
+            day: d,
+            startTime: isOff ? '' : (startTime || CLINIC_OPEN_TIME),
+            endTime: isOff ? '' : (endTime || CLINIC_CLOSE_TIME),
+            isOff
+          };
+        }
+        return { day: d, startTime: '08:00', endTime: '19:00', isOff: false };
       }));
     };
     loadScheduleData().catch(() => {});
@@ -234,13 +254,28 @@ function ReceptionistProfilePage() {
     setIsSubmittingSchedule(true);
     setScheduleStatus('');
     try {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests`, {
+      const entriesPayload = scheduleEntries.map((entry) => {
+        const isOff = !!entry.isOff;
+        return {
+          day: String(entry.day || '').toUpperCase(),
+          startTime: isOff ? null : (String(entry.startTime || CLINIC_OPEN_TIME)),
+          endTime: isOff ? null : (String(entry.endTime || CLINIC_CLOSE_TIME)),
+          isOff
+        };
+      });
+
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests?staffId=${encodeURIComponent(Number(resolvedStaffId))}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ staffId: resolvedStaffId, entries: scheduleEntries.map((e) => ({ ...e, isOff: !!e.isOff })) })
+        body: JSON.stringify({ staffId: Number(resolvedStaffId), entries: entriesPayload })
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to submit schedule');
+      if (!response.ok) {
+        const detailText = payload.detail
+          ? (typeof payload.detail === 'string' ? payload.detail : JSON.stringify(payload.detail))
+          : '';
+        throw new Error(detailText ? `${payload.error || 'Failed to submit schedule'}: ${detailText}` : (payload.error || 'Failed to submit schedule'));
+      }
       setScheduleStatus('Schedule preference submitted for admin approval.');
       const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/staff/schedule-requests?staffId=${resolvedStaffId}`).then((r) => r.json().catch(() => []));
       setScheduleRequests(Array.isArray(fresh) ? fresh : []);
@@ -252,10 +287,32 @@ function ReceptionistProfilePage() {
   };
 
   const updateScheduleEntry = (idx, field, value) => {
-    setScheduleEntries((prev) => prev.map((entry, i) => i === idx ? { ...entry, [field]: value } : entry));
+    setScheduleEntries((prev) => prev.map((entry, i) => {
+      if (i !== idx) return entry;
+      if (field === 'isOff') {
+        const isOff = !!value;
+        return {
+          ...entry,
+          isOff,
+          startTime: isOff ? '' : (entry.startTime || CLINIC_OPEN_TIME),
+          endTime: isOff ? '' : (entry.endTime || CLINIC_CLOSE_TIME)
+        };
+      }
+      return { ...entry, [field]: value };
+    }));
   };
 
   const updateField = (field, value) => {
+    if (field === 'phone') {
+      setForm((prev) => ({ ...prev, [field]: formatPhone(value) }));
+      return;
+    }
+
+    if (field === 'zipcode') {
+      setForm((prev) => ({ ...prev, [field]: formatZip(value) }));
+      return;
+    }
+
     if (field === 'emergencyContactPhone') {
       const formatted = formatEmergencyPhone(value);
       setForm((prev) => ({ ...prev, [field]: formatted }));
@@ -283,6 +340,23 @@ function ReceptionistProfilePage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setStatus('Saving profile changes...');
+
+    const phoneDigits = String(form.phone || '').replace(/\D/g, '');
+    const emergencyDigits = String(form.emergencyContactPhone || '').replace(/\D/g, '');
+    const zipDigits = String(form.zipcode || '').replace(/\D/g, '');
+
+    if (phoneDigits.length && phoneDigits.length !== 10) {
+      setStatus('Phone number must contain exactly 10 digits.');
+      return;
+    }
+    if (emergencyDigits.length && emergencyDigits.length !== 10) {
+      setStatus('Emergency contact phone must contain exactly 10 digits.');
+      return;
+    }
+    if (zipDigits.length && zipDigits.length !== 5) {
+      setStatus('ZIP code must contain exactly 5 digits.');
+      return;
+    }
 
     // Save profile image to DB
     if (resolvedStaffId) {
@@ -479,7 +553,7 @@ function ReceptionistProfilePage() {
 
               <label>
                 Phone
-                <input value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
+                <input type="tel" inputMode="numeric" pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}|[0-9]{10}" maxLength={12} value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
               </label>
 
               <label>
@@ -504,7 +578,7 @@ function ReceptionistProfilePage() {
 
               <label>
                 Zip Code
-                <input value={form.zipcode} onChange={(event) => updateField('zipcode', event.target.value)} />
+                <input inputMode="numeric" pattern="\d{5}" maxLength={5} value={form.zipcode} onChange={(event) => updateField('zipcode', event.target.value)} />
               </label>
 
               <label>
@@ -654,7 +728,7 @@ function ReceptionistProfilePage() {
                 onChange={(event) => setTimeOffForm((prev) => ({ ...prev, startTime: event.target.value }))}
                 required
               >
-                <option value="">Select time (e.g., 09:00 AM)</option>
+                <option value="">Select time (e.g., 08:00 AM)</option>
                 {CLINIC_TIME_SELECT_OPTIONS.map((timeOption) => (
                   <option key={`receptionist-profile-start-${timeOption.value}`} value={timeOption.value}>
                     {timeOption.label}

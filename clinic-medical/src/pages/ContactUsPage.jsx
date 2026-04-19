@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -127,8 +128,8 @@ function ContactUsPage() {
           <p style={{ color: '#3e4948', margin: '0.5rem 0 1.25rem', fontSize: '0.95rem' }}>
             New and returning patients can schedule appointments online or by calling any location directly.
           </p>
-          <a
-            href="/patient-registration"
+          <Link
+            to="/patient-registration"
             style={{
               display: 'inline-block',
               background: '#005050',
@@ -144,7 +145,7 @@ function ContactUsPage() {
             onMouseLeave={(e) => { e.currentTarget.style.background = '#005050'; }}
           >
             Book Appointment
-          </a>
+          </Link>
         </div>
       </div>
     </main>

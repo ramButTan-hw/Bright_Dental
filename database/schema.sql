@@ -10,8 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
         'ADMIN',
         'PATIENT',
         'DOCTOR',
-        'RECEPTIONIST',
-        'HYGIENIST'
+        'RECEPTIONIST'
     ) NOT NULL,
     portal_last_login TIMESTAMP,
     is_deleted TINYINT NOT NULL DEFAULT 0
@@ -406,7 +405,6 @@ CREATE TABLE IF NOT EXISTS staff_schedule_requests (
     INDEX idx_sched_req_status (request_status)
 );
 
--- Active approved schedules for staff
 CREATE TABLE IF NOT EXISTS staff_schedules (
     schedule_id INT AUTO_INCREMENT PRIMARY KEY,
     staff_id INT NOT NULL,
@@ -420,13 +418,12 @@ CREATE TABLE IF NOT EXISTS staff_schedules (
     INDEX idx_sched_staff (staff_id)
 );
 
-
 CREATE TABLE IF NOT EXISTS insurance (
     insurance_id INT AUTO_INCREMENT PRIMARY KEY,
     patient_id INT NOT NULL,
     company_id INT NOT NULL,
     member_id VARCHAR(50) NOT NULL,
-    group_number VARCHAR(50) NOT NULL,
+    group_number VARCHAR(50) NULL,
     is_primary BOOLEAN DEFAULT FALSE,
     effective_date DATE NOT NULL,
     expiration_date DATE,
@@ -454,6 +451,11 @@ CREATE TABLE IF NOT EXISTS treatment_plans (
     tooth_number VARCHAR(10),
     estimated_cost DECIMAL(10,2),
     priority VARCHAR(20),
+    follow_up_required TINYINT(1) NOT NULL DEFAULT 0,
+    follow_up_date DATE,
+    follow_up_contacted_at DATETIME,
+    follow_up_contacted_by VARCHAR(50),
+    follow_up_contact_note TEXT,
     start_date DATE,
     target_completion_date DATE,
     notes TEXT,
@@ -474,7 +476,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     amount DECIMAL(10,2) NOT NULL,
     insurance_covered_amount DECIMAL(10,2) NOT NULL,
     patient_amount DECIMAL(10,2) NOT NULL,
-    payment_status ENUM('Unpaid', 'Partial', 'Paid') NOT NULL DEFAULT 'Unpaid',
+    payment_status ENUM('Unpaid', 'Partial', 'Paid', 'Refunded') NOT NULL DEFAULT 'Unpaid',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -796,11 +798,506 @@ CREATE TABLE IF NOT EXISTS intake_medication_rows (
     INDEX idx_intake_medications_submission (submission_id)
 );
 
+CREATE TABLE IF NOT EXISTS insurance_change_requests (
+    request_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    insurance_id INT,
+    change_type ENUM('ADD', 'UPDATE', 'REMOVE') NOT NULL,
+    company_id INT,
+    member_id VARCHAR(50),
+    group_number VARCHAR(50),
+    is_primary BOOLEAN DEFAULT FALSE,
+    request_status ENUM('PENDING', 'APPROVED', 'DENIED') NOT NULL DEFAULT 'PENDING',
+    patient_note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (insurance_id) REFERENCES insurance(insurance_id) ON DELETE SET NULL,
+    FOREIGN KEY (company_id) REFERENCES insurance_companies(company_id)
+);
+
+
+
+
+CREATE TABLE IF NOT EXISTS pharmacy_change_requests (
+    request_id INT AUTO_INCREMENT PRIMARY KEY,
+    patient_id INT NOT NULL,
+    patient_pharmacy_id INT,
+    change_type ENUM('ADD', 'REMOVE') NOT NULL,
+    pharm_id INT,
+    is_primary TINYINT(1) DEFAULT 0,
+    request_status ENUM('PENDING', 'APPROVED', 'DENIED') NOT NULL DEFAULT 'PENDING',
+    patient_note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+    FOREIGN KEY (patient_pharmacy_id) REFERENCES patient_pharmacies(patient_pharmacy_id) ON DELETE SET NULL,
+    FOREIGN KEY (pharm_id) REFERENCES pharmacies(pharm_id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS receptionist_notifications (
+    notification_id INT AUTO_INCREMENT PRIMARY KEY,
+    source_table VARCHAR(50) NOT NULL,
+    source_request_id INT NOT NULL,
+    patient_id INT NOT NULL,
+    notification_type ENUM('INSURANCE_CHANGE_REQUEST', 'PHARMACY_CHANGE_REQUEST', 'DOCTOR_TIME_OFF', 'DOCTOR_HIDDEN') NOT NULL,
+    message VARCHAR(255) NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMP NULL DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50),
+    FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_reception_notification_source (source_table, source_request_id),
+    INDEX idx_reception_notification_read (is_read, created_at),
+    INDEX idx_reception_notification_type (notification_type),
+    INDEX idx_reception_notification_patient (patient_id)
+);
 
 
 -- TRIGGERS
 
 DELIMITER $$
+
+-- Trigger: Create receptionist notification when an insurance change request is submitted
+DROP TRIGGER IF EXISTS insurance_change_requests_create_notification $$
+CREATE TRIGGER insurance_change_requests_create_notification
+AFTER INSERT ON insurance_change_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_name VARCHAR(120) DEFAULT '';
+    DECLARE v_action_label VARCHAR(24) DEFAULT 'change';
+
+    SELECT CONCAT(p_first_name, ' ', p_last_name)
+    INTO v_patient_name
+    FROM patients
+    WHERE patient_id = NEW.patient_id
+    LIMIT 1;
+
+    IF NEW.change_type = 'ADD' THEN
+        SET v_action_label = 'add';
+    ELSEIF NEW.change_type = 'UPDATE' THEN
+        SET v_action_label = 'update';
+    ELSEIF NEW.change_type = 'REMOVE' THEN
+        SET v_action_label = 'remove';
+    END IF;
+
+    INSERT INTO receptionist_notifications (
+        source_table,
+        source_request_id,
+        patient_id,
+        notification_type,
+        message,
+        created_by,
+        updated_by
+    ) VALUES (
+        'insurance_change_requests',
+        NEW.request_id,
+        NEW.patient_id,
+        'INSURANCE_CHANGE_REQUEST',
+        CONCAT('Insurance ', v_action_label, ' request submitted by ', COALESCE(v_patient_name, 'a patient')),
+        'SYSTEM_TRIGGER',
+        'SYSTEM_TRIGGER'
+    );
+END $$
+
+-- Trigger: Create receptionist notification when a pharmacy change request is submitted
+DROP TRIGGER IF EXISTS pharmacy_change_requests_create_notification $$
+CREATE TRIGGER pharmacy_change_requests_create_notification
+AFTER INSERT ON pharmacy_change_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_patient_name VARCHAR(120) DEFAULT '';
+    DECLARE v_action_label VARCHAR(24) DEFAULT 'change';
+
+    SELECT CONCAT(p_first_name, ' ', p_last_name)
+    INTO v_patient_name
+    FROM patients
+    WHERE patient_id = NEW.patient_id
+    LIMIT 1;
+
+    IF NEW.change_type = 'ADD' THEN
+        SET v_action_label = 'add';
+    ELSEIF NEW.change_type = 'REMOVE' THEN
+        SET v_action_label = 'remove';
+    END IF;
+
+    INSERT INTO receptionist_notifications (
+        source_table,
+        source_request_id,
+        patient_id,
+        notification_type,
+        message,
+        created_by,
+        updated_by
+    ) VALUES (
+        'pharmacy_change_requests',
+        NEW.request_id,
+        NEW.patient_id,
+        'PHARMACY_CHANGE_REQUEST',
+        CONCAT('Pharmacy ', v_action_label, ' request submitted by ', COALESCE(v_patient_name, 'a patient')),
+        'SYSTEM_TRIGGER',
+        'SYSTEM_TRIGGER'
+    );
+END $$
+
+-- Trigger: Cancel active appointments when doctor time-off is inserted (is_approved defaults TRUE)
+DROP TRIGGER IF EXISTS after_doctor_time_off_insert_cancel_appointments $$
+CREATE TRIGGER after_doctor_time_off_insert_cancel_appointments
+AFTER INSERT ON doctor_time_off
+FOR EACH ROW
+BEGIN
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    DECLARE v_doctor_name VARCHAR(120) DEFAULT '';
+    DECLARE v_affected_count INT DEFAULT 0;
+    DECLARE v_patient_id INT DEFAULT NULL;
+
+    IF NEW.is_approved = TRUE THEN
+        SELECT status_id INTO v_cancelled_status_id
+        FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+
+        SELECT reason_id INTO v_reason_id
+        FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+
+        SELECT CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, ''))
+        INTO v_doctor_name
+        FROM doctors d
+        JOIN staff st ON st.staff_id = d.staff_id
+        WHERE d.doctor_id = NEW.doctor_id
+        LIMIT 1;
+
+        IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+            SELECT COUNT(*), MIN(a.patient_id)
+            INTO v_affected_count, v_patient_id
+            FROM appointments a
+            WHERE a.doctor_id = NEW.doctor_id
+              AND a.status_id NOT IN (
+                  SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+              )
+              AND TIMESTAMP(a.appointment_date, a.appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(a.appointment_date, a.appointment_time) < NEW.end_datetime;
+
+            UPDATE appointments
+            SET status_id = v_cancelled_status_id,
+                reason_id = v_reason_id,
+                updated_by = 'SYSTEM_TIME_OFF'
+            WHERE doctor_id = NEW.doctor_id
+              AND status_id NOT IN (
+                  SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+              )
+              AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+
+            UPDATE appointment_preference_requests
+            SET request_status = 'CANCELLED', updated_by = 'SYSTEM_TIME_OFF'
+            WHERE assigned_doctor_id = NEW.doctor_id
+              AND request_status = 'ASSIGNED'
+              AND TIMESTAMP(assigned_date, assigned_time) >= NEW.start_datetime
+              AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
+
+            IF v_affected_count > 0 AND v_patient_id IS NOT NULL THEN
+                INSERT INTO receptionist_notifications (
+                    source_table,
+                    source_request_id,
+                    patient_id,
+                    notification_type,
+                    message,
+                    created_by,
+                    updated_by
+                ) VALUES (
+                    'doctor_time_off',
+                    NEW.time_off_id,
+                    v_patient_id,
+                    'DOCTOR_TIME_OFF',
+                    CONCAT('Doctor time off approved for ', COALESCE(NULLIF(TRIM(v_doctor_name), ''), CONCAT('doctor #', NEW.doctor_id)), '. ', v_affected_count, ' appointment', IF(v_affected_count = 1, '', 's'), ' were cancelled and need rescheduling.'),
+                    'SYSTEM_TRIGGER',
+                    'SYSTEM_TRIGGER'
+                )
+                ON DUPLICATE KEY UPDATE
+                    patient_id = VALUES(patient_id),
+                    notification_type = VALUES(notification_type),
+                    message = VALUES(message),
+                    updated_by = VALUES(updated_by);
+            END IF;
+        END IF;
+    END IF;
+END $$
+
+-- Trigger: Cancel active appointments when doctor time-off is explicitly approved
+DROP TRIGGER IF EXISTS after_doctor_time_off_update_cancel_appointments $$
+CREATE TRIGGER after_doctor_time_off_update_cancel_appointments
+AFTER UPDATE ON doctor_time_off
+FOR EACH ROW
+BEGIN
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    DECLARE v_doctor_name VARCHAR(120) DEFAULT '';
+    DECLARE v_affected_count INT DEFAULT 0;
+    DECLARE v_patient_id INT DEFAULT NULL;
+
+    IF NEW.is_approved = TRUE AND OLD.is_approved = FALSE THEN
+        SELECT status_id INTO v_cancelled_status_id
+        FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+
+        SELECT reason_id INTO v_reason_id
+        FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+
+        SELECT CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, ''))
+        INTO v_doctor_name
+        FROM doctors d
+        JOIN staff st ON st.staff_id = d.staff_id
+        WHERE d.doctor_id = NEW.doctor_id
+        LIMIT 1;
+
+        IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+            SELECT COUNT(*), MIN(a.patient_id)
+            INTO v_affected_count, v_patient_id
+            FROM appointments a
+            WHERE a.doctor_id = NEW.doctor_id
+              AND a.status_id NOT IN (
+                  SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+              )
+              AND TIMESTAMP(a.appointment_date, a.appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(a.appointment_date, a.appointment_time) < NEW.end_datetime;
+
+            UPDATE appointments
+            SET status_id = v_cancelled_status_id,
+                reason_id = v_reason_id,
+                updated_by = 'SYSTEM_TIME_OFF'
+            WHERE doctor_id = NEW.doctor_id
+              AND status_id NOT IN (
+                  SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+              )
+              AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+              AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+
+            UPDATE appointment_preference_requests
+            SET request_status = 'CANCELLED', updated_by = 'SYSTEM_TIME_OFF'
+            WHERE assigned_doctor_id = NEW.doctor_id
+              AND request_status = 'ASSIGNED'
+              AND TIMESTAMP(assigned_date, assigned_time) >= NEW.start_datetime
+              AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
+
+            IF v_affected_count > 0 AND v_patient_id IS NOT NULL THEN
+                INSERT INTO receptionist_notifications (
+                    source_table,
+                    source_request_id,
+                    patient_id,
+                    notification_type,
+                    message,
+                    created_by,
+                    updated_by
+                ) VALUES (
+                    'doctor_time_off',
+                    NEW.time_off_id,
+                    v_patient_id,
+                    'DOCTOR_TIME_OFF',
+                    CONCAT('Doctor time off approved for ', COALESCE(NULLIF(TRIM(v_doctor_name), ''), CONCAT('doctor #', NEW.doctor_id)), '. ', v_affected_count, ' appointment', IF(v_affected_count = 1, '', 's'), ' were cancelled and need rescheduling.'),
+                    'SYSTEM_TRIGGER',
+                    'SYSTEM_TRIGGER'
+                )
+                ON DUPLICATE KEY UPDATE
+                    patient_id = VALUES(patient_id),
+                    notification_type = VALUES(notification_type),
+                    message = VALUES(message),
+                    updated_by = VALUES(updated_by);
+            END IF;
+        END IF;
+    END IF;
+END $$
+
+-- Trigger: Cancel active appointments when a doctor's staff time-off request is approved
+DROP TRIGGER IF EXISTS after_staff_time_off_approved_cancel_appointments $$
+CREATE TRIGGER after_staff_time_off_approved_cancel_appointments
+AFTER UPDATE ON staff_time_off_requests
+FOR EACH ROW
+BEGIN
+    DECLARE v_doctor_id INT DEFAULT NULL;
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    DECLARE v_doctor_name VARCHAR(120) DEFAULT '';
+    DECLARE v_affected_count INT DEFAULT 0;
+    DECLARE v_patient_id INT DEFAULT NULL;
+
+    IF NEW.is_approved = TRUE AND OLD.is_approved = FALSE THEN
+        SELECT d.doctor_id INTO v_doctor_id
+        FROM doctors d
+        WHERE d.staff_id = NEW.staff_id
+        LIMIT 1;
+
+        IF v_doctor_id IS NOT NULL THEN
+            SELECT status_id INTO v_cancelled_status_id
+            FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+
+            SELECT reason_id INTO v_reason_id
+            FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+
+            SELECT CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, ''))
+            INTO v_doctor_name
+            FROM doctors d
+            JOIN staff st ON st.staff_id = d.staff_id
+            WHERE d.doctor_id = v_doctor_id
+            LIMIT 1;
+
+            IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+                SELECT COUNT(*), MIN(a.patient_id)
+                INTO v_affected_count, v_patient_id
+                FROM appointments a
+                WHERE a.doctor_id = v_doctor_id
+                  AND a.status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  )
+                  AND TIMESTAMP(a.appointment_date, a.appointment_time) >= NEW.start_datetime
+                  AND TIMESTAMP(a.appointment_date, a.appointment_time) < NEW.end_datetime;
+
+                UPDATE appointments
+                SET status_id = v_cancelled_status_id,
+                    reason_id = v_reason_id,
+                    updated_by = 'SYSTEM_TIME_OFF'
+                WHERE doctor_id = v_doctor_id
+                  AND status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  )
+                  AND TIMESTAMP(appointment_date, appointment_time) >= NEW.start_datetime
+                  AND TIMESTAMP(appointment_date, appointment_time) < NEW.end_datetime;
+
+                UPDATE appointment_preference_requests
+                SET request_status = 'CANCELLED', updated_by = 'SYSTEM_TIME_OFF'
+                WHERE assigned_doctor_id = v_doctor_id
+                  AND request_status = 'ASSIGNED'
+                  AND TIMESTAMP(assigned_date, assigned_time) >= NEW.start_datetime
+                  AND TIMESTAMP(assigned_date, assigned_time) < NEW.end_datetime;
+
+                IF v_affected_count > 0 AND v_patient_id IS NOT NULL THEN
+                    INSERT INTO receptionist_notifications (
+                        source_table,
+                        source_request_id,
+                        patient_id,
+                        notification_type,
+                        message,
+                        created_by,
+                        updated_by
+                    ) VALUES (
+                        'staff_time_off_requests',
+                        NEW.request_id,
+                        v_patient_id,
+                        'DOCTOR_TIME_OFF',
+                        CONCAT('Doctor time off approved for ', COALESCE(NULLIF(TRIM(v_doctor_name), ''), CONCAT('doctor #', v_doctor_id)), '. ', v_affected_count, ' appointment', IF(v_affected_count = 1, '', 's'), ' were cancelled and need rescheduling.'),
+                        'SYSTEM_TRIGGER',
+                        'SYSTEM_TRIGGER'
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        patient_id = VALUES(patient_id),
+                        notification_type = VALUES(notification_type),
+                        message = VALUES(message),
+                        updated_by = VALUES(updated_by);
+                END IF;
+            END IF;
+        END IF;
+    END IF;
+END $$
+
+-- Trigger: Cancel future appointments when a doctor's user account is hidden (is_deleted flips 0 → 1)
+DROP TRIGGER IF EXISTS after_staff_hidden_cancel_appointments $$
+CREATE TRIGGER after_staff_hidden_cancel_appointments
+AFTER UPDATE ON users
+FOR EACH ROW
+BEGIN
+    DECLARE v_doctor_id INT DEFAULT NULL;
+    DECLARE v_cancelled_status_id INT DEFAULT NULL;
+    DECLARE v_reason_id INT DEFAULT NULL;
+    DECLARE v_doctor_name VARCHAR(120) DEFAULT '';
+    DECLARE v_affected_count INT DEFAULT 0;
+    DECLARE v_patient_id INT DEFAULT NULL;
+
+    IF OLD.is_deleted = 0 AND NEW.is_deleted = 1 THEN
+        SELECT d.doctor_id INTO v_doctor_id
+        FROM staff st
+        JOIN doctors d ON d.staff_id = st.staff_id
+        WHERE st.user_id = NEW.user_id
+        LIMIT 1;
+
+        IF v_doctor_id IS NOT NULL THEN
+            SELECT status_id INTO v_cancelled_status_id
+            FROM appointment_statuses WHERE status_name = 'CANCELLED' LIMIT 1;
+
+            SELECT reason_id INTO v_reason_id
+            FROM cancel_reasons WHERE reason_text = 'Doctor Unavailable' LIMIT 1;
+
+            SELECT CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, ''))
+            INTO v_doctor_name
+            FROM doctors d
+            JOIN staff st ON st.staff_id = d.staff_id
+            WHERE d.doctor_id = v_doctor_id
+            LIMIT 1;
+
+            IF v_cancelled_status_id IS NOT NULL AND v_reason_id IS NOT NULL THEN
+                SELECT COUNT(*), MIN(a.patient_id)
+                INTO v_affected_count, v_patient_id
+                FROM appointments a
+                WHERE a.doctor_id = v_doctor_id
+                  AND a.appointment_date >= CURDATE()
+                  AND a.status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  );
+
+                UPDATE appointments
+                SET status_id = v_cancelled_status_id,
+                    reason_id = v_reason_id,
+                    updated_by = 'SYSTEM_DOCTOR_HIDDEN'
+                WHERE doctor_id = v_doctor_id
+                  AND appointment_date >= CURDATE()
+                  AND status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'COMPLETED')
+                  );
+
+                UPDATE appointment_preference_requests
+                SET request_status = 'CANCELLED', updated_by = 'SYSTEM_DOCTOR_HIDDEN'
+                WHERE assigned_doctor_id = v_doctor_id
+                  AND request_status = 'ASSIGNED'
+                  AND assigned_date >= CURDATE();
+
+                IF v_affected_count > 0 AND v_patient_id IS NOT NULL THEN
+                    INSERT INTO receptionist_notifications (
+                        source_table,
+                        source_request_id,
+                        patient_id,
+                        notification_type,
+                        message,
+                        created_by,
+                        updated_by
+                    ) VALUES (
+                        'users',
+                        NEW.user_id,
+                        v_patient_id,
+                        'DOCTOR_HIDDEN',
+                        CONCAT('Doctor account deactivated: ', COALESCE(NULLIF(TRIM(v_doctor_name), ''), CONCAT('doctor #', v_doctor_id)), '. ', v_affected_count, ' appointment', IF(v_affected_count = 1, '', 's'), ' were cancelled due to doctor deletion and need rescheduling.'),
+                        'SYSTEM_TRIGGER',
+                        'SYSTEM_TRIGGER'
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        patient_id = VALUES(patient_id),
+                        notification_type = VALUES(notification_type),
+                        message = VALUES(message),
+                        updated_by = VALUES(updated_by);
+                END IF;
+            END IF;
+        END IF;
+    END IF;
+END $$
+
+DROP TRIGGER IF EXISTS before_insurance_insert_one_primary $$
+DROP TRIGGER IF EXISTS before_insurance_update_one_primary $$
+DROP TRIGGER IF EXISTS before_patient_pharmacy_insert_one_primary $$
+DROP TRIGGER IF EXISTS before_patient_pharmacy_update_one_primary $$
+
+
+
+-- MISC TRIGGERS
 
 -- Trigger 1: Enforce cancel_reason when appointment is cancelled
 DROP TRIGGER IF EXISTS appointments_require_cancel_reason_on_insert $$
@@ -831,149 +1328,69 @@ BEGIN
     END IF;
 END $$
 
--- Trigger 2: Auto-update invoice payment_status when payment is inserted
-DROP TRIGGER IF EXISTS payments_update_invoice_status $$
-CREATE TRIGGER payments_update_invoice_status
+-- Trigger: Auto-update invoice payment_status when a payment is recorded
+DROP TRIGGER IF EXISTS after_payment_insert_update_invoice_status $$
+CREATE TRIGGER after_payment_insert_update_invoice_status
 AFTER INSERT ON payments
 FOR EACH ROW
 BEGIN
-    DECLARE total_paid DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE patient_due DECIMAL(10,2) DEFAULT 0.00;
+    DECLARE v_patient_amount  DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_total_paid      DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_total_refunded  DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_net_paid        DECIMAL(10,2) DEFAULT 0;
+    DECLARE v_new_status      VARCHAR(10);
 
-    IF NEW.invoice_id IS NOT NULL THEN
-        SELECT COALESCE(SUM(payment_amount), 0.00)
-        INTO total_paid
-        FROM payments
-        WHERE invoice_id = NEW.invoice_id;
+    SELECT patient_amount INTO v_patient_amount
+    FROM invoices WHERE invoice_id = NEW.invoice_id;
 
-        SELECT COALESCE(patient_amount, 0.00)
-        INTO patient_due
-        FROM invoices
-        WHERE invoice_id = NEW.invoice_id;
+    SELECT COALESCE(SUM(payment_amount), 0) INTO v_total_paid
+    FROM payments WHERE invoice_id = NEW.invoice_id;
 
-        UPDATE invoices
-        SET payment_status = CASE
-            WHEN total_paid <= 0 THEN 'Unpaid'
-            WHEN total_paid < patient_due THEN 'Partial'
-            ELSE 'Paid'
-        END
-        WHERE invoice_id = NEW.invoice_id;
+    SELECT COALESCE(SUM(refund_amount), 0) INTO v_total_refunded
+    FROM refunds WHERE invoice_id = NEW.invoice_id;
+
+    SET v_net_paid = v_total_paid - v_total_refunded;
+
+    IF v_net_paid >= v_patient_amount THEN
+        SET v_new_status = 'Paid';
+    ELSEIF v_net_paid > 0 THEN
+        SET v_new_status = 'Partial';
+    ELSE
+        SET v_new_status = 'Unpaid';
     END IF;
+
+    UPDATE invoices
+    SET payment_status = v_new_status, updated_by = 'TRIGGER'
+    WHERE invoice_id = NEW.invoice_id;
 END $$
 
--- Trigger 3: Auto-update invoice payment_status when payment is updated
-DROP TRIGGER IF EXISTS payments_update_invoice_status_on_update $$
-CREATE TRIGGER payments_update_invoice_status_on_update
-AFTER UPDATE ON payments
+
+DELIMITER ;
+
+-- Trigger: Enforce valid appointment status transitions (state machine)
+DROP TRIGGER IF EXISTS appointments_enforce_status_transition $$
+CREATE TRIGGER appointments_enforce_status_transition
+BEFORE UPDATE ON appointments
 FOR EACH ROW
 BEGIN
-    DECLARE total_paid_new DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE patient_due_new DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE total_paid_old DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE patient_due_old DECIMAL(10,2) DEFAULT 0.00;
+    DECLARE old_status VARCHAR(50) DEFAULT NULL;
+    DECLARE new_status VARCHAR(50) DEFAULT NULL;
 
-    IF NEW.invoice_id IS NOT NULL THEN
-        SELECT COALESCE(SUM(payment_amount), 0.00)
-        INTO total_paid_new
-        FROM payments
-        WHERE invoice_id = NEW.invoice_id;
+    IF OLD.status_id <> NEW.status_id THEN
+        SELECT status_name INTO old_status FROM appointment_statuses WHERE status_id = OLD.status_id LIMIT 1;
+        SELECT status_name INTO new_status FROM appointment_statuses WHERE status_id = NEW.status_id LIMIT 1;
 
-        SELECT COALESCE(patient_amount, 0.00)
-        INTO patient_due_new
-        FROM invoices
-        WHERE invoice_id = NEW.invoice_id;
+        -- Terminal states: no transitions out allowed
+        IF old_status IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Appointment status cannot be changed once it is Completed or Cancelled';
+        END IF;
 
-        UPDATE invoices
-        SET payment_status = CASE
-            WHEN total_paid_new <= 0 THEN 'Unpaid'
-            WHEN total_paid_new < patient_due_new THEN 'Partial'
-            ELSE 'Paid'
-        END
-        WHERE invoice_id = NEW.invoice_id;
-    END IF;
-
-    IF OLD.invoice_id IS NOT NULL AND OLD.invoice_id <> NEW.invoice_id THEN
-        SELECT COALESCE(SUM(payment_amount), 0.00)
-        INTO total_paid_old
-        FROM payments
-        WHERE invoice_id = OLD.invoice_id;
-
-        SELECT COALESCE(patient_amount, 0.00)
-        INTO patient_due_old
-        FROM invoices
-        WHERE invoice_id = OLD.invoice_id;
-
-        UPDATE invoices
-        SET payment_status = CASE
-            WHEN total_paid_old <= 0 THEN 'Unpaid'
-            WHEN total_paid_old < patient_due_old THEN 'Partial'
-            ELSE 'Paid'
-        END
-        WHERE invoice_id = OLD.invoice_id;
-    END IF;
-END $$
-
--- Trigger 4: Auto-update invoice payment_status when payment is deleted
-DROP TRIGGER IF EXISTS payments_update_invoice_status_on_delete $$
-CREATE TRIGGER payments_update_invoice_status_on_delete
-AFTER DELETE ON payments
-FOR EACH ROW
-BEGIN
-    DECLARE total_paid DECIMAL(10,2) DEFAULT 0.00;
-    DECLARE patient_due DECIMAL(10,2) DEFAULT 0.00;
-
-    IF OLD.invoice_id IS NOT NULL THEN
-        SELECT COALESCE(SUM(payment_amount), 0.00)
-        INTO total_paid
-        FROM payments
-        WHERE invoice_id = OLD.invoice_id;
-
-        SELECT COALESCE(patient_amount, 0.00)
-        INTO patient_due
-        FROM invoices
-        WHERE invoice_id = OLD.invoice_id;
-
-        UPDATE invoices
-        SET payment_status = CASE
-            WHEN total_paid <= 0 THEN 'Unpaid'
-            WHEN total_paid < patient_due THEN 'Partial'
-            ELSE 'Paid'
-        END
-        WHERE invoice_id = OLD.invoice_id;
-    END IF;
-END $$
-
--- Trigger 5: Enforce one primary insurance policy per patient
-DROP TRIGGER IF EXISTS insurance_single_primary_insert $$
-CREATE TRIGGER insurance_single_primary_insert
-BEFORE INSERT ON insurance
-FOR EACH ROW
-BEGIN
-    IF NEW.is_primary = TRUE AND EXISTS (
-        SELECT 1
-        FROM insurance i
-        WHERE i.patient_id = NEW.patient_id
-          AND i.is_primary = TRUE
-    ) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Patient already has a primary insurance policy';
-    END IF;
-END $$
-
-DROP TRIGGER IF EXISTS insurance_single_primary_update $$
-CREATE TRIGGER insurance_single_primary_update
-BEFORE UPDATE ON insurance
-FOR EACH ROW
-BEGIN
-    IF NEW.is_primary = TRUE AND EXISTS (
-        SELECT 1
-        FROM insurance i
-        WHERE i.patient_id = NEW.patient_id
-          AND i.insurance_id <> NEW.insurance_id
-          AND i.is_primary = TRUE
-    ) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Patient already has a primary insurance policy';
+        -- CHECKED_IN can only move to COMPLETED or CANCELLED
+        IF old_status = 'CHECKED_IN' AND new_status NOT IN ('COMPLETED', 'CANCELLED') THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'A checked-in appointment can only be marked Completed or Cancelled';
+        END IF;
     END IF;
 END $$
 
@@ -1162,51 +1579,13 @@ BEGIN
                 (
                     SELECT COUNT(*)
                     FROM appointments a
-                    WHERE a.slot_id = s.slot_id
+                        WHERE a.slot_id = s.slot_id
                       AND a.status_id <> cancelled_status_id
                 ) < s.max_patients
             )
         WHERE s.slot_id = OLD.slot_id;
     END IF;
 END $$
-
-DROP TRIGGER IF EXISTS appointments_sync_slot_on_delete $$
-CREATE TRIGGER appointments_sync_slot_on_delete
-AFTER DELETE ON appointments
-FOR EACH ROW
-BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
-
-    UPDATE appointment_slots s
-    SET s.current_bookings = (
-            SELECT COUNT(*)
-            FROM appointments a
-            WHERE a.slot_id = s.slot_id
-              AND a.status_id <> cancelled_status_id
-        ),
-        s.is_available = (
-            (
-                SELECT COUNT(*)
-                FROM appointments a
-                WHERE a.slot_id = s.slot_id
-                  AND a.status_id <> cancelled_status_id
-            ) < s.max_patients
-        )
-    WHERE s.slot_id = OLD.slot_id;
-END $$
-
-DELIMITER ;
-
-
-
-
-
--- VIEWS - REPORTING
 
 -- Patient Billing Summary
 CREATE OR REPLACE VIEW vw_report_patient_billing AS

@@ -3,13 +3,17 @@ function createAdminRoutes(handlers) {
     sendJSON,
     getAdminDashboardSummary,
     getAdminAppointmentsQueue,
+    getAdminFollowUpQueue,
     getAdminScheduledPatients,
     getAdminPatientsReport,
     getAdminStaffReport,
+    getClinicPerformanceReport,
+    getRecallReport,
     getAdminDoctors,
     createAdminDoctor,
     getAdminLocations,
     createAdminLocation,
+    deleteAdminLocation,
     getAdminDoctorTimeOff,
     getAdminStaffTimeOffRequests,
     createAdminDoctorTimeOff,
@@ -26,6 +30,7 @@ function createAdminRoutes(handlers) {
     getAdminAllStaff,
     generateAdminReport,
     getReportFilterOptions,
+    getNewPatientsReport,
     getCancelledAppointmentRequests,
     restoreAppointmentRequest,
     submitScheduleRequest,
@@ -39,7 +44,11 @@ function createAdminRoutes(handlers) {
     adminUpdateStaffSchedule,
     processRefund,
     getRefundHistory,
-    getInvoiceLookup
+    getOverpaidInvoices,
+    getInvoiceLookup,
+    getCancelledAppointments,
+    getSystemCancelledAppointments,
+    getFinancialDetailReport
   } = handlers;
 
   function handleAdminRoutes(req, res, method, parts, parseJSON, parsedUrl) {
@@ -50,6 +59,11 @@ function createAdminRoutes(handlers) {
 
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'appointments' && parts[3] === 'queue') {
       getAdminAppointmentsQueue(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'follow-ups' && parts[3] === 'queue') {
+      getAdminFollowUpQueue(req, res);
       return true;
     }
 
@@ -65,6 +79,21 @@ function createAdminRoutes(handlers) {
 
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'staff') {
       getAdminStaffReport(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'performance') {
+      getClinicPerformanceReport(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'recall') {
+      getRecallReport(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'financial-detail') {
+      getFinancialDetailReport(req, res);
       return true;
     }
 
@@ -95,6 +124,16 @@ function createAdminRoutes(handlers) {
         }
         createAdminLocation(req, data, res);
       });
+      return true;
+    }
+
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'locations' && parts[3]) {
+      const locationId = Number(parts[3]);
+      if (!Number.isInteger(locationId) || locationId <= 0) {
+        sendJSON(res, 400, { error: 'A valid location id is required' });
+        return true;
+      }
+      deleteAdminLocation(req, locationId, res);
       return true;
     }
 
@@ -215,6 +254,12 @@ function createAdminRoutes(handlers) {
       return true;
     }
 
+    // GET /api/admin/reports/new-patients — new patient registrations by date range
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'reports' && parts[3] === 'new-patients') {
+      getNewPatientsReport(req, res);
+      return true;
+    }
+
     // GET /api/admin/appointment-requests/cancelled — list cancelled requests
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'appointment-requests' && parts[3] === 'cancelled') {
       getCancelledAppointmentRequests(req, res);
@@ -268,7 +313,12 @@ function createAdminRoutes(handlers) {
     // POST /api/staff/schedule-requests — staff submits preferred schedule
     if (method === 'POST' && parts[0] === 'api' && parts[1] === 'staff' && parts[2] === 'schedule-requests') {
       parseJSON(req, (err, data) => {
-        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        if (err) {
+          return sendJSON(res, 400, {
+            error: 'Invalid JSON (SCHEDULE_REQ_V2)',
+            detail: err.message || 'Schedule request body could not be parsed'
+          });
+        }
         submitScheduleRequest(req, data, res);
       });
       return true;
@@ -368,6 +418,22 @@ function createAdminRoutes(handlers) {
     // GET /api/admin/refunds — refund history
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'refunds') {
       getRefundHistory(req, res);
+      return true;
+    }
+
+    // GET /api/admin/overpaid-invoices — invoices where patient paid more than owed
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'overpaid-invoices') {
+      getOverpaidInvoices(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'cancelled-appointments') {
+      getCancelledAppointments(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'system-cancelled-appointments') {
+      getSystemCancelledAppointments(req, res);
       return true;
     }
 

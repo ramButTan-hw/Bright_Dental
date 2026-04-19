@@ -137,12 +137,21 @@ const queries = {
       i.insurance_covered_amount,
       i.patient_amount,
       COALESCE(SUM(pay.payment_amount), 0) AS amount_paid,
+      COALESCE((SELECT SUM(r.refund_amount) FROM refunds r WHERE r.invoice_id = i.invoice_id), 0) AS amount_refunded,
       GREATEST(i.patient_amount - COALESCE(SUM(pay.payment_amount), 0), 0) AS amount_due,
       i.payment_status,
+      i.fee_note,
       i.created_at,
       a.appointment_id,
       a.appointment_date,
-      a.appointment_time
+      a.appointment_time,
+      (
+        SELECT GROUP_CONCAT(COALESCE(apc.description, tp.procedure_code) ORDER BY tp.plan_id SEPARATOR ', ')
+        FROM treatment_plans tp
+        LEFT JOIN ada_procedure_codes apc ON apc.procedure_code = tp.procedure_code
+        WHERE tp.patient_id = a.patient_id
+          AND tp.start_date = DATE(a.appointment_date)
+      ) AS procedure_reasons
     FROM invoices i
     JOIN appointments a ON i.appointment_id = a.appointment_id
     LEFT JOIN payments pay ON pay.invoice_id = i.invoice_id
@@ -153,10 +162,12 @@ const queries = {
       i.insurance_covered_amount,
       i.patient_amount,
       i.payment_status,
+      i.fee_note,
       i.created_at,
       a.appointment_id,
       a.appointment_date,
-      a.appointment_time
+      a.appointment_time,
+      a.patient_id
     ORDER BY i.created_at DESC
   `,
 
@@ -231,6 +242,7 @@ const queries = {
     SELECT method_id, method_name, display_name
     FROM payment_methods
     WHERE is_active = 1
+      AND method_name <> 'CARD'
     ORDER BY method_id ASC
   `,
 
@@ -406,6 +418,40 @@ const queries = {
     LIMIT 1
   `,
 
+  // Appointments cancelled by the system (doctor time-off) for a patient in the last 30 days
+  // Excludes cancellations already resolved by a newer active request or scheduled appointment
+  getPatientSystemCancelledAppointments: `
+    SELECT
+      a.appointment_id,
+      a.appointment_date,
+      a.appointment_time,
+      CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
+      a.updated_at AS cancelled_at
+    FROM appointments a
+    JOIN appointment_statuses ast ON ast.status_id = a.status_id
+    JOIN doctors d ON d.doctor_id = a.doctor_id
+    JOIN staff st ON st.staff_id = d.staff_id
+    WHERE a.patient_id = ?
+      AND ast.status_name = 'CANCELLED'
+      AND a.updated_by = 'SYSTEM_TIME_OFF'
+      AND a.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      AND NOT EXISTS (
+        SELECT 1 FROM appointment_preference_requests apr
+        WHERE apr.patient_id = a.patient_id
+          AND apr.request_status IN ('PREFERRED_PENDING', 'ASSIGNED')
+          AND apr.created_at > a.updated_at
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM appointments a2
+        JOIN appointment_statuses ast2 ON ast2.status_id = a2.status_id
+        WHERE a2.patient_id = a.patient_id
+          AND a2.appointment_id != a.appointment_id
+          AND ast2.status_name NOT IN ('CANCELLED')
+          AND a2.created_at > a.updated_at
+      )
+    ORDER BY a.updated_at DESC
+  `,
+
   // Latest appointment preference request for patient prefill
   getLatestPatientAppointmentPreferenceRequest: `
     SELECT
@@ -420,6 +466,16 @@ const queries = {
     WHERE patient_id = ?
     ORDER BY created_at DESC
     LIMIT 1
+  `,
+
+  // Clear all primary insurance flags for a patient
+  clearPrimaryInsurance: `
+    UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1
+  `,
+
+  // Clear primary insurance flags for a patient, excluding a specific insurance record (used during UPDATE)
+  clearPrimaryInsuranceExcept: `
+    UPDATE insurance SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1 AND insurance_id != ?
   `
 };
 

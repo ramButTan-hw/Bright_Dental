@@ -1,145 +1,21 @@
 const url = require('url');
+const { createReportHelpers } = require('./reportHelpers');
 
 function createReceptionRoutes({ pool, sendJSON }) {
-  function normalizeDateParam(value) {
-    const raw = String(value || '').trim();
-    return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+  const { createReportFiltersFromQuery, fetchTreatmentRowsForReport, fetchFindingRowsForReport, buildGroupedReport } = createReportHelpers({ pool });
+
+  function normalizeTenDigitPhone(value) {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+    if (!digits) return null;
+    if (digits.length !== 10) return '';
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
 
-  function normalizeOptionalFilter(value) {
-    return String(value || '').trim();
-  }
-
-  function createReportFiltersFromQuery(query) {
-    const fromDate = normalizeDateParam(query.fromDate);
-    const toDate = normalizeDateParam(query.toDate);
-    const procedureCode = normalizeOptionalFilter(query.procedureCode).toUpperCase();
-    const toothNumber = normalizeOptionalFilter(query.toothNumber);
-    const surface = normalizeOptionalFilter(query.surface).toUpperCase();
-
-    if (!fromDate || !toDate) {
-      return { error: 'fromDate and toDate are required in YYYY-MM-DD format' };
-    }
-    if (new Date(`${fromDate}T00:00:00`).getTime() > new Date(`${toDate}T00:00:00`).getTime()) {
-      return { error: 'fromDate must be before or equal to toDate' };
-    }
-
-    return {
-      fromDate,
-      toDate,
-      procedureCode,
-      toothNumber,
-      surface
-    };
-  }
-
-  function fetchTreatmentRowsForReport({ patientId = null, fromDate, toDate, procedureCode, toothNumber, surface }, callback) {
-    const includeAllPatients = !Number.isInteger(patientId) || patientId <= 0;
-    pool.query(
-      `SELECT
-        tp.plan_id AS treatment_id,
-        tp.patient_id,
-        CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
-        tp.start_date AS visit_date,
-        tp.procedure_code,
-        apc.description AS treatment_description,
-        tp.tooth_number,
-        tp.surface,
-        tp.estimated_cost AS treatment_cost,
-        tp.notes,
-        tp.created_at
-      FROM treatment_plans tp
-      JOIN patients p ON p.patient_id = tp.patient_id
-      LEFT JOIN ada_procedure_codes apc ON apc.procedure_code = tp.procedure_code
-      WHERE (? = TRUE OR tp.patient_id = ?)
-        AND tp.start_date BETWEEN ? AND ?
-        AND (? = '' OR tp.procedure_code = ?)
-        AND (? = '' OR tp.tooth_number = ?)
-        AND (? = '' OR UPPER(COALESCE(tp.surface, '')) = ?)
-      ORDER BY tp.start_date DESC, tp.created_at DESC, tp.plan_id DESC`,
-      [includeAllPatients, patientId || 0, fromDate, toDate, procedureCode, procedureCode, toothNumber, toothNumber, surface, surface],
-      (err, rows) => callback(err, rows || [])
-    );
-  }
-
-  function fetchFindingRowsForReport({ patientId = null, fromDate, toDate, toothNumber, surface }, callback) {
-    const includeAllPatients = !Number.isInteger(patientId) || patientId <= 0;
-    pool.query(
-      `SELECT
-        df.patient_id,
-        COALESCE(a.appointment_date, DATE(df.date_logged)) AS visit_date,
-        GROUP_CONCAT(
-          CONCAT(
-            'Tooth ', COALESCE(df.tooth_number, 'N/A'),
-            CASE WHEN COALESCE(df.surface, '') <> '' THEN CONCAT(' (', df.surface, ')') ELSE '' END,
-            ': ', COALESCE(df.condition_type, 'Finding'),
-            CASE WHEN COALESCE(df.notes, '') <> '' THEN CONCAT(' - ', df.notes) ELSE '' END
-          )
-          ORDER BY df.finding_id ASC SEPARATOR ' | '
-        ) AS finding_summary
-      FROM dental_findings df
-      LEFT JOIN appointments a ON a.appointment_id = df.appointment_id
-      WHERE (? = TRUE OR df.patient_id = ?)
-        AND COALESCE(a.appointment_date, DATE(df.date_logged)) BETWEEN ? AND ?
-        AND (? = '' OR df.tooth_number = ?)
-        AND (? = '' OR UPPER(COALESCE(df.surface, '')) = ?)
-      GROUP BY df.patient_id, COALESCE(a.appointment_date, DATE(df.date_logged))
-      ORDER BY visit_date DESC`,
-      [includeAllPatients, patientId || 0, fromDate, toDate, toothNumber, toothNumber, surface, surface],
-      (err, rows) => callback(err, rows || [])
-    );
-  }
-
-  function buildGroupedReport(treatmentRows, findingRows) {
-    const findingMap = new Map();
-    findingRows.forEach((item) => {
-      const dateKey = String(item.visit_date || '').slice(0, 10) || 'Unknown date';
-      const key = `${Number(item.patient_id || 0)}::${dateKey}`;
-      findingMap.set(key, String(item.finding_summary || ''));
-    });
-
-    const grouped = new Map();
-
-    treatmentRows.forEach((row) => {
-      const dateKey = String(row.visit_date || '').slice(0, 10) || 'Unknown date';
-      const patientId = Number(row.patient_id || 0);
-      const patientName = String(row.patient_name || 'Unknown patient');
-      const groupKey = `${patientId}::${dateKey}`;
-
-      if (!grouped.has(groupKey)) {
-        grouped.set(groupKey, {
-          patientId,
-          patientName,
-          visitDate: dateKey,
-          visitCost: 0,
-          entries: []
-        });
-      }
-
-      const bucket = grouped.get(groupKey);
-      const numericCost = Number(row.treatment_cost);
-      if (Number.isFinite(numericCost) && numericCost > 0) {
-        bucket.visitCost += numericCost;
-      }
-
-      bucket.entries.push({
-        treatmentId: row.treatment_id,
-        procedureCode: row.procedure_code,
-        treatmentDescription: row.treatment_description,
-        toothNumber: row.tooth_number,
-        surface: row.surface,
-        cost: Number.isFinite(numericCost) ? numericCost : 0,
-        finding: findingMap.get(groupKey) || '',
-        notes: row.notes,
-        createdAt: row.created_at
-      });
-    });
-
-    return Array.from(grouped.values()).sort((a, b) => {
-      const dateCompare = String(b.visitDate).localeCompare(String(a.visitDate));
-      if (dateCompare !== 0) return dateCompare;
-      return a.patientName.localeCompare(b.patientName);
-    });
+  function normalizeFiveDigitZip(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return null;
+    if (digits.length !== 5) return '';
+    return digits;
   }
 
   function getReceptionSinglePatientReport(req, res) {
@@ -188,45 +64,6 @@ function createReceptionRoutes({ pool, sendJSON }) {
     });
   }
 
-  function getReceptionMultiPatientReport(req, res) {
-    const parsedUrl = url.parse(req.url, true);
-    const filters = createReportFiltersFromQuery(parsedUrl.query);
-    if (filters.error) {
-      return sendJSON(res, 400, { error: filters.error });
-    }
-
-    fetchTreatmentRowsForReport({ ...filters }, (treatmentErr, treatmentRows) => {
-      if (treatmentErr) {
-        console.error('Error generating reception multi-patient treatment report:', treatmentErr);
-        return sendJSON(res, 500, { error: 'Database error' });
-      }
-
-      fetchFindingRowsForReport({ ...filters }, (findingErr, findingRows) => {
-        if (findingErr) {
-          console.error('Error generating reception multi-patient finding report:', findingErr);
-          return sendJSON(res, 500, { error: 'Database error' });
-        }
-
-        const groupedVisits = buildGroupedReport(treatmentRows, findingRows);
-        const uniquePatients = new Set(groupedVisits.map((visit) => visit.patientId));
-        const totalCost = groupedVisits.reduce((sum, visit) => sum + Number(visit.visitCost || 0), 0);
-
-        return sendJSON(res, 200, {
-          reportType: 'RECEPTION_MULTI_PATIENT_TREATMENT_FINDING',
-          generatedAt: new Date().toISOString(),
-          filters,
-          summary: {
-            totalPatients: uniquePatients.size,
-            totalVisits: groupedVisits.length,
-            totalEntries: treatmentRows.length,
-            totalCost
-          },
-          visits: groupedVisits
-        });
-      });
-    });
-  }
-
   function fetchAppointmentRowsForReport({ patientId = null, fromDate, toDate, status, reason, preferredLocation }, callback) {
     const includeAllPatients = !Number.isInteger(patientId) || patientId <= 0;
     const safeStatus = String(status || '').trim().toUpperCase();
@@ -245,13 +82,17 @@ function createReceptionRoutes({ pool, sendJSON }) {
         CONCAT(st.first_name, ' ', st.last_name) AS doctor_name,
         CONCAT(l.loc_street_no, ' ', l.loc_street_name, ', ', l.location_city, ', ', l.location_state, ' ', l.loc_zip_code) AS location_address,
         a.notes,
-        a.created_at
+        a.created_at,
+        COALESCE(i.patient_amount, 0) AS amount_billed,
+        i.payment_status,
+        COALESCE((SELECT SUM(pay.payment_amount) FROM payments pay WHERE pay.invoice_id = i.invoice_id), 0) AS amount_paid
       FROM appointments a
       JOIN patients p ON p.patient_id = a.patient_id
       JOIN appointment_statuses ast ON ast.status_id = a.status_id
       JOIN doctors d ON d.doctor_id = a.doctor_id
       JOIN staff st ON st.staff_id = d.staff_id
       LEFT JOIN locations l ON l.location_id = a.location_id
+      LEFT JOIN invoices i ON i.appointment_id = a.appointment_id
       WHERE (? = TRUE OR a.patient_id = ?)
         AND a.appointment_date BETWEEN ? AND ?
         AND (? = '' OR ast.status_name = ?)
@@ -264,28 +105,52 @@ function createReceptionRoutes({ pool, sendJSON }) {
   }
 
   function buildAppointmentReport(rows, reportType) {
-    const appointments = rows.map((row) => ({
-      appointmentId: row.appointment_id,
-      patientId: row.patient_id,
-      patientName: row.patient_name,
-      appointmentDate: String(row.appointment_date || '').slice(0, 10),
-      appointmentTime: row.appointment_time,
-      status: row.status_name,
-      statusDisplay: row.status_display,
-      doctorName: row.doctor_name,
-      location: row.location_address || '',
-      notes: row.notes || '',
-      createdAt: row.created_at
-    }));
+    const today = new Date().toISOString().slice(0, 10);
+    const appointments = rows.map((row) => {
+      const billed = Number(row.amount_billed || 0);
+      const paid = Number(row.amount_paid || 0);
+      return {
+        appointmentId: row.appointment_id,
+        patientId: row.patient_id,
+        patientName: row.patient_name,
+        appointmentDate: String(row.appointment_date || '').slice(0, 10),
+        appointmentTime: row.appointment_time,
+        status: row.status_name,
+        statusDisplay: row.status_display,
+        doctorName: row.doctor_name,
+        location: row.location_address || '',
+        notes: row.notes || '',
+        createdAt: row.created_at,
+        amountBilled: billed,
+        amountPaid: paid,
+        amountOwed: Math.max(0, billed - paid),
+        paymentStatus: row.payment_status || null
+      };
+    });
 
     const uniquePatients = new Set(appointments.map((a) => a.patientId));
+    const noShows = appointments.filter((a) => a.status === 'NO_SHOW').length;
+    const cancellations = appointments.filter((a) => a.status === 'CANCELLED' || a.status === 'CANCELED').length;
+    const pastAppts = appointments.filter((a) => a.appointmentDate < today && a.status === 'COMPLETED');
+    const upcomingAppts = appointments.filter((a) => a.appointmentDate >= today);
+    const lastVisitDate = pastAppts.length ? pastAppts[0].appointmentDate : null;
+    const nextUpcomingDate = upcomingAppts.length ? upcomingAppts[upcomingAppts.length - 1].appointmentDate : null;
+    const totalBilled = appointments.reduce((sum, a) => sum + a.amountBilled, 0);
+    const totalCollected = appointments.reduce((sum, a) => sum + a.amountPaid, 0);
 
     return {
       reportType,
       generatedAt: new Date().toISOString(),
       summary: {
         totalPatients: uniquePatients.size,
-        totalAppointments: appointments.length
+        totalAppointments: appointments.length,
+        noShows,
+        cancellations,
+        lastVisitDate,
+        nextUpcomingDate,
+        totalBilled,
+        totalCollected,
+        totalOwed: Math.max(0, totalBilled - totalCollected)
       },
       appointments
     };
@@ -323,34 +188,6 @@ function createReceptionRoutes({ pool, sendJSON }) {
     });
   }
 
-  function getReceptionMultiPatientApptReport(req, res) {
-    const parsedUrl = url.parse(req.url, true);
-
-    const fromDate = normalizeDateParam(parsedUrl.query.fromDate);
-    const toDate = normalizeDateParam(parsedUrl.query.toDate);
-    if (!fromDate || !toDate) {
-      return sendJSON(res, 400, { error: 'fromDate and toDate are required in YYYY-MM-DD format' });
-    }
-    if (new Date(`${fromDate}T00:00:00`).getTime() > new Date(`${toDate}T00:00:00`).getTime()) {
-      return sendJSON(res, 400, { error: 'fromDate must be before or equal to toDate' });
-    }
-
-    const status = normalizeOptionalFilter(parsedUrl.query.status);
-    const reason = normalizeOptionalFilter(parsedUrl.query.reason);
-    const preferredLocation = normalizeOptionalFilter(parsedUrl.query.preferredLocation);
-
-    fetchAppointmentRowsForReport({ fromDate, toDate, status, reason, preferredLocation }, (err, rows) => {
-      if (err) {
-        console.error('Error generating multi-patient appointment report:', err);
-        return sendJSON(res, 500, { error: 'Database error' });
-      }
-
-      const report = buildAppointmentReport(rows, 'RECEPTION_MULTI_PATIENT_APPOINTMENT');
-      report.filters = { fromDate, toDate, status, reason, preferredLocation };
-      return sendJSON(res, 200, report);
-    });
-  }
-
   function normalizeTimeValue(value) {
     const raw = String(value || '').trim();
     if (/^\d{2}:\d{2}$/.test(raw)) {
@@ -368,6 +205,37 @@ function createReceptionRoutes({ pool, sendJSON }) {
     base.setHours(hour, minute, second, 0);
     base.setMinutes(base.getMinutes() + minutesToAdd);
     return `${String(base.getHours()).padStart(2, '0')}:${String(base.getMinutes()).padStart(2, '0')}:${String(base.getSeconds()).padStart(2, '0')}`;
+  }
+
+  const FEE_NO_SHOW = 50.00;
+  const FEE_LATE_CANCEL = 35.00;
+  const FEE_LATE_ARRIVAL = 25.00;
+  const LATE_ARRIVAL_GRACE_MINUTES = 15;
+
+  // Adds a penalty fee to the appointment's invoice (or creates one if none exists).
+  // Must be called inside an active transaction on `conn`.
+  async function applyFeeToInvoice(conn, appointmentId, feeAmount, feeNote) {
+    const [[existing]] = await conn.promise().query(
+      'SELECT invoice_id, amount, patient_amount FROM invoices WHERE appointment_id = ? LIMIT 1',
+      [appointmentId]
+    );
+    if (existing) {
+      await conn.promise().query(
+        `UPDATE invoices
+         SET amount = amount + ?, patient_amount = patient_amount + ?,
+             fee_note = ?, updated_by = 'SYSTEM_FEE'
+         WHERE invoice_id = ?`,
+        [feeAmount, feeAmount, feeNote, existing.invoice_id]
+      );
+    } else {
+      await conn.promise().query(
+        `INSERT INTO invoices
+         (appointment_id, insurance_id, amount, insurance_covered_amount, patient_amount,
+          payment_status, fee_note, created_by, updated_by)
+         VALUES (?, NULL, ?, 0, ?, 'Unpaid', ?, 'SYSTEM_FEE', 'SYSTEM_FEE')`,
+        [appointmentId, feeAmount, feeAmount, feeNote]
+      );
+    }
   }
 
   async function getAppointmentStatusId(conn, statusName) {
@@ -405,6 +273,46 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
     const statusId = await getAppointmentStatusId(conn, 'SCHEDULED');
     const appointmentEndTime = addMinutesToTime(appointmentTime, 30);
+    let rescheduledFromAppointmentId = null;
+
+    const [rescheduleSourceRows] = await conn.promise().query(
+      `SELECT a.appointment_id
+       FROM appointments a
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       WHERE a.patient_id = ?
+         AND ast.status_name = 'CANCELLED'
+         AND a.updated_by IN ('SYSTEM_TIME_OFF', 'SYSTEM_DOCTOR_HIDDEN')
+         AND NOT EXISTS (
+           SELECT 1
+           FROM appointments replacement
+           JOIN appointment_statuses replacement_status ON replacement_status.status_id = replacement.status_id
+           WHERE replacement.rescheduled_from_appointment_id = a.appointment_id
+             AND replacement_status.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
+         )
+       ORDER BY a.updated_at DESC, a.appointment_id DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [patientId]
+    );
+
+    if (rescheduleSourceRows?.length) {
+      rescheduledFromAppointmentId = Number(rescheduleSourceRows[0].appointment_id);
+    }
+
+    const [existingAppointmentRows] = await conn.promise().query(
+      `SELECT a.appointment_id
+       FROM appointments a
+       JOIN appointment_statuses ast ON ast.status_id = a.status_id
+       WHERE a.patient_id = ?
+         AND ast.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
+       LIMIT 1
+       FOR UPDATE`,
+      [patientId]
+    );
+
+    if (existingAppointmentRows?.length) {
+      throw new Error('This patient already has an active appointment. Please reschedule or cancel the existing appointment before creating a new one.');
+    }
 
     const [slotRows] = await conn.promise().query(
       `SELECT slot_id, current_bookings, max_patients, is_available
@@ -452,11 +360,20 @@ function createReceptionRoutes({ pool, sendJSON }) {
         appointment_time,
         appointment_date,
         status_id,
+        rescheduled_from_appointment_id,
         notes,
         created_by,
         updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [slotId, locationId, patientId, doctorId, appointmentTime, appointmentDate, statusId, notes, createdBy, createdBy]
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [slotId, locationId, patientId, doctorId, appointmentTime, appointmentDate, statusId, rescheduledFromAppointmentId, notes, createdBy, createdBy]
+    );
+
+    await conn.promise().query(
+      `DELETE FROM receptionist_notifications
+       WHERE patient_id = ?
+         AND notification_type = 'DOCTOR_TIME_OFF'
+         AND source_table = 'doctor_time_off'`,
+      [patientId]
     );
 
     // Trigger trg_appointments_sync_slot_on_insert auto-updates current_bookings and is_available
@@ -673,6 +590,13 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
         try {
           const confirmedStatusId = await getAppointmentStatusId(conn, 'CHECKED_IN');
+
+          // Fetch appointment date+time to detect late arrival
+          const [[apptRow]] = await conn.promise().query(
+            'SELECT appointment_date, appointment_time FROM appointments WHERE appointment_id = ? LIMIT 1',
+            [appointmentId]
+          );
+
           const [updateResult] = await conn.promise().query(
             `UPDATE appointments
              SET status_id = ?, updated_by = 'RECEPTION_PORTAL'
@@ -684,13 +608,34 @@ function createReceptionRoutes({ pool, sendJSON }) {
             throw new Error('Appointment not found');
           }
 
+          // Apply late arrival fee if check-in is more than grace period past scheduled time
+          let feeApplied = false;
+          if (apptRow) {
+            const apptDateStr = apptRow.appointment_date instanceof Date
+              ? apptRow.appointment_date.toISOString().slice(0, 10)
+              : String(apptRow.appointment_date).slice(0, 10);
+            const scheduledAt = new Date(`${apptDateStr}T${apptRow.appointment_time}`);
+            const minutesLate = (Date.now() - scheduledAt.getTime()) / 60000;
+            if (minutesLate > LATE_ARRIVAL_GRACE_MINUTES) {
+              await applyFeeToInvoice(conn, appointmentId, FEE_LATE_ARRIVAL,
+                `Late arrival fee (${Math.round(minutesLate)} min past scheduled time)`);
+              feeApplied = true;
+            }
+          }
+
           conn.commit((commitErr) => {
             conn.release();
             if (commitErr) {
               console.error('Error committing check-in:', commitErr);
               return sendJSON(res, 500, { error: 'Database error' });
             }
-            return sendJSON(res, 200, { message: 'Patient checked in successfully' });
+            return sendJSON(res, 200, {
+              message: feeApplied
+                ? `Patient checked in. A $${FEE_LATE_ARRIVAL.toFixed(2)} late arrival fee has been added to their invoice.`
+                : 'Patient checked in successfully',
+              feeApplied,
+              feeAmount: feeApplied ? FEE_LATE_ARRIVAL : 0
+            });
           });
         } catch (error) {
           conn.rollback(() => {
@@ -732,13 +677,19 @@ function createReceptionRoutes({ pool, sendJSON }) {
             throw new Error('Appointment not found');
           }
 
+          await applyFeeToInvoice(conn, appointmentId, FEE_NO_SHOW, 'No-show fee');
+
           conn.commit((commitErr) => {
             conn.release();
             if (commitErr) {
               console.error('Error committing no-show:', commitErr);
               return sendJSON(res, 500, { error: 'Database error' });
             }
-            return sendJSON(res, 200, { message: 'Appointment marked as no-show' });
+            return sendJSON(res, 200, {
+              message: `Appointment marked as no-show. A $${FEE_NO_SHOW.toFixed(2)} no-show fee has been added to their invoice.`,
+              feeApplied: true,
+              feeAmount: FEE_NO_SHOW
+            });
           });
         } catch (error) {
           conn.rollback(() => {
@@ -747,6 +698,60 @@ function createReceptionRoutes({ pool, sendJSON }) {
               return sendJSON(res, 404, { error: error.message });
             }
             console.error('Error marking appointment as no-show:', error);
+            return sendJSON(res, 500, { error: 'Database error' });
+          });
+        }
+      });
+    });
+  }
+
+  function markLateArrivalReceptionAppointment(req, appointmentId, res) {
+    pool.getConnection((connErr, conn) => {
+      if (connErr) {
+        console.error('Error getting connection for late arrival:', connErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      conn.beginTransaction(async (txErr) => {
+        if (txErr) {
+          conn.release();
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        try {
+          const checkedInStatusId = await getAppointmentStatusId(conn, 'CHECKED_IN');
+          const [updateResult] = await conn.promise().query(
+            `UPDATE appointments
+             SET status_id = ?, updated_by = 'RECEPTION_PORTAL'
+             WHERE appointment_id = ?`,
+            [checkedInStatusId, appointmentId]
+          );
+
+          if (!updateResult.affectedRows) {
+            throw new Error('Appointment not found');
+          }
+
+          await applyFeeToInvoice(conn, appointmentId, FEE_LATE_ARRIVAL, 'Late arrival fee');
+
+          conn.commit((commitErr) => {
+            conn.release();
+            if (commitErr) {
+              console.error('Error committing late arrival:', commitErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            return sendJSON(res, 200, {
+              message: `Patient checked in as late. A $${FEE_LATE_ARRIVAL.toFixed(2)} late arrival fee has been added to their invoice.`,
+              feeApplied: true,
+              feeAmount: FEE_LATE_ARRIVAL
+            });
+          });
+        } catch (error) {
+          conn.rollback(() => {
+            conn.release();
+            if (error.message === 'Appointment not found') {
+              return sendJSON(res, 404, { error: error.message });
+            }
+            console.error('Error marking late arrival:', error);
             return sendJSON(res, 500, { error: 'Database error' });
           });
         }
@@ -886,6 +891,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
         pool.query(
           `SELECT
             i.insurance_id,
+            i.company_id,
             i.member_id,
             i.group_number,
             i.is_primary,
@@ -1135,18 +1141,15 @@ function createReceptionRoutes({ pool, sendJSON }) {
     const firstName = String(data?.firstName || '').trim();
     const lastName = String(data?.lastName || '').trim();
     const email = String(data?.email || '').trim();
-    const phone = String(data?.phone || '').replace(/\D/g, '');
+    const phone = normalizeTenDigitPhone(data?.phone);
     const dateOfBirth = String(data?.dateOfBirth || '').trim();
     const address = String(data?.address || '').trim();
     const city = String(data?.city || '').trim();
     const state = String(data?.state || '').trim().toUpperCase();
-    const zipcode = String(data?.zipcode || '').trim();
+    const zipcode = normalizeFiveDigitZip(data?.zipcode);
     const country = String(data?.country || '').trim();
     const emergencyContactName = String(data?.emergencyContactName || '').trim();
-    const emergencyContactPhone = String(data?.emergencyContactPhone || '').replace(/\D/g, '');
-    const formattedEmergencyContactPhone = emergencyContactPhone
-      ? `${emergencyContactPhone.slice(0, 3)}-${emergencyContactPhone.slice(3, 6)}-${emergencyContactPhone.slice(6, 10)}`
-      : '';
+    const emergencyContactPhone = normalizeTenDigitPhone(data?.emergencyContactPhone);
 
     if (!firstName || !lastName || !email) {
       return sendJSON(res, 400, { error: 'First name, last name, and email are required' });
@@ -1156,7 +1159,15 @@ function createReceptionRoutes({ pool, sendJSON }) {
       return sendJSON(res, 400, { error: 'dateOfBirth must use YYYY-MM-DD format' });
     }
 
-    if (emergencyContactPhone && !/^\d{10}$/.test(emergencyContactPhone)) {
+    if (phone === '') {
+      return sendJSON(res, 400, { error: 'Phone must contain exactly 10 digits' });
+    }
+
+    if (zipcode === '') {
+      return sendJSON(res, 400, { error: 'ZIP code must contain exactly 5 digits' });
+    }
+
+    if (emergencyContactPhone === '') {
       return sendJSON(res, 400, { error: 'Emergency contact phone must be exactly 10 digits' });
     }
 
@@ -1242,7 +1253,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
                     zipcode || null,
                     country || null,
                     emergencyContactName || null,
-                    formattedEmergencyContactPhone || null,
+                    emergencyContactPhone || null,
                     staffId
                   ],
                   (staffErr) => {
@@ -1275,17 +1286,29 @@ function createReceptionRoutes({ pool, sendJSON }) {
   function updateReceptionPatient(req, patientId, data, res) {
     const firstName = String(data?.firstName || '').trim();
     const lastName = String(data?.lastName || '').trim();
-    const phone = String(data?.phone || '').trim();
+    const phone = normalizeTenDigitPhone(data?.phone);
     const email = String(data?.email || '').trim();
     const address = String(data?.address || '').trim();
     const city = String(data?.city || '').trim();
     const state = String(data?.state || '').trim().toUpperCase();
-    const zipcode = String(data?.zipcode || '').trim();
+    const zipcode = normalizeFiveDigitZip(data?.zipcode);
     const emergencyContactName = String(data?.emergencyContactName || '').trim();
-    const emergencyContactPhone = String(data?.emergencyContactPhone || '').trim();
+    const emergencyContactPhone = normalizeTenDigitPhone(data?.emergencyContactPhone);
 
     if (!firstName || !lastName || !email) {
       return sendJSON(res, 400, { error: 'firstName, lastName, and email are required' });
+    }
+
+    if (phone === '') {
+      return sendJSON(res, 400, { error: 'Phone number must contain exactly 10 digits' });
+    }
+
+    if (zipcode === '') {
+      return sendJSON(res, 400, { error: 'ZIP code must contain exactly 5 digits' });
+    }
+
+    if (emergencyContactPhone === '') {
+      return sendJSON(res, 400, { error: 'Emergency contact phone must contain exactly 10 digits' });
     }
 
     pool.query(
@@ -1335,9 +1358,12 @@ function createReceptionRoutes({ pool, sendJSON }) {
     const firstName = String(data?.firstName || '').trim();
     const lastName = String(data?.lastName || '').trim();
     const dob = String(data?.dob || '').trim();
-    const phone = String(data?.phone || '').trim();
+    const phone = normalizeTenDigitPhone(data?.phone);
     const email = String(data?.email || '').trim();
     const gender = Number(data?.gender || 0);
+
+    const zipcode = normalizeFiveDigitZip(data?.zipcode);
+    const emergencyContactPhone = normalizeTenDigitPhone(data?.emergencyContactPhone);
 
     if (!firstName || !lastName || !dob || !email) {
       return sendJSON(res, 400, { error: 'firstName, lastName, dob, and email are required' });
@@ -1345,6 +1371,18 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
       return sendJSON(res, 400, { error: 'dob must use YYYY-MM-DD format' });
+    }
+
+    if (phone === '') {
+      return sendJSON(res, 400, { error: 'Phone number must contain exactly 10 digits' });
+    }
+
+    if (zipcode === '') {
+      return sendJSON(res, 400, { error: 'ZIP code must contain exactly 5 digits' });
+    }
+
+    if (emergencyContactPhone === '') {
+      return sendJSON(res, 400, { error: 'Emergency contact phone must contain exactly 10 digits' });
     }
 
     pool.query(
@@ -1374,9 +1412,9 @@ function createReceptionRoutes({ pool, sendJSON }) {
         data?.address ? String(data.address).trim() : null,
         data?.city ? String(data.city).trim() : null,
         data?.state ? String(data.state).trim().toUpperCase() : null,
-        data?.zipcode ? String(data.zipcode).trim() : null,
+        zipcode || null,
         data?.emergencyContactName ? String(data.emergencyContactName).trim() : null,
-        data?.emergencyContactPhone ? String(data.emergencyContactPhone).trim() : null
+        emergencyContactPhone || null
       ],
       (err, result) => {
         if (err) {
@@ -1404,6 +1442,283 @@ function createReceptionRoutes({ pool, sendJSON }) {
           return sendJSON(res, 500, { error: 'Database error' });
         }
         sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function getReceptionNotifications(req, res) {
+    pool.query(
+      `SELECT
+        rn.notification_id,
+        rn.notification_type,
+        rn.message,
+        rn.created_at,
+        rn.source_table,
+        rn.source_request_id,
+        rn.patient_id,
+        CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name
+       FROM receptionist_notifications rn
+       JOIN patients p ON p.patient_id = rn.patient_id
+       WHERE rn.is_read = FALSE
+       ORDER BY rn.created_at DESC
+       LIMIT 50`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching receptionist notifications:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function getReceptionFollowUpQueue(req, res) {
+    const parsedUrl = url.parse(req.url, true);
+    const windowDaysInput = Number(parsedUrl.query.windowDays || 365);
+    const windowDays = Number.isInteger(windowDaysInput) && windowDaysInput >= 0 && windowDaysInput <= 730
+      ? windowDaysInput
+      : 365;
+    const includeScheduled = String(parsedUrl.query.includeScheduled || '').trim().toLowerCase() === 'true';
+
+    pool.query(
+      `SELECT
+        q.patient_id,
+        q.next_follow_up_date,
+        q.pending_follow_up_items,
+        q.procedure_codes,
+        q.last_contacted_at,
+        q.last_contacted_by,
+        q.last_contact_note,
+        CONCAT(p.p_first_name, ' ', p.p_last_name) AS patient_name,
+        p.p_phone,
+        p.p_email,
+        na.next_appointment_date,
+        (
+          SELECT CONCAT(st.first_name, ' ', st.last_name)
+          FROM treatment_plans tp2
+          JOIN doctors d2 ON d2.doctor_id = tp2.doctor_id
+          JOIN staff st ON st.staff_id = d2.staff_id
+          WHERE tp2.patient_id = q.patient_id
+            AND tp2.follow_up_required = 1
+            AND tp2.follow_up_date = q.next_follow_up_date
+          ORDER BY tp2.created_at DESC
+          LIMIT 1
+        ) AS suggested_doctor_name
+      FROM (
+        SELECT
+          tp.patient_id,
+          MIN(tp.follow_up_date) AS next_follow_up_date,
+          COUNT(*) AS pending_follow_up_items,
+            GROUP_CONCAT(DISTINCT tp.procedure_code ORDER BY tp.follow_up_date ASC SEPARATOR ', ') AS procedure_codes,
+            MAX(tp.follow_up_contacted_at) AS last_contacted_at,
+            MAX(tp.follow_up_contacted_by) AS last_contacted_by,
+            MAX(tp.follow_up_contact_note) AS last_contact_note
+        FROM treatment_plans tp
+        LEFT JOIN treatment_statuses ts ON ts.status_id = tp.status_id
+        WHERE tp.follow_up_required = 1
+          AND tp.follow_up_date IS NOT NULL
+          AND (ts.status_name = 'COMPLETED' OR ts.status_name IS NULL)
+        GROUP BY tp.patient_id
+        HAVING MIN(tp.follow_up_date) <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+      ) q
+      JOIN patients p ON p.patient_id = q.patient_id
+      LEFT JOIN (
+        SELECT
+          a.patient_id,
+          MIN(a.appointment_date) AS next_appointment_date
+        FROM appointments a
+        JOIN appointment_statuses s ON s.status_id = a.status_id
+        WHERE a.appointment_date >= CURDATE()
+          AND s.status_name IN ('SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN')
+        GROUP BY a.patient_id
+      ) na ON na.patient_id = q.patient_id
+      ORDER BY q.next_follow_up_date ASC, patient_name ASC`,
+      [windowDays],
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching reception follow-up queue:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        const todayDate = new Date();
+        const today = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
+
+        const queueItems = (rows || []).map((row) => {
+          const dueDate = new Date(row.next_follow_up_date);
+          const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+          const msPerDay = 24 * 60 * 60 * 1000;
+          const daysUntilDue = Math.round((dueDay.getTime() - today.getTime()) / msPerDay);
+
+          const dueState = daysUntilDue < 0
+            ? 'OVERDUE'
+            : daysUntilDue === 0
+              ? 'DUE_TODAY'
+              : 'UPCOMING';
+
+          const nextApptDate = row.next_appointment_date ? String(row.next_appointment_date).slice(0, 10) : null;
+          const dueDateKey = String(row.next_follow_up_date).slice(0, 10);
+          const isAlreadyScheduled = Boolean(nextApptDate && nextApptDate >= dueDateKey);
+
+          return {
+            patientId: Number(row.patient_id || 0),
+            patientName: row.patient_name || 'Unknown patient',
+            phone: row.p_phone || null,
+            email: row.p_email || null,
+            followUpDate: dueDateKey,
+            dueState,
+            daysUntilDue,
+            pendingFollowUpItems: Number(row.pending_follow_up_items || 0),
+            procedureCodes: String(row.procedure_codes || '').split(',').map((value) => value.trim()).filter(Boolean),
+            suggestedDoctorName: row.suggested_doctor_name || null,
+            nextAppointmentDate: nextApptDate,
+            isAlreadyScheduled,
+            lastContactedAt: row.last_contacted_at || null,
+            lastContactedBy: row.last_contacted_by || null,
+            lastContactNote: row.last_contact_note || null
+          };
+        });
+
+        const filteredItems = includeScheduled
+          ? queueItems
+          : queueItems.filter((item) => !item.isAlreadyScheduled);
+
+        const summary = filteredItems.reduce((acc, item) => {
+          if (item.dueState === 'OVERDUE') acc.overdue += 1;
+          if (item.dueState === 'DUE_TODAY') acc.dueToday += 1;
+          if (item.dueState === 'UPCOMING') acc.upcoming += 1;
+          if (item.isAlreadyScheduled) acc.scheduled += 1;
+          else acc.unscheduled += 1;
+          return acc;
+        }, { overdue: 0, dueToday: 0, upcoming: 0, scheduled: 0, unscheduled: 0 });
+
+        return sendJSON(res, 200, {
+          generatedAt: new Date().toISOString(),
+          windowDays,
+          includeScheduled,
+          summary,
+          totalItems: filteredItems.length,
+          items: filteredItems
+        });
+      }
+    );
+  }
+
+  function markReceptionFollowUpContacted(req, res) {
+    parseJSON(req, (err, data) => {
+      if (err) {
+        return sendJSON(res, 400, { error: 'Invalid JSON' });
+      }
+
+      const patientId = Number(data?.patientId || 0);
+      const followUpDate = normalizeDateParam(data?.followUpDate);
+      const contactedBy = String(data?.contactedBy || 'RECEPTION_PORTAL').trim() || 'RECEPTION_PORTAL';
+      const contactNote = data?.contactNote ? String(data.contactNote).trim() : null;
+
+      if (!Number.isInteger(patientId) || patientId <= 0) {
+        return sendJSON(res, 400, { error: 'A valid patientId is required' });
+      }
+      if (!followUpDate) {
+        return sendJSON(res, 400, { error: 'A valid followUpDate is required' });
+      }
+
+      pool.query(
+        `UPDATE treatment_plans
+         SET follow_up_contacted_at = NOW(),
+             follow_up_contacted_by = ?,
+             follow_up_contact_note = ?,
+             updated_by = ?
+         WHERE patient_id = ?
+           AND follow_up_required = 1
+           AND follow_up_date = ?`,
+        [contactedBy, contactNote, contactedBy, patientId, followUpDate],
+        (updateErr, result) => {
+          if (updateErr) {
+            console.error('Error marking follow-up contacted:', updateErr);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          if (!result.affectedRows) {
+            return sendJSON(res, 404, { error: 'No follow-up items found for that patient and date' });
+          }
+
+          return sendJSON(res, 200, {
+            message: 'Follow-up marked as contacted',
+            patientId,
+            followUpDate,
+            contactedAt: new Date().toISOString(),
+            contactedBy
+          });
+        }
+      );
+    });
+  }
+
+  function assignPatientPharmacy(req, patientId, data, res) {
+    const pharmId = Number(data?.pharmId);
+    const isPrimary = data?.isPrimary ? 1 : 0;
+    if (!pharmId || pharmId <= 0) {
+      return sendJSON(res, 400, { error: 'A valid pharmacy is required' });
+    }
+
+    pool.getConnection((connErr, conn) => {
+      if (connErr) {
+        console.error('Error getting connection for assign pharmacy:', connErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+
+      conn.beginTransaction(async (txErr) => {
+        if (txErr) {
+          conn.release();
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+
+        try {
+          // If setting as primary, unset any existing primary first
+          if (isPrimary) {
+            await conn.promise().query(
+              `UPDATE patient_pharmacies SET is_primary = 0, updated_by = 'RECEPTION' WHERE patient_id = ? AND is_primary = 1`,
+              [patientId]
+            );
+          }
+
+          await conn.promise().query(
+            `INSERT INTO patient_pharmacies (patient_id, pharm_id, is_primary)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)`,
+            [patientId, pharmId, isPrimary]
+          );
+
+          conn.commit((commitErr) => {
+            conn.release();
+            if (commitErr) {
+              console.error('Error committing assign pharmacy:', commitErr);
+              return sendJSON(res, 500, { error: 'Database error' });
+            }
+            sendJSON(res, 200, { message: 'Pharmacy assigned.' });
+          });
+        } catch (error) {
+          conn.rollback(() => {
+            conn.release();
+            console.error('Error assigning pharmacy:', error);
+            sendJSON(res, 500, { error: 'Database error' });
+          });
+        }
+      });
+    });
+  }
+
+  function removePatientPharmacy(req, patientId, pharmId, res) {
+    pool.query(
+      `DELETE FROM patient_pharmacies WHERE patient_id = ? AND pharm_id = ?`,
+      [patientId, pharmId],
+      (err, result) => {
+        if (err) {
+          console.error('Error removing pharmacy:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        if (result.affectedRows === 0) {
+          return sendJSON(res, 404, { error: 'Pharmacy assignment not found' });
+        }
+        sendJSON(res, 200, { message: 'Pharmacy removed.' });
       }
     );
   }
@@ -1462,23 +1777,28 @@ function createReceptionRoutes({ pool, sendJSON }) {
       return true;
     }
 
-    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'reports' && parts[3] === 'patients') {
-      getReceptionMultiPatientReport(req, res);
-      return true;
-    }
-
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'reports' && parts[3] === 'patient-appointments') {
       getReceptionSinglePatientApptReport(req, res);
       return true;
     }
 
-    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'reports' && parts[3] === 'appointments') {
-      getReceptionMultiPatientApptReport(req, res);
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'doctors') {
+      getReceptionDoctors(req, res);
       return true;
     }
 
-    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'doctors') {
-      getReceptionDoctors(req, res);
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'notifications') {
+      getReceptionNotifications(req, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'follow-ups' && parts[3] === 'queue') {
+      getReceptionFollowUpQueue(req, res);
+      return true;
+    }
+
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'follow-ups' && parts[3] === 'contact') {
+      markReceptionFollowUpContacted(req, res);
       return true;
     }
 
@@ -1532,6 +1852,16 @@ function createReceptionRoutes({ pool, sendJSON }) {
       return true;
     }
 
+    if (method === 'PUT' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'appointments' && parts[3] && parts[4] === 'late') {
+      const appointmentId = Number(parts[3]);
+      if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+        sendJSON(res, 400, { error: 'A valid appointment id is required' });
+        return true;
+      }
+      markLateArrivalReceptionAppointment(req, appointmentId, res);
+      return true;
+    }
+
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'patients' && parts[3] === 'search') {
       searchReceptionPatients(req, res);
       return true;
@@ -1579,6 +1909,30 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
     if (method === 'GET' && parts[0] === 'api' && parts[1] === 'pharmacies') {
       getAllPharmacies(req, res);
+      return true;
+    }
+
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'patients' && parts[3] && parts[4] === 'pharmacy') {
+      const patientId = Number(parts[3]);
+      if (!Number.isInteger(patientId) || patientId <= 0) {
+        sendJSON(res, 400, { error: 'A valid patient id is required' });
+        return true;
+      }
+      parseJSON(req, (err, data) => {
+        if (err) return sendJSON(res, 400, { error: 'Invalid JSON' });
+        return assignPatientPharmacy(req, patientId, data, res);
+      });
+      return true;
+    }
+
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'reception' && parts[2] === 'patients' && parts[3] && parts[4] === 'pharmacy' && parts[5]) {
+      const patientId = Number(parts[3]);
+      const pharmId = Number(parts[5]);
+      if (!Number.isInteger(patientId) || patientId <= 0 || !Number.isInteger(pharmId) || pharmId <= 0) {
+        sendJSON(res, 400, { error: 'Valid patient and pharmacy ids are required' });
+        return true;
+      }
+      removePatientPharmacy(req, patientId, pharmId, res);
       return true;
     }
 

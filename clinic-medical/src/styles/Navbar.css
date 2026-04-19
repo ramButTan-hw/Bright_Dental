@@ -236,6 +236,72 @@
 
 }
 
+/* Logout confirmation modal */
+.logout-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 31, 31, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+
+.logout-modal-card {
+  width: min(400px, 100%);
+  background: #ffffff;
+  border-radius: 0.9rem;
+  padding: 1.5rem;
+  box-shadow: 0 20px 40px rgba(12, 31, 31, 0.22);
+}
+
+.logout-modal-card h3 {
+  margin: 0 0 0.55rem;
+  color: #1a2524;
+}
+
+.logout-modal-card p {
+  margin: 0;
+  color: #334240;
+  line-height: 1.6;
+}
+
+.logout-modal-actions {
+  margin-top: 1.25rem;
+  display: flex;
+  gap: 0.65rem;
+}
+
+.logout-confirm-btn,
+.logout-cancel-btn {
+  flex: 1;
+  border-radius: 0.65rem;
+  padding: 0.75rem 0.9rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border: none;
+}
+
+.logout-confirm-btn {
+  background: #005050;
+  color: #ffffff;
+}
+
+.logout-confirm-btn:hover {
+  background: #006a6a;
+}
+
+.logout-cancel-btn {
+  background: #ffffff;
+  color: #005050;
+  border: 1px solid #c5d2d0;
+}
+
+.logout-cancel-btn:hover {
+  background: #f1f4f3;
+}
+
 @media (max-width: 480px) {
   .navbar-container {
     padding: 0.75rem 1rem;

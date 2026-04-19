@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { getDentistPortalSession, resolveApiBaseUrl, setDentistPortalSession } from '../utils/patientPortal';
 import '../styles/DentistDashboardPage.css';
 
@@ -33,207 +31,13 @@ function DentistLoginPage() {
   const [selectedDate, setSelectedDate] = useState(() => getLocalDateString());
   const [appointments, setAppointments] = useState([]);
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
-  const [searchResultAppointments, setSearchResultAppointments] = useState([]);
+  const [searchResultPatients, setSearchResultPatients] = useState([]);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [mySchedule, setMySchedule] = useState([]);
   const [allAppointments, setAllAppointments] = useState([]);
   const [selectedPastDate, setSelectedPastDate] = useState('');
-  const [singleReportForm, setSingleReportForm] = useState({
-    patientId: '',
-    fromDate: getLocalDateString(),
-    toDate: getLocalDateString(),
-    procedureCode: '',
-    toothNumber: '',
-    surface: ''
-  });
-  const [multiReportForm, setMultiReportForm] = useState({
-    fromDate: getLocalDateString(),
-    toDate: getLocalDateString(),
-    procedureCode: '',
-    toothNumber: '',
-    surface: ''
-  });
-  const [isGeneratingSingleReport, setIsGeneratingSingleReport] = useState(false);
-  const [isGeneratingMultiReport, setIsGeneratingMultiReport] = useState(false);
-  const [singleReportFormat, setSingleReportFormat] = useState('PDF');
-  const [multiReportFormat, setMultiReportFormat] = useState('CSV');
   const sessionReady = Boolean(session?.userId || session?.username);
-
-  const downloadReportJson = (payload, filename) => {
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const reportUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = reportUrl;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(reportUrl);
-  };
-
-  const flattenReportRows = (payload) => {
-    const visits = Array.isArray(payload?.visits) ? payload.visits : [];
-    const rows = [];
-
-    visits.forEach((visit) => {
-      const visitEntries = Array.isArray(visit?.entries) ? visit.entries : [];
-      if (!visitEntries.length) {
-        rows.push({
-          patientId: visit.patientId,
-          patientName: visit.patientName,
-          visitDate: visit.visitDate,
-          visitCost: Number(visit.visitCost || 0),
-          procedureCode: '',
-          treatmentDescription: '',
-          toothNumber: '',
-          surface: '',
-          treatmentCost: 0,
-          finding: '',
-          notes: ''
-        });
-        return;
-      }
-
-      visitEntries.forEach((entry) => {
-        rows.push({
-          patientId: visit.patientId,
-          patientName: visit.patientName,
-          visitDate: visit.visitDate,
-          visitCost: Number(visit.visitCost || 0),
-          procedureCode: entry.procedureCode || '',
-          treatmentDescription: entry.treatmentDescription || '',
-          toothNumber: entry.toothNumber || '',
-          surface: entry.surface || '',
-          treatmentCost: Number(entry.cost || 0),
-          finding: entry.finding || '',
-          notes: entry.notes || ''
-        });
-      });
-    });
-
-    return rows;
-  };
-
-  const escapeCsvValue = (value) => {
-    const raw = String(value ?? '');
-    if (/[",\n]/.test(raw)) {
-      return `"${raw.replace(/"/g, '""')}"`;
-    }
-    return raw;
-  };
-
-  const downloadTextFile = (text, filename, mimeType) => {
-    const blob = new Blob([text], { type: mimeType });
-    const fileUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = fileUrl;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(fileUrl);
-  };
-
-  const downloadReportCsv = (payload, filename) => {
-    const rows = flattenReportRows(payload);
-    const header = [
-      'Patient ID',
-      'Patient Name',
-      'Visit Date',
-      'Visit Cost',
-      'ADA Code',
-      'Treatment',
-      'Tooth Number',
-      'Surface',
-      'Treatment Cost',
-      'Finding',
-      'Notes'
-    ];
-
-    const csvLines = [header.join(',')];
-    rows.forEach((row) => {
-      csvLines.push([
-        row.patientId,
-        row.patientName,
-        row.visitDate,
-        row.visitCost.toFixed(2),
-        row.procedureCode,
-        row.treatmentDescription,
-        row.toothNumber,
-        row.surface,
-        row.treatmentCost.toFixed(2),
-        row.finding,
-        row.notes
-      ].map(escapeCsvValue).join(','));
-    });
-
-    downloadTextFile(csvLines.join('\n'), filename, 'text/csv;charset=utf-8');
-  };
-
-  const downloadReportPdf = (payload, filename, title) => {
-    const doc = new jsPDF({ orientation: 'landscape' });
-    const rows = flattenReportRows(payload);
-    const summary = payload?.summary || {};
-    const isMultiPatientReport = String(payload?.reportType || '').includes('MULTI_PATIENT');
-    const summaryParts = [];
-    if (isMultiPatientReport) {
-      summaryParts.push(`Patients: ${summary.totalPatients ?? 0}`);
-    }
-    summaryParts.push(`Visits: ${summary.totalVisits ?? 0}`);
-    summaryParts.push(`Entries: ${summary.totalEntries ?? 0}`);
-    summaryParts.push(`Total Cost: $${Number(summary.totalCost || 0).toFixed(2)}`);
-
-    doc.setFontSize(14);
-    doc.text(title, 14, 14);
-    doc.setFontSize(10);
-    doc.text(`Generated: ${String(payload?.generatedAt || '').slice(0, 19).replace('T', ' ')}`, 14, 20);
-    doc.text(summaryParts.join('  '), 14, 26);
-
-    autoTable(doc, {
-      startY: 30,
-      styles: { fontSize: 8 },
-      head: [[
-        'Patient ID',
-        'Patient Name',
-        'Visit Date',
-        'Visit Cost',
-        'ADA',
-        'Treatment',
-        'Tooth',
-        'Surface',
-        'Treatment Cost',
-        'Finding'
-      ]],
-      body: rows.map((row) => [
-        String(row.patientId || ''),
-        row.patientName,
-        row.visitDate,
-        `$${row.visitCost.toFixed(2)}`,
-        row.procedureCode,
-        row.treatmentDescription,
-        row.toothNumber,
-        row.surface,
-        `$${row.treatmentCost.toFixed(2)}`,
-        row.finding
-      ])
-    });
-
-    doc.save(filename);
-  };
-
-  const exportReportPayload = (payload, format, baseFilename, title) => {
-    const safeFormat = String(format || 'JSON').toUpperCase();
-    if (safeFormat === 'CSV') {
-      downloadReportCsv(payload, `${baseFilename}.csv`);
-      return;
-    }
-    if (safeFormat === 'PDF') {
-      downloadReportPdf(payload, `${baseFilename}.pdf`, title);
-      return;
-    }
-    downloadReportJson(payload, `${baseFilename}.json`);
-  };
 
   const loadAllAppointments = async (doctorId) => {
     if (!Number.isInteger(doctorId) || doctorId <= 0) {
@@ -356,12 +160,7 @@ function DentistLoginPage() {
   today.setHours(0, 0, 0, 0);
   
   const pastAppointments = allAppointments.filter((appt) => {
-    const status = getAppointmentStatus(appt);
-    if (status !== 'COMPLETED') {
-      return false;
-    }
-    const apptDate = new Date(`${String(appt.appointment_date || '').slice(0, 10)}T00:00:00`);
-    return !Number.isNaN(apptDate.getTime()) && apptDate.getTime() < today.getTime();
+    return getAppointmentStatus(appt) === 'COMPLETED';
   }).sort((a, b) => {
     return toAppointmentTimestamp(b) - toAppointmentTimestamp(a);
   });
@@ -431,7 +230,7 @@ function DentistLoginPage() {
   useEffect(() => {
     const query = String(patientSearchTerm || '').trim();
     if (!query) {
-      setSearchResultAppointments([]);
+      setSearchResultPatients([]);
       setIsSearchLoading(false);
       return;
     }
@@ -449,13 +248,13 @@ function DentistLoginPage() {
         );
         const payload = await response.json().catch(() => []);
         if (!response.ok) {
-          throw new Error(payload.error || 'Failed to search patient appointments');
+          throw new Error(payload.error || 'Failed to search patients');
         }
-        setSearchResultAppointments(Array.isArray(payload) ? payload : []);
+        setSearchResultPatients(Array.isArray(payload) ? payload : []);
       } catch (err) {
         if (err.name !== 'AbortError') {
-          setSearchResultAppointments([]);
-          setMessage(err.message || 'Unable to search patient appointments.');
+          setSearchResultPatients([]);
+          setMessage(err.message || 'Unable to search patients.');
         }
       } finally {
         setIsSearchLoading(false);
@@ -467,75 +266,6 @@ function DentistLoginPage() {
       window.clearTimeout(timeoutId);
     };
   }, [API_BASE_URL, patientSearchTerm, session?.doctorId]);
-
-  const buildReportQueryString = (formValues) => {
-    const params = new URLSearchParams();
-    Object.entries(formValues).forEach(([key, value]) => {
-      const safeValue = String(value || '').trim();
-      if (safeValue) {
-        params.set(key, safeValue);
-      }
-    });
-    return params.toString();
-  };
-
-  const generateSinglePatientReport = async (event) => {
-    event.preventDefault();
-    setMessage('');
-    const patientId = Number(singleReportForm.patientId || 0);
-    if (!Number.isInteger(patientId) || patientId <= 0) {
-      setMessage('Please enter a valid patient ID for the single-patient report.');
-      return;
-    }
-
-    setIsGeneratingSingleReport(true);
-    try {
-      const queryString = buildReportQueryString(singleReportForm);
-      const response = await fetch(`${API_BASE_URL}/api/dentist/reports/patient?${queryString}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to generate single-patient report.');
-      }
-
-      exportReportPayload(
-        payload,
-        singleReportFormat,
-        `dentist-patient-${patientId}-report-${singleReportForm.fromDate}-to-${singleReportForm.toDate}`,
-        'Single Patient Treatment and Finding Report'
-      );
-      setMessage(`Single-patient report generated and downloaded as ${singleReportFormat}.`);
-    } catch (err) {
-      setMessage(err.message || 'Failed to generate single-patient report.');
-    } finally {
-      setIsGeneratingSingleReport(false);
-    }
-  };
-
-  const generateMultiPatientReport = async (event) => {
-    event.preventDefault();
-    setMessage('');
-    setIsGeneratingMultiReport(true);
-    try {
-      const queryString = buildReportQueryString(multiReportForm);
-      const response = await fetch(`${API_BASE_URL}/api/dentist/reports/patients?${queryString}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to generate multi-patient report.');
-      }
-
-      exportReportPayload(
-        payload,
-        multiReportFormat,
-        `dentist-multi-patient-report-${multiReportForm.fromDate}-to-${multiReportForm.toDate}`,
-        'Multi Patient Treatment and Finding Report'
-      );
-      setMessage(`Multi-patient report generated and downloaded as ${multiReportFormat}.`);
-    } catch (err) {
-      setMessage(err.message || 'Failed to generate multi-patient report.');
-    } finally {
-      setIsGeneratingMultiReport(false);
-    }
-  };
 
   if (!sessionReady) {
     return (
@@ -660,40 +390,36 @@ function DentistLoginPage() {
             value={patientSearchTerm}
             onChange={(event) => setPatientSearchTerm(event.target.value)}
           />
-          {patientSearchTerm.trim() && searchResultAppointments.length > 0 ? (
+          {patientSearchTerm.trim() && searchResultPatients.length > 0 ? (
             <ul className="dentist-search-results">
-              {searchResultAppointments.map((appt) => (
-                <li key={appt.appointment_id}>
+              {searchResultPatients.map((patient) => (
+                <li key={patient.patient_id}>
                   <button
                     type="button"
                     onClick={() => {
-                      const apptDate = String(appt.appointment_date || '').slice(0, 10);
-                      setSelectedDate(apptDate);
-                      if (Number(appt.doctor_id) === Number(session?.doctorId)) {
-                        navigate(`/dentist/patient/${appt.appointment_id}`);
+                      const appointmentId = Number(patient.latest_appointment_id || 0);
+                      if (appointmentId > 0) {
+                        navigate(`/dentist/patient/${appointmentId}`);
                       }
                     }}
                     className="dentist-search-result-item"
                   >
                     <div className="dentist-result-info">
-                      <div className="dentist-result-name">{appt.patient_name}</div>
+                      <div className="dentist-result-name">{patient.patient_name}</div>
                       <div className="dentist-result-date">
-                        {String(appt.appointment_date || '').slice(0, 10)} at {String(appt.appointment_time || '').slice(0, 5)}
-                        {' '}| Dr. {appt.doctor_name || 'Unassigned'}
-                        {' '}| {appt.appointment_status || appt.status_name || 'Unknown'}
+                        Patient ID: {patient.patient_id}
+                        {' '}| {patient.patient_phone || 'No phone'}
+                        {' '}| {patient.latest_appointment_status || 'Status unavailable'}
                       </div>
-                      {Number(appt.doctor_id) !== Number(session?.doctorId) && (
-                        <div className="dentist-result-date">Read-only result (assigned to another dentist).</div>
-                      )}
                     </div>
                   </button>
                 </li>
               ))}
             </ul>
           ) : patientSearchTerm.trim() && isSearchLoading ? (
-            <p className="dentist-empty">Searching appointment history...</p>
+            <p className="dentist-empty">Searching patients...</p>
           ) : patientSearchTerm.trim() ? (
-            <p className="dentist-empty">No appointments found for this patient.</p>
+            <p className="dentist-empty">No patients found for this search.</p>
           ) : null}
         </article>
       </section>
@@ -760,158 +486,6 @@ function DentistLoginPage() {
         </article>
       </section>
 
-      <section className="dentist-past-section">
-        <article className="dentist-panel">
-          <h2>Reports</h2>
-          <div className="dentist-report-grid">
-            <form className="dentist-report-form" onSubmit={generateSinglePatientReport}>
-              <h3>Single Patient Report</h3>
-              <p className="dentist-subtle">Includes all treatments and dental findings for one patient between from/to dates with visit cost totals.</p>
-              <label>
-                <span>Patient ID</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={singleReportForm.patientId}
-                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, patientId: event.target.value }))}
-                  required
-                />
-              </label>
-              <div className="dentist-report-date-row">
-                <label>
-                  <span>From Date</span>
-                  <input
-                    type="date"
-                    value={singleReportForm.fromDate}
-                    onChange={(event) => setSingleReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
-                    required
-                  />
-                </label>
-                <label>
-                  <span>To Date</span>
-                  <input
-                    type="date"
-                    value={singleReportForm.toDate}
-                    onChange={(event) => setSingleReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
-                    required
-                  />
-                </label>
-              </div>
-              <label>
-                <span>ADA Code (optional)</span>
-                <input
-                  type="text"
-                  value={singleReportForm.procedureCode}
-                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, procedureCode: event.target.value.toUpperCase() }))}
-                  placeholder="D1110"
-                />
-              </label>
-              <div className="dentist-report-date-row">
-                <label>
-                  <span>Tooth Number (optional)</span>
-                  <input
-                    type="text"
-                    value={singleReportForm.toothNumber}
-                    onChange={(event) => setSingleReportForm((prev) => ({ ...prev, toothNumber: event.target.value }))}
-                    placeholder="14"
-                  />
-                </label>
-                <label>
-                  <span>Surface (optional)</span>
-                  <input
-                    type="text"
-                    value={singleReportForm.surface}
-                    onChange={(event) => setSingleReportForm((prev) => ({ ...prev, surface: event.target.value.toUpperCase() }))}
-                    placeholder="O"
-                  />
-                </label>
-              </div>
-              <label>
-                <span>Export Format</span>
-                <select
-                  value={singleReportFormat}
-                  onChange={(event) => setSingleReportFormat(event.target.value)}
-                >
-                  <option value="PDF">PDF</option>
-                  <option value="CSV">CSV</option>
-                  <option value="JSON">JSON</option>
-                </select>
-              </label>
-              <button type="submit" className="dentist-save-btn" disabled={isGeneratingSingleReport}>
-                {isGeneratingSingleReport ? 'Generating...' : 'Generate Single Patient Report'}
-              </button>
-            </form>
-
-            <form className="dentist-report-form" onSubmit={generateMultiPatientReport}>
-              <h3>Multi Patient Report</h3>
-              <p className="dentist-subtle">Includes multiple patients for a date range and optional filter combinations (ADA code, tooth number, surface).</p>
-              <div className="dentist-report-date-row">
-                <label>
-                  <span>From Date</span>
-                  <input
-                    type="date"
-                    value={multiReportForm.fromDate}
-                    onChange={(event) => setMultiReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
-                    required
-                  />
-                </label>
-                <label>
-                  <span>To Date</span>
-                  <input
-                    type="date"
-                    value={multiReportForm.toDate}
-                    onChange={(event) => setMultiReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
-                    required
-                  />
-                </label>
-              </div>
-              <label>
-                <span>ADA Code (optional)</span>
-                <input
-                  type="text"
-                  value={multiReportForm.procedureCode}
-                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, procedureCode: event.target.value.toUpperCase() }))}
-                  placeholder="D2740"
-                />
-              </label>
-              <div className="dentist-report-date-row">
-                <label>
-                  <span>Tooth Number (optional)</span>
-                  <input
-                    type="text"
-                    value={multiReportForm.toothNumber}
-                    onChange={(event) => setMultiReportForm((prev) => ({ ...prev, toothNumber: event.target.value }))}
-                    placeholder="30"
-                  />
-                </label>
-                <label>
-                  <span>Surface (optional)</span>
-                  <input
-                    type="text"
-                    value={multiReportForm.surface}
-                    onChange={(event) => setMultiReportForm((prev) => ({ ...prev, surface: event.target.value.toUpperCase() }))}
-                    placeholder="M"
-                  />
-                </label>
-              </div>
-              <label>
-                <span>Export Format</span>
-                <select
-                  value={multiReportFormat}
-                  onChange={(event) => setMultiReportFormat(event.target.value)}
-                >
-                  <option value="CSV">CSV</option>
-                  <option value="PDF">PDF</option>
-                  <option value="JSON">JSON</option>
-                </select>
-              </label>
-              <button type="submit" className="dentist-save-btn" disabled={isGeneratingMultiReport}>
-                {isGeneratingMultiReport ? 'Generating...' : 'Generate Multi Patient Report'}
-              </button>
-            </form>
-          </div>
-        </article>
-      </section>
       {message && <p className="dentist-save-msg">{message}</p>}
     </main>
   );

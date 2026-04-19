@@ -1,55 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { formatDate, formatTime, getReceptionPortalSession, resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/ReceptionistPage.css';
 
-const CLINIC_OPEN_TIME = '08:00';
-const CLINIC_CLOSE_TIME = '19:00';
-
-const buildClinicTimeOptions = (openTime, closeTime) => {
-  const [openHour, openMinute] = openTime.split(':').map(Number);
-  const [closeHour, closeMinute] = closeTime.split(':').map(Number);
-
-  const cursor = new Date(2000, 0, 1, openHour, openMinute, 0, 0);
-  const close = new Date(2000, 0, 1, closeHour, closeMinute, 0, 0);
-  const options = [];
-
-  while (cursor.getTime() <= close.getTime()) {
-    const hours = String(cursor.getHours()).padStart(2, '0');
-    const minutes = String(cursor.getMinutes()).padStart(2, '0');
-    const value = `${hours}:${minutes}`;
-    options.push({
-      value,
-      label: new Date(`2000-01-01T${value}:00`).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      })
-    });
-    cursor.setMinutes(cursor.getMinutes() + 30);
-  }
-
-  return options;
-};
-
-const CLINIC_TIME_SELECT_OPTIONS = buildClinicTimeOptions(CLINIC_OPEN_TIME, CLINIC_CLOSE_TIME);
-
-const formatDateTimeWithMeridiem = (value) => {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return 'N/A';
-  }
-  return parsed.toLocaleString([], {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
-};
 
 function PatientSearch() {
   const navigate = useNavigate();
@@ -91,7 +44,7 @@ function PatientSearch() {
       <input
         value={patientQuery}
         onChange={(e) => setPatientQuery(e.target.value)}
-        placeholder="Search name, email, phone, SSN"
+        placeholder="Search name, email, phone"
         className="reception-search-input"
       />
       {patientSearchResults.length > 0 && (
@@ -148,429 +101,30 @@ function ReceptionistPage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [statusFilters, setStatusFilters] = useState(new Set(['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN']));
   const [message, setMessage] = useState('');
-  const [singleReportForm, setSingleReportForm] = useState({
-    patientId: '',
-    fromDate: new Date().toISOString().slice(0, 10),
-    toDate: new Date().toISOString().slice(0, 10),
-    procedureCode: '',
-    toothNumber: '',
-    surface: ''
-  });
-  const [multiReportForm, setMultiReportForm] = useState({
-    fromDate: new Date().toISOString().slice(0, 10),
-    toDate: new Date().toISOString().slice(0, 10),
-    procedureCode: '',
-    toothNumber: '',
-    surface: ''
-  });
-  const [singleReportFormat, setSingleReportFormat] = useState('PDF');
-  const [multiReportFormat, setMultiReportFormat] = useState('CSV');
-  const [isGeneratingSingleReport, setIsGeneratingSingleReport] = useState(false);
-  const [isGeneratingMultiReport, setIsGeneratingMultiReport] = useState(false);
-  const [singleApptReportForm, setSingleApptReportForm] = useState({
-    patientId: '',
-    fromDate: new Date().toISOString().slice(0, 10),
-    toDate: new Date().toISOString().slice(0, 10),
-    status: '',
-    reason: ''
-  });
-  const [multiApptReportForm, setMultiApptReportForm] = useState({
-    fromDate: new Date().toISOString().slice(0, 10),
-    toDate: new Date().toISOString().slice(0, 10),
-    status: '',
-    reason: '',
-    preferredLocation: ''
-  });
-  const [singleApptReportFormat, setSingleApptReportFormat] = useState('PDF');
-  const [multiApptReportFormat, setMultiApptReportFormat] = useState('CSV');
-  const [isGeneratingSingleApptReport, setIsGeneratingSingleApptReport] = useState(false);
-  const [isGeneratingMultiApptReport, setIsGeneratingMultiApptReport] = useState(false);
-  const [timeOffForm, setTimeOffForm] = useState({
-    startDate: '',
-    startTime: '',
-    endDate: '',
-    endTime: '',
-    locationId: '',
-    reason: ''
-  });
-  const [timeOffHistory, setTimeOffHistory] = useState([]);
-  const [timeOffLocations, setTimeOffLocations] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [isSubmittingTimeOff, setIsSubmittingTimeOff] = useState(false);
-  const [mySchedule, setMySchedule] = useState([]);
-
-  const buildReportQueryString = (formValues) => {
-    const params = new URLSearchParams();
-    Object.entries(formValues).forEach(([key, value]) => {
-      const safeValue = String(value || '').trim();
-      if (safeValue) {
-        params.set(key, safeValue);
-      }
-    });
-    return params.toString();
-  };
-
-  const flattenReportRows = (payload) => {
-    const visits = Array.isArray(payload?.visits) ? payload.visits : [];
-    const rows = [];
-
-    visits.forEach((visit) => {
-      const entries = Array.isArray(visit?.entries) ? visit.entries : [];
-      if (!entries.length) {
-        rows.push({
-          patientId: visit.patientId,
-          patientName: visit.patientName,
-          visitDate: visit.visitDate,
-          visitCost: Number(visit.visitCost || 0),
-          procedureCode: '',
-          treatmentDescription: '',
-          toothNumber: '',
-          surface: '',
-          treatmentCost: 0,
-          finding: '',
-          notes: ''
-        });
-        return;
-      }
-
-      entries.forEach((entry) => {
-        rows.push({
-          patientId: visit.patientId,
-          patientName: visit.patientName,
-          visitDate: visit.visitDate,
-          visitCost: Number(visit.visitCost || 0),
-          procedureCode: entry.procedureCode || '',
-          treatmentDescription: entry.treatmentDescription || '',
-          toothNumber: entry.toothNumber || '',
-          surface: entry.surface || '',
-          treatmentCost: Number(entry.cost || 0),
-          finding: entry.finding || '',
-          notes: entry.notes || ''
-        });
-      });
-    });
-
-    return rows;
-  };
-
-  const escapeCsvValue = (value) => {
-    const raw = String(value ?? '');
-    if (/[",\n]/.test(raw)) {
-      return `"${raw.replace(/"/g, '""')}"`;
-    }
-    return raw;
-  };
-
-  const downloadTextFile = (text, filename, mimeType) => {
-    const blob = new Blob([text], { type: mimeType });
-    const fileUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = fileUrl;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(fileUrl);
-  };
-
-  const downloadReportJson = (payload, filename) => {
-    downloadTextFile(JSON.stringify(payload, null, 2), filename, 'application/json');
-  };
-
-  const downloadReportCsv = (payload, filename) => {
-    const rows = flattenReportRows(payload);
-    const header = [
-      'Patient ID',
-      'Patient Name',
-      'Visit Date',
-      'Visit Cost',
-      'ADA Code',
-      'Treatment',
-      'Tooth Number',
-      'Surface',
-      'Treatment Cost',
-      'Finding',
-      'Notes'
-    ];
-    const csvLines = [header.join(',')];
-
-    rows.forEach((row) => {
-      csvLines.push([
-        row.patientId,
-        row.patientName,
-        row.visitDate,
-        row.visitCost.toFixed(2),
-        row.procedureCode,
-        row.treatmentDescription,
-        row.toothNumber,
-        row.surface,
-        row.treatmentCost.toFixed(2),
-        row.finding,
-        row.notes
-      ].map(escapeCsvValue).join(','));
-    });
-
-    downloadTextFile(csvLines.join('\n'), filename, 'text/csv;charset=utf-8');
-  };
-
-  const downloadReportPdf = (payload, filename, title) => {
-    const doc = new jsPDF({ orientation: 'landscape' });
-    const rows = flattenReportRows(payload);
-    const summary = payload?.summary || {};
-    const isMultiPatientReport = String(payload?.reportType || '').includes('MULTI_PATIENT');
-    const summaryParts = [];
-    if (isMultiPatientReport) {
-      summaryParts.push(`Patients: ${summary.totalPatients ?? 0}`);
-    }
-    summaryParts.push(`Visits: ${summary.totalVisits ?? 0}`);
-    summaryParts.push(`Entries: ${summary.totalEntries ?? 0}`);
-    summaryParts.push(`Total Cost: $${Number(summary.totalCost || 0).toFixed(2)}`);
-
-    doc.setFontSize(14);
-    doc.text(title, 14, 14);
-    doc.setFontSize(10);
-    doc.text(`Generated: ${String(payload?.generatedAt || '').slice(0, 19).replace('T', ' ')}`, 14, 20);
-    doc.text(summaryParts.join('  '), 14, 26);
-
-    autoTable(doc, {
-      startY: 30,
-      styles: { fontSize: 8 },
-      head: [[
-        'Patient ID',
-        'Patient Name',
-        'Visit Date',
-        'Visit Cost',
-        'ADA',
-        'Treatment',
-        'Tooth',
-        'Surface',
-        'Treatment Cost',
-        'Finding'
-      ]],
-      body: rows.map((row) => [
-        String(row.patientId || ''),
-        row.patientName,
-        row.visitDate,
-        `$${row.visitCost.toFixed(2)}`,
-        row.procedureCode,
-        row.treatmentDescription,
-        row.toothNumber,
-        row.surface,
-        `$${row.treatmentCost.toFixed(2)}`,
-        row.finding
-      ])
-    });
-
-    doc.save(filename);
-  };
-
-  const exportReportPayload = (payload, format, baseFilename, title) => {
-    const safeFormat = String(format || 'JSON').toUpperCase();
-    if (safeFormat === 'CSV') {
-      downloadReportCsv(payload, `${baseFilename}.csv`);
-      return;
-    }
-    if (safeFormat === 'PDF') {
-      downloadReportPdf(payload, `${baseFilename}.pdf`, title);
-      return;
-    }
-    downloadReportJson(payload, `${baseFilename}.json`);
-  };
-
-  const generateSinglePatientReport = async (event) => {
-    event.preventDefault();
-    setMessage('');
-    const patientId = Number(singleReportForm.patientId || 0);
-    if (!Number.isInteger(patientId) || patientId <= 0) {
-      setMessage('Please enter a valid patient ID for the single-patient report.');
-      return;
-    }
-
-    setIsGeneratingSingleReport(true);
+const [mySchedule, setMySchedule] = useState([]);
+  const [systemCancelledAppts, setSystemCancelledAppts] = useState([]);
+  const [systemCancelledUnresolvedCount, setSystemCancelledUnresolvedCount] = useState(0);
+  const [unresolvedTimeOffCount, setUnresolvedTimeOffCount] = useState(0);
+  const [unresolvedDoctorHiddenCount, setUnresolvedDoctorHiddenCount] = useState(0);
+  const [dismissFallbackDoctorToast, setDismissFallbackDoctorToast] = useState(false);
+  const [dismissFallbackDoctorHiddenToast, setDismissFallbackDoctorHiddenToast] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState(() => {
     try {
-      const queryString = buildReportQueryString(singleReportForm);
-      const response = await fetch(`${API_BASE_URL}/api/reception/reports/patient?${queryString}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to generate single-patient report.');
-      }
-
-      exportReportPayload(
-        payload,
-        singleReportFormat,
-        `reception-patient-${patientId}-report-${singleReportForm.fromDate}-to-${singleReportForm.toDate}`,
-        'Reception Single Patient Treatment and Finding Report'
-      );
-      setMessage(`Single-patient report generated and downloaded as ${singleReportFormat}.`);
-    } catch (err) {
-      setMessage(err.message || 'Failed to generate single-patient report.');
-    } finally {
-      setIsGeneratingSingleReport(false);
+      return new Set(JSON.parse(localStorage.getItem('dismissedReceptionNotifications') || '[]'));
+    } catch {
+      return new Set();
     }
-  };
-
-  const generateMultiPatientReport = async (event) => {
-    event.preventDefault();
-    setMessage('');
-    setIsGeneratingMultiReport(true);
+  });
+  const [insuranceChangeRequests, setInsuranceChangeRequests] = useState([]);
+  const [pharmacyChangeRequests, setPharmacyChangeRequests] = useState([]);
+  const [dismissedRequestAlertIds, setDismissedRequestAlertIds] = useState(() => {
     try {
-      const queryString = buildReportQueryString(multiReportForm);
-      const response = await fetch(`${API_BASE_URL}/api/reception/reports/patients?${queryString}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to generate multi-patient report.');
-      }
-
-      exportReportPayload(
-        payload,
-        multiReportFormat,
-        `reception-multi-patient-report-${multiReportForm.fromDate}-to-${multiReportForm.toDate}`,
-        'Reception Multi Patient Treatment and Finding Report'
-      );
-      setMessage(`Multi-patient report generated and downloaded as ${multiReportFormat}.`);
-    } catch (err) {
-      setMessage(err.message || 'Failed to generate multi-patient report.');
-    } finally {
-      setIsGeneratingMultiReport(false);
+      return new Set(JSON.parse(localStorage.getItem('dismissedReceptionRequestAlerts') || '[]'));
+    } catch {
+      return new Set();
     }
-  };
-
-  const flattenApptReportRows = (payload) => {
-    const appointments = Array.isArray(payload?.appointments) ? payload.appointments : [];
-    return appointments.map((a) => ({
-      appointmentId: a.appointmentId,
-      patientId: a.patientId,
-      patientName: a.patientName || '',
-      appointmentDate: a.appointmentDate || '',
-      appointmentTime: a.appointmentTime || '',
-      status: a.statusDisplay || a.status || '',
-      doctorName: a.doctorName || '',
-      location: a.location || '',
-      notes: a.notes || ''
-    }));
-  };
-
-  const downloadApptReportCsv = (payload, filename) => {
-    const rows = flattenApptReportRows(payload);
-    const header = ['Appt ID', 'Patient ID', 'Patient Name', 'Date', 'Time', 'Status', 'Doctor', 'Location', 'Notes'];
-    const csvLines = [header.join(',')];
-    rows.forEach((row) => {
-      csvLines.push([
-        row.appointmentId,
-        row.patientId,
-        row.patientName,
-        row.appointmentDate,
-        row.appointmentTime,
-        row.status,
-        row.doctorName,
-        row.location,
-        row.notes
-      ].map(escapeCsvValue).join(','));
-    });
-    downloadTextFile(csvLines.join('\n'), filename, 'text/csv;charset=utf-8');
-  };
-
-  const downloadApptReportPdf = (payload, filename, title) => {
-    const doc = new jsPDF({ orientation: 'landscape' });
-    const rows = flattenApptReportRows(payload);
-    const summary = payload?.summary || {};
-
-    doc.setFontSize(14);
-    doc.text(title, 14, 14);
-    doc.setFontSize(10);
-    doc.text(`Generated: ${String(payload?.generatedAt || '').slice(0, 19).replace('T', ' ')}`, 14, 20);
-    doc.text(`Patients: ${summary.totalPatients ?? 0}  Appointments: ${summary.totalAppointments ?? 0}`, 14, 26);
-
-    autoTable(doc, {
-      startY: 30,
-      styles: { fontSize: 8 },
-      head: [['Appt ID', 'Patient ID', 'Patient', 'Date', 'Time', 'Status', 'Doctor', 'Location', 'Notes']],
-      body: rows.map((row) => [
-        String(row.appointmentId || ''),
-        String(row.patientId || ''),
-        row.patientName,
-        row.appointmentDate,
-        row.appointmentTime,
-        row.status,
-        row.doctorName,
-        row.location,
-        row.notes
-      ])
-    });
-
-    doc.save(filename);
-  };
-
-  const exportApptReportPayload = (payload, format, baseFilename, title) => {
-    const safeFormat = String(format || 'JSON').toUpperCase();
-    if (safeFormat === 'CSV') {
-      downloadApptReportCsv(payload, `${baseFilename}.csv`);
-      return;
-    }
-    if (safeFormat === 'PDF') {
-      downloadApptReportPdf(payload, `${baseFilename}.pdf`, title);
-      return;
-    }
-    downloadReportJson(payload, `${baseFilename}.json`);
-  };
-
-  const generateSinglePatientApptReport = async (event) => {
-    event.preventDefault();
-    setMessage('');
-    const patientId = Number(singleApptReportForm.patientId || 0);
-    if (!Number.isInteger(patientId) || patientId <= 0) {
-      setMessage('Please enter a valid patient ID for the single-patient appointment report.');
-      return;
-    }
-
-    setIsGeneratingSingleApptReport(true);
-    try {
-      const queryString = buildReportQueryString(singleApptReportForm);
-      const response = await fetch(`${API_BASE_URL}/api/reception/reports/patient-appointments?${queryString}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to generate single-patient appointment report.');
-      }
-
-      exportApptReportPayload(
-        payload,
-        singleApptReportFormat,
-        `reception-patient-${patientId}-appointments-${singleApptReportForm.fromDate}-to-${singleApptReportForm.toDate}`,
-        'Single Patient Appointment Report'
-      );
-      setMessage(`Single-patient appointment report generated and downloaded as ${singleApptReportFormat}.`);
-    } catch (err) {
-      setMessage(err.message || 'Failed to generate single-patient appointment report.');
-    } finally {
-      setIsGeneratingSingleApptReport(false);
-    }
-  };
-
-  const generateMultiPatientApptReport = async (event) => {
-    event.preventDefault();
-    setMessage('');
-    setIsGeneratingMultiApptReport(true);
-    try {
-      const queryString = buildReportQueryString(multiApptReportForm);
-      const response = await fetch(`${API_BASE_URL}/api/reception/reports/appointments?${queryString}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to generate multi-patient appointment report.');
-      }
-
-      exportApptReportPayload(
-        payload,
-        multiApptReportFormat,
-        `reception-multi-patient-appointments-${multiApptReportForm.fromDate}-to-${multiApptReportForm.toDate}`,
-        'Multi Patient Appointment Report'
-      );
-      setMessage(`Multi-patient appointment report generated and downloaded as ${multiApptReportFormat}.`);
-    } catch (err) {
-      setMessage(err.message || 'Failed to generate multi-patient appointment report.');
-    } finally {
-      setIsGeneratingMultiApptReport(false);
-    }
-  };
+  });
 
   const safeJson = async (response) => {
     const payload = await response.json().catch(() => ({}));
@@ -586,26 +140,98 @@ function ReceptionistPage() {
   };
 
   const loadCore = async () => {
-    const [requestsData, timeOffData, locationData, departmentsData, scheduleData] = await Promise.all([
+    const [requestsData, scheduleData, notificationsData, insuranceChangeData, pharmacyChangeData, systemCancelledData] = await Promise.all([
       fetchWithTimeout(`${API_BASE_URL}/api/appointments/preference-requests`).then(safeJson),
       session?.staffId
-        ? fetchWithTimeout(`${API_BASE_URL}/api/staff/time-off-requests?staffId=${encodeURIComponent(session.staffId)}`).then(safeJson)
-        : Promise.resolve([]),
-      fetchWithTimeout(`${API_BASE_URL}/api/admin/locations`).then(safeJson),
-      fetchWithTimeout(`${API_BASE_URL}/api/departments`).then(safeJson),
-      session?.staffId
         ? fetchWithTimeout(`${API_BASE_URL}/api/staff/schedules?staffId=${encodeURIComponent(session.staffId)}`).then(safeJson)
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      fetchWithTimeout(`${API_BASE_URL}/api/reception/notifications`).then(safeJson),
+      fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson),
+      fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson),
+      fetchWithTimeout(`${API_BASE_URL}/api/admin/system-cancelled-appointments`).then(safeJson)
     ]);
 
     setRequests(Array.isArray(requestsData) ? requestsData : []);
-    setTimeOffHistory(Array.isArray(timeOffData) ? timeOffData : []);
-    setTimeOffLocations(Array.isArray(locationData) ? locationData : []);
-    setDepartments(Array.isArray(departmentsData) ? departmentsData : []);
     setMySchedule(Array.isArray(scheduleData) ? scheduleData : []);
+    setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
+    setInsuranceChangeRequests(Array.isArray(insuranceChangeData) ? insuranceChangeData : []);
+    setPharmacyChangeRequests(Array.isArray(pharmacyChangeData) ? pharmacyChangeData : []);
+    setSystemCancelledAppts(Array.isArray(systemCancelledData?.items) ? systemCancelledData.items : (Array.isArray(systemCancelledData) ? systemCancelledData : []));
+    setSystemCancelledUnresolvedCount(Number(systemCancelledData?.unresolvedCount ?? (Array.isArray(systemCancelledData) ? systemCancelledData.length : 0)));
+    setUnresolvedTimeOffCount(Number(systemCancelledData?.unresolvedTimeOffCount ?? 0));
+    setUnresolvedDoctorHiddenCount(Number(systemCancelledData?.unresolvedDoctorHiddenCount ?? 0));
     await loadAppointmentsForDate(selectedDate);
   };
 
+  const visibleNotifications = notifications.filter((notification) => !dismissedNotificationIds.has(notification.notification_id));
+const doctorTimeOffNotification = visibleNotifications.find((notification) => notification.notification_type === 'DOCTOR_TIME_OFF') || null;
+  const shouldShowFallbackDoctorToast = !doctorTimeOffNotification && !dismissFallbackDoctorToast && unresolvedTimeOffCount > 0;
+  const fallbackDoctorTimeOffToast = shouldShowFallbackDoctorToast
+    ? {
+      notification_id: null,
+      message: `${unresolvedTimeOffCount} patient${unresolvedTimeOffCount === 1 ? '' : 's'} still need rescheduling after doctor time off cancellations.`
+    }
+    : null;
+  const activeDoctorTimeOffToast = doctorTimeOffNotification || fallbackDoctorTimeOffToast;
+
+  const doctorHiddenNotification = visibleNotifications.find((n) => n.notification_type === 'DOCTOR_HIDDEN') || null;
+  const shouldShowFallbackDoctorHiddenToast = !doctorHiddenNotification && !dismissFallbackDoctorHiddenToast && unresolvedDoctorHiddenCount > 0;
+  const fallbackDoctorHiddenToast = shouldShowFallbackDoctorHiddenToast
+    ? {
+      notification_id: null,
+      message: `${unresolvedDoctorHiddenCount} patient${unresolvedDoctorHiddenCount === 1 ? '' : 's'} still need rescheduling after doctor deletion cancellations.`
+    }
+    : null;
+  const activeDoctorHiddenToast = doctorHiddenNotification || fallbackDoctorHiddenToast;
+
+  const requestAlerts = [
+    ...(insuranceChangeRequests.length > 0 ? [{
+      alertKey: `insurance:${insuranceChangeRequests[0].request_id}`,
+      alertType: 'insurance',
+      title: `${insuranceChangeRequests.length} Insurance Change Request${insuranceChangeRequests.length === 1 ? '' : 's'}`,
+      request: insuranceChangeRequests[0],
+      count: insuranceChangeRequests.length,
+      sectionId: 'insurance-section'
+    }] : []),
+    ...(pharmacyChangeRequests.length > 0 ? [{
+      alertKey: `pharmacy:${pharmacyChangeRequests[0].request_id}`,
+      alertType: 'pharmacy',
+      title: `${pharmacyChangeRequests.length} Pharmacy Change Request${pharmacyChangeRequests.length === 1 ? '' : 's'}`,
+      request: pharmacyChangeRequests[0],
+      count: pharmacyChangeRequests.length,
+      sectionId: 'pharmacy-section'
+    }] : [])
+  ].filter((alert) => !dismissedRequestAlertIds.has(alert.alertKey));
+
+  const dismissRequestAlert = (alertKey) => {
+    setDismissedRequestAlertIds((prev) => {
+      const next = new Set(prev);
+      next.add(alertKey);
+      try {
+        localStorage.setItem('dismissedReceptionRequestAlerts', JSON.stringify([...next]));
+      } catch {
+        // ignore storage failures
+      }
+      return next;
+    });
+  };
+
+  const openPatientProfileSection = (patientId, sectionId) => {
+    navigate(`/receptionist/patient-profile/${patientId}#${sectionId}`);
+  };
+
+  const dismissNotification = (notificationId) => {
+    setDismissedNotificationIds((prev) => {
+      const next = new Set(prev);
+      next.add(notificationId);
+      try {
+        localStorage.setItem('dismissedReceptionNotifications', JSON.stringify([...next]));
+      } catch {
+        // ignore storage failures
+      }
+      return next;
+    });
+  };
 
   const shiftDate = (offset) => {
     const d = new Date(`${selectedDate}T00:00:00`);
@@ -642,11 +268,12 @@ function ReceptionistPage() {
   });
 
   const markNoShow = async (appointmentId) => {
-    await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/no-show`, {
+    if (!window.confirm('Mark this appointment as a no-show? A $50.00 no-show fee will be added to their invoice.')) return;
+    const data = await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/no-show`, {
       method: 'PUT',
     }).then(safeJson);
 
-    setMessage('Appointment marked as no-show.');
+    setMessage(data?.message || 'Appointment marked as no-show.');
     await loadAppointmentsForDate(selectedDate);
   };
 
@@ -654,52 +281,6 @@ function ReceptionistPage() {
     if (!session?.staffId) return;
     loadAppointmentsForDate(selectedDate).catch(() => {});
   }, [selectedDate]);
-
-  const submitTimeOffRequest = async (event) => {
-    event.preventDefault();
-    setMessage('');
-
-    if (!session?.staffId) {
-      setMessage('Staff session missing. Please sign in again.');
-      return;
-    }
-    if (!timeOffForm.startDate || !timeOffForm.startTime || !timeOffForm.endDate || !timeOffForm.endTime) {
-      setMessage('Please provide start/end date and start/end time for time off.');
-      return;
-    }
-
-    const clinicTimes = new Set(CLINIC_TIME_SELECT_OPTIONS.map((option) => option.value));
-    if (!clinicTimes.has(timeOffForm.startTime) || !clinicTimes.has(timeOffForm.endTime)) {
-      setMessage('Please select times within clinic hours.');
-      return;
-    }
-
-    const startDateTime = `${timeOffForm.startDate}T${timeOffForm.startTime}:00`;
-    const endDateTime = `${timeOffForm.endDate}T${timeOffForm.endTime}:00`;
-
-    setIsSubmittingTimeOff(true);
-    try {
-      await fetchWithTimeout(`${API_BASE_URL}/api/staff/time-off-requests`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          staffId: Number(session.staffId),
-          startDateTime,
-          endDateTime,
-          locationId: timeOffForm.locationId ? Number(timeOffForm.locationId) : null,
-          reason: timeOffForm.reason
-        })
-      }).then(safeJson);
-
-      setMessage('Time-off request submitted. Admin will review it shortly.');
-      setTimeOffForm({ startDate: '', startTime: '', endDate: '', endTime: '', locationId: '', reason: '' });
-      await loadCore();
-    } catch (err) {
-      setMessage(err.message || 'Failed to submit time-off request.');
-    } finally {
-      setIsSubmittingTimeOff(false);
-    }
-  };
 
   useEffect(() => {
     if (!session?.staffId) {
@@ -716,12 +297,36 @@ function ReceptionistPage() {
     return () => window.clearTimeout(timeoutId);
   }, [API_BASE_URL, navigate, session?.staffId]);
 
+  useEffect(() => {
+    if (!session?.staffId) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      loadCore().catch(() => {});
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, [API_BASE_URL, session?.staffId]);
+
+  useEffect(() => {
+    setDismissFallbackDoctorToast(false);
+  }, [systemCancelledUnresolvedCount]);
+
   const checkInPatient = async (appointmentId) => {
-    await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/check-in`, {
+    if (!window.confirm('Check in this patient?')) return;
+    const data = await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/check-in`, {
       method: 'PUT',
     }).then(safeJson);
 
-    setMessage('Patient checked in.');
+    setMessage(data?.message || 'Patient checked in.');
+    await loadAppointmentsForDate(selectedDate);
+  };
+
+  const markLateArrival = async (appointmentId) => {
+    if (!window.confirm('Mark this patient as a late arrival? A $25.00 late arrival fee will be added to their invoice.')) return;
+    const data = await fetchWithTimeout(`${API_BASE_URL}/api/reception/appointments/${appointmentId}/late`, {
+      method: 'PUT',
+    }).then(safeJson);
+    setMessage(data?.message || 'Patient marked as late arrival.');
     await loadAppointmentsForDate(selectedDate);
   };
 
@@ -729,19 +334,29 @@ function ReceptionistPage() {
     navigate(`/receptionist/patient-profile/${patientId}`);
   };
 
+
   return (
     <main className="reception-page">
       <section className="reception-header">
-        <h1>Receptionist Page</h1>
-        <p>Manage appointment requests, check-in patients, and search for patients.</p>
+        <div>
+          <h1>Receptionist Page</h1>
+          <p>Manage appointment requests, check-in patients, and search for patients.</p>
+        </div>
         <div className="reception-actions">
           <button className="reception-action-btn reception-action-btn--primary" onClick={() => navigate('/receptionist/register-patient')}>
             <span className="btn-icon">+</span> Register New Patient
+          </button>
+          <button
+            className="reception-action-btn reception-action-btn--secondary"
+            onClick={() => navigate('/receptionist/recall')}
+          >
+            Open Recall / Recare
           </button>
         </div>
       </section>
 
       {message && <p className="reception-message">{message}</p>}
+
 
       {mySchedule.length > 0 && (
         <section className="reception-panel" style={{ marginBottom: '1rem' }}>
@@ -755,6 +370,121 @@ function ReceptionistPage() {
             ))}
           </div>
         </section>
+      )}
+
+      {(activeDoctorTimeOffToast || activeDoctorHiddenToast || requestAlerts.length > 0) && (
+        <aside className="reception-request-alert-stack" aria-live="polite" aria-label="Notifications">
+          {requestAlerts.map((alert) => (
+            <article
+              key={alert.alertKey}
+              className={`reception-request-alert-card reception-request-alert-card--${alert.alertType}`}
+            >
+              <div className="reception-request-alert-card__top">
+                <div>
+                  <p className="reception-request-alert-card__eyebrow">Reception Alert</p>
+                  <h3>{alert.title}</h3>
+                </div>
+                <button
+                  type="button"
+                  className="reception-request-alert-card__close"
+                  aria-label="Dismiss request alert"
+                  onClick={() => dismissRequestAlert(alert.alertKey)}
+                >
+                  &times;
+                </button>
+              </div>
+              <p className="reception-request-alert-card__patient"><strong>{alert.request.patient_name}</strong></p>
+              <p className="reception-request-alert-card__message">
+                {alert.alertType === 'pharmacy'
+                  ? `${alert.request.change_type} pharmacy request ready for review.`
+                  : `${alert.request.change_type} insurance request ready for review.`}
+              </p>
+              <button
+                type="button"
+                className="reception-request-alert-card__action"
+                onClick={() => {
+                  openPatientProfileSection(alert.request.patient_id, alert.sectionId);
+                }}
+              >
+                Open Patient Profile
+              </button>
+            </article>
+          ))}
+          {activeDoctorHiddenToast && (
+            <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
+              <div className="reception-request-alert-card__top">
+                <div>
+                  <p className="reception-request-alert-card__eyebrow">Doctor Deletion</p>
+                  <h3>Doctor deletion affected patient schedules</h3>
+                </div>
+                <button
+                  type="button"
+                  className="reception-request-alert-card__close"
+                  aria-label="Dismiss doctor deletion notification"
+                  onClick={() => {
+                    if (activeDoctorHiddenToast.notification_id) {
+                      dismissNotification(activeDoctorHiddenToast.notification_id);
+                      return;
+                    }
+                    setDismissFallbackDoctorHiddenToast(true);
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+              <p className="reception-request-alert-card__message">
+                {activeDoctorHiddenToast.message}
+              </p>
+              <button
+                type="button"
+                className="reception-request-alert-card__action"
+                onClick={() => {
+                  const target = document.getElementById('system-cancelled-appointments');
+                  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                Review Cancellations &rarr;
+              </button>
+            </article>
+          )}
+          {activeDoctorTimeOffToast && (
+            <article className="reception-request-alert-card reception-request-alert-card--doctor-time-off">
+              <div className="reception-request-alert-card__top">
+                <div>
+                  <p className="reception-request-alert-card__eyebrow">Doctor Time Off</p>
+                  <h3>Doctor time off affected patient schedules</h3>
+                </div>
+                <button
+                  type="button"
+                  className="reception-request-alert-card__close"
+                  aria-label="Dismiss doctor time off notification"
+                  onClick={() => {
+                    if (activeDoctorTimeOffToast.notification_id) {
+                      dismissNotification(activeDoctorTimeOffToast.notification_id);
+                      return;
+                    }
+                    setDismissFallbackDoctorToast(true);
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+              <p className="reception-request-alert-card__message">
+                {activeDoctorTimeOffToast.message}
+              </p>
+              <button
+                type="button"
+                className="reception-request-alert-card__action"
+                onClick={() => {
+                  const target = document.getElementById('system-cancelled-appointments');
+                  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                Review Cancellations &rarr;
+              </button>
+            </article>
+          )}
+        </aside>
       )}
 
       <PatientSearch />
@@ -818,6 +548,117 @@ function ReceptionistPage() {
         </div>
       </section>
 
+
+      {insuranceChangeRequests.length > 0 && (
+        <section className="reception-panel" id="insurance-change-requests">
+          <h2>Insurance Change Requests</h2>
+          <div className="reception-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Patient</th>
+                  <th>Type</th>
+                  <th>Company</th>
+                  <th>Member ID</th>
+                  <th>Group</th>
+                  <th>Primary</th>
+                  <th>Note</th>
+                  <th>Requested</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {insuranceChangeRequests.map((req) => (
+                  <tr key={req.request_id}>
+                    <td style={{ cursor: 'pointer', color: '#0f6965', fontWeight: 600 }} onClick={() => navigateToPatientProfile(req.patient_id)}>{req.patient_name}</td>
+                    <td>{req.change_type}</td>
+                    <td>{req.change_type === 'REMOVE' ? <span style={{ color: '#999' }}>{req.current_company_name || '—'}</span> : (req.new_company_name || '—')}</td>
+                    <td>{req.change_type !== 'REMOVE' ? (req.member_id || '—') : <span style={{ color: '#999' }}>{req.current_member_id || '—'}</span>}</td>
+                    <td>{req.change_type !== 'REMOVE' ? (req.group_number || '—') : <span style={{ color: '#999' }}>{req.current_group_number || '—'}</span>}</td>
+                    <td>{req.change_type !== 'REMOVE' ? (req.is_primary ? 'Yes' : 'No') : '—'}</td>
+                    <td style={{ maxWidth: '160px', fontSize: '0.8rem', color: '#555' }}>{req.patient_note || '—'}</td>
+                    <td style={{ fontSize: '0.8rem', color: '#777' }}>{new Date(req.created_at).toLocaleDateString()}</td>
+                    <td style={{ display: 'flex', gap: '0.4rem' }}>
+                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={async () => {
+                          try {
+                            await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests/${req.request_id}/approved`, { method: 'PUT' }).then(safeJson);
+                            setMessage('Insurance change approved.');
+                            const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson);
+                            setInsuranceChangeRequests(Array.isArray(fresh) ? fresh : []);
+                          } catch (err) { setMessage(err.message || 'Failed to approve.'); }
+                        }}>Approve</button>
+                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={async () => {
+                          try {
+                            await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests/${req.request_id}/denied`, { method: 'PUT' }).then(safeJson);
+                            setMessage('Insurance change denied.');
+                            const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/reception/insurance-change-requests`).then(safeJson);
+                            setInsuranceChangeRequests(Array.isArray(fresh) ? fresh : []);
+                          } catch (err) { setMessage(err.message || 'Failed to deny.'); }
+                        }}>Deny</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {pharmacyChangeRequests.length > 0 && (
+        <section className="reception-panel" id="pharmacy-change-requests">
+          <h2>Pharmacy Change Requests</h2>
+          <div className="reception-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Patient</th>
+                  <th>Type</th>
+                  <th>Pharmacy</th>
+                  <th>Primary</th>
+                  <th>Note</th>
+                  <th>Requested</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pharmacyChangeRequests.map((req) => (
+                  <tr key={req.request_id}>
+                    <td style={{ cursor: 'pointer', color: '#0f6965', fontWeight: 600 }} onClick={() => navigateToPatientProfile(req.patient_id)}>{req.patient_name}</td>
+                    <td>{req.change_type}</td>
+                    <td>{req.change_type === 'REMOVE' ? <span style={{ color: '#999' }}>{req.current_pharm_name || '—'}</span> : `${req.new_pharm_name || '—'}${req.new_pharm_city ? ` (${req.new_pharm_city}, ${req.new_pharm_state})` : ''}`}</td>
+                    <td>{req.change_type === 'ADD' ? (req.is_primary ? 'Yes' : 'No') : '—'}</td>
+                    <td style={{ maxWidth: '160px', fontSize: '0.8rem', color: '#555' }}>{req.patient_note || '—'}</td>
+                    <td style={{ fontSize: '0.8rem', color: '#777' }}>{new Date(req.created_at).toLocaleDateString()}</td>
+                    <td style={{ display: 'flex', gap: '0.4rem' }}>
+                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={async () => {
+                          try {
+                            await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests/${req.request_id}/approved`, { method: 'PUT' }).then(safeJson);
+                            setMessage('Pharmacy change approved.');
+                            const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson);
+                            setPharmacyChangeRequests(Array.isArray(fresh) ? fresh : []);
+                          } catch (err) { setMessage(err.message || 'Failed to approve.'); }
+                        }}>Approve</button>
+                      <button type="button" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'none', border: '1px solid #c0392b', color: '#c0392b', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={async () => {
+                          try {
+                            await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests/${req.request_id}/denied`, { method: 'PUT' }).then(safeJson);
+                            setMessage('Pharmacy change denied.');
+                            const fresh = await fetchWithTimeout(`${API_BASE_URL}/api/reception/pharmacy-change-requests`).then(safeJson);
+                            setPharmacyChangeRequests(Array.isArray(fresh) ? fresh : []);
+                          } catch (err) { setMessage(err.message || 'Failed to deny.'); }
+                        }}>Deny</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <section className="reception-panel">
         <div className="reception-date-nav">
           <h2>Appointments — {selectedDateLabel}</h2>
@@ -857,7 +698,7 @@ function ReceptionistPage() {
               {filteredAppointments.map((appointment) => {
                 const status = String(appointment.status_name || appointment.appointment_status || '').toUpperCase();
                 const canCheckIn = status === 'SCHEDULED' || status === 'CONFIRMED' || status === 'RESCHEDULED';
-                const canMarkNoShow = status !== 'NO_SHOW' && status !== 'CANCELLED' && status !== 'COMPLETED';
+                const canMarkNoShow = status !== 'CHECKED_IN' && status !== 'NO_SHOW' && status !== 'CANCELLED' && status !== 'COMPLETED';
                 return (
                   <tr key={appointment.appointment_id} className="reception-clickable-row" onClick={() => navigateToPatientProfile(appointment.patient_id)}>
                     <td>{formatTime(appointment.appointment_time)}</td>
@@ -868,6 +709,11 @@ function ReceptionistPage() {
                       {canCheckIn && (
                         <button type="button" onClick={() => checkInPatient(appointment.appointment_id)}>
                           Check In
+                        </button>
+                      )}
+                      {canCheckIn && (
+                        <button type="button" style={{ background: '#e8a020', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.3rem 0.7rem', cursor: 'pointer', fontSize: '0.82rem' }} onClick={() => markLateArrival(appointment.appointment_id)}>
+                          Late
                         </button>
                       )}
                       {canMarkNoShow && (
@@ -889,312 +735,60 @@ function ReceptionistPage() {
         </div>
       </section>
 
-      <section className="reception-panel">
-        <h2>Reports</h2>
-        <div className="reception-report-grid">
-          <form className="reception-report-form" onSubmit={generateSinglePatientReport}>
-            <h3>Single Patient Report</h3>
-            <p>Includes all treatments and findings for one patient in the selected date range.</p>
-            <label>
-              <span>Patient ID</span>
-              <input
-                type="number"
-                min="1"
-                value={singleReportForm.patientId}
-                onChange={(event) => setSingleReportForm((prev) => ({ ...prev, patientId: event.target.value }))}
-                required
-              />
-            </label>
-            <div className="reception-report-row">
-              <label>
-                <span>From Date</span>
-                <input
-                  type="date"
-                  value={singleReportForm.fromDate}
-                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
-                  required
-                />
-              </label>
-              <label>
-                <span>To Date</span>
-                <input
-                  type="date"
-                  value={singleReportForm.toDate}
-                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
-                  required
-                />
-              </label>
-            </div>
-            <label>
-              <span>ADA Code (optional)</span>
-              <input
-                type="text"
-                value={singleReportForm.procedureCode}
-                onChange={(event) => setSingleReportForm((prev) => ({ ...prev, procedureCode: event.target.value.toUpperCase() }))}
-                placeholder="D1110"
-              />
-            </label>
-            <div className="reception-report-row">
-              <label>
-                <span>Tooth Number (optional)</span>
-                <input
-                  type="text"
-                  value={singleReportForm.toothNumber}
-                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, toothNumber: event.target.value }))}
-                  placeholder="14"
-                />
-              </label>
-              <label>
-                <span>Surface (optional)</span>
-                <input
-                  type="text"
-                  value={singleReportForm.surface}
-                  onChange={(event) => setSingleReportForm((prev) => ({ ...prev, surface: event.target.value.toUpperCase() }))}
-                  placeholder="O"
-                />
-              </label>
-            </div>
-            <label>
-              <span>Export Format</span>
-              <select
-                value={singleReportFormat}
-                onChange={(event) => setSingleReportFormat(event.target.value)}
-              >
-                <option value="PDF">PDF</option>
-                <option value="CSV">CSV</option>
-                <option value="JSON">JSON</option>
-              </select>
-            </label>
-            <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isGeneratingSingleReport}>
-              {isGeneratingSingleReport ? 'Generating...' : 'Generate Single Patient Report'}
-            </button>
-          </form>
 
-          <form className="reception-report-form" onSubmit={generateMultiPatientReport}>
-            <h3>Multi Patient Report</h3>
-            <p>Includes multiple patients in the date range with optional ADA, tooth, and surface filters.</p>
-            <div className="reception-report-row">
-              <label>
-                <span>From Date</span>
-                <input
-                  type="date"
-                  value={multiReportForm.fromDate}
-                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
-                  required
-                />
-              </label>
-              <label>
-                <span>To Date</span>
-                <input
-                  type="date"
-                  value={multiReportForm.toDate}
-                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
-                  required
-                />
-              </label>
-            </div>
-            <label>
-              <span>ADA Code (optional)</span>
-              <input
-                type="text"
-                value={multiReportForm.procedureCode}
-                onChange={(event) => setMultiReportForm((prev) => ({ ...prev, procedureCode: event.target.value.toUpperCase() }))}
-                placeholder="D2740"
-              />
-            </label>
-            <div className="reception-report-row">
-              <label>
-                <span>Tooth Number (optional)</span>
-                <input
-                  type="text"
-                  value={multiReportForm.toothNumber}
-                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, toothNumber: event.target.value }))}
-                  placeholder="30"
-                />
-              </label>
-              <label>
-                <span>Surface (optional)</span>
-                <input
-                  type="text"
-                  value={multiReportForm.surface}
-                  onChange={(event) => setMultiReportForm((prev) => ({ ...prev, surface: event.target.value.toUpperCase() }))}
-                  placeholder="M"
-                />
-              </label>
-            </div>
-            <label>
-              <span>Export Format</span>
-              <select
-                value={multiReportFormat}
-                onChange={(event) => setMultiReportFormat(event.target.value)}
-              >
-                <option value="CSV">CSV</option>
-                <option value="PDF">PDF</option>
-                <option value="JSON">JSON</option>
-              </select>
-            </label>
-            <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isGeneratingMultiReport}>
-              {isGeneratingMultiReport ? 'Generating...' : 'Generate Multi Patient Report'}
-            </button>
-          </form>
-
-          <form className="reception-report-form" onSubmit={generateSinglePatientApptReport}>
-            <h3>Single Patient Appointment Report</h3>
-            <p>Appointment history for one patient filtered by status and reason.</p>
-            <label>
-              <span>Patient ID</span>
-              <input
-                type="number"
-                min="1"
-                value={singleApptReportForm.patientId}
-                onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, patientId: event.target.value }))}
-                required
-              />
-            </label>
-            <div className="reception-report-row">
-              <label>
-                <span>From Date</span>
-                <input
-                  type="date"
-                  value={singleApptReportForm.fromDate}
-                  onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
-                  required
-                />
-              </label>
-              <label>
-                <span>To Date</span>
-                <input
-                  type="date"
-                  value={singleApptReportForm.toDate}
-                  onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
-                  required
-                />
-              </label>
-            </div>
-            <label>
-              <span>Status (optional)</span>
-              <select
-                value={singleApptReportForm.status}
-                onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, status: event.target.value }))}
-              >
-                <option value="">All Statuses</option>
-                <option value="SCHEDULED">Scheduled</option>
-                <option value="CONFIRMED">Confirmed</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CANCELLED">Cancelled</option>
-                <option value="NO_SHOW">No Show</option>
-                <option value="RESCHEDULED">Rescheduled</option>
-                <option value="CHECKED_IN">Checked In</option>
-              </select>
-            </label>
-            <label>
-              <span>Reason / Notes (optional)</span>
-              <select
-                value={singleApptReportForm.reason}
-                onChange={(event) => setSingleApptReportForm((prev) => ({ ...prev, reason: event.target.value }))}
-              >
-                <option value="">All Reasons / Notes</option>
-                {departments.map((dept) => (
-                  <option key={dept.department_id} value={dept.department_name}>{dept.department_name}</option>
+      {systemCancelledAppts.length > 0 && (
+        <section className="reception-section" id="system-cancelled-appointments">
+          <h2 style={{ color: '#a53030', marginBottom: '0.75rem' }}>Appointments Cancelled by System — Patients Need to Reschedule</h2>
+          <p style={{ color: '#666', fontSize: '0.88rem', marginBottom: '1rem' }}>
+            The following appointments were automatically cancelled by the system in the last 30 days. Contact these patients to help them reschedule.
+          </p>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="reception-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Patient</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Email</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Phone</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Cancelled Appt Date</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Time</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Doctor</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Reason</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Status</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Cancelled At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {systemCancelledAppts.map((row) => (
+                  <tr
+                    key={row.appointment_id}
+                    className="reception-clickable-row"
+                    style={{ borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }}
+                    onClick={() => navigateToPatientProfile(row.patient_id)}
+                  >
+                    <td style={{ padding: '0.5rem 0.75rem', fontWeight: 600, color: '#0f6965' }}>{row.patient_name}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{row.p_email}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{row.p_phone}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{formatDate(row.appointment_date)}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{formatTime(row.appointment_time)}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{row.doctor_name}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>
+                      {row.cancelled_by === 'SYSTEM_DOCTOR_HIDDEN'
+                        ? <span style={{ color: '#a53030', fontWeight: 600, fontSize: '0.82rem' }}>Doctor Deleted</span>
+                        : <span style={{ color: '#7a5c00', fontWeight: 600, fontSize: '0.82rem' }}>Doctor Time Off</span>}
+                    </td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>
+                      {row.is_resolved
+                        ? <span style={{ color: '#155724', background: '#d4edda', borderRadius: '4px', padding: '2px 8px', fontSize: '0.8rem', fontWeight: 600 }}>Resolved</span>
+                        : <span style={{ color: '#721c24', background: '#f8d7da', borderRadius: '4px', padding: '2px 8px', fontSize: '0.8rem', fontWeight: 600 }}>Needs Reschedule</span>}
+                    </td>
+                    <td style={{ padding: '0.5rem 0.75rem', color: '#888', fontSize: '0.82rem' }}>{formatDate(row.cancelled_at)}</td>
+                  </tr>
                 ))}
-              </select>
-            </label>
-            <label>
-              <span>Export Format</span>
-              <select
-                value={singleApptReportFormat}
-                onChange={(event) => setSingleApptReportFormat(event.target.value)}
-              >
-                <option value="PDF">PDF</option>
-                <option value="CSV">CSV</option>
-                <option value="JSON">JSON</option>
-              </select>
-            </label>
-            <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isGeneratingSingleApptReport}>
-              {isGeneratingSingleApptReport ? 'Generating...' : 'Generate Single Patient Appt Report'}
-            </button>
-          </form>
-
-          <form className="reception-report-form" onSubmit={generateMultiPatientApptReport}>
-            <h3>Multi Patient Appointment Report</h3>
-            <p>All patient appointments filtered by status, reason, and preferred location.</p>
-            <div className="reception-report-row">
-              <label>
-                <span>From Date</span>
-                <input
-                  type="date"
-                  value={multiApptReportForm.fromDate}
-                  onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, fromDate: event.target.value }))}
-                  required
-                />
-              </label>
-              <label>
-                <span>To Date</span>
-                <input
-                  type="date"
-                  value={multiApptReportForm.toDate}
-                  onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, toDate: event.target.value }))}
-                  required
-                />
-              </label>
-            </div>
-            <label>
-              <span>Status (optional)</span>
-              <select
-                value={multiApptReportForm.status}
-                onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, status: event.target.value }))}
-              >
-                <option value="">All Statuses</option>
-                <option value="SCHEDULED">Scheduled</option>
-                <option value="CONFIRMED">Confirmed</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CANCELLED">Cancelled</option>
-                <option value="NO_SHOW">No Show</option>
-                <option value="RESCHEDULED">Rescheduled</option>
-                <option value="CHECKED_IN">Checked In</option>
-              </select>
-            </label>
-            <label>
-              <span>Reason / Notes (optional)</span>
-              <select
-                value={multiApptReportForm.reason}
-                onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, reason: event.target.value }))}
-              >
-                <option value="">All Reasons / Notes</option>
-                {departments.map((dept) => (
-                  <option key={dept.department_id} value={dept.department_name}>{dept.department_name}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Preferred Location (optional)</span>
-              <select
-                value={multiApptReportForm.preferredLocation}
-                onChange={(event) => setMultiApptReportForm((prev) => ({ ...prev, preferredLocation: event.target.value }))}
-              >
-                <option value="">All Locations</option>
-                {timeOffLocations.map((location) => (
-                  <option key={location.location_id} value={location.full_address}>{location.full_address}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Export Format</span>
-              <select
-                value={multiApptReportFormat}
-                onChange={(event) => setMultiApptReportFormat(event.target.value)}
-              >
-                <option value="CSV">CSV</option>
-                <option value="PDF">PDF</option>
-                <option value="JSON">JSON</option>
-              </select>
-            </label>
-            <button type="submit" className="reception-action-btn reception-action-btn--primary" disabled={isGeneratingMultiApptReport}>
-              {isGeneratingMultiApptReport ? 'Generating...' : 'Generate Multi Patient Appt Report'}
-            </button>
-          </form>
-        </div>
-      </section>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </main>
   );
 }

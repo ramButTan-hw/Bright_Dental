@@ -21,6 +21,16 @@ function PatientSettingsPage() {
     emergencyContactName: '', emergencyContactPhone: ''
   });
 
+  const formatPhone = (value) => {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+    if (!digits) return '';
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  };
+
+  const formatZip = (value) => String(value || '').replace(/\D/g, '').slice(0, 5);
+
   useEffect(() => {
     if (!session?.patientId) {
       navigate('/patient-login');
@@ -35,14 +45,14 @@ function PatientSettingsPage() {
         setForm({
           firstName: patient.p_first_name || '',
           lastName: patient.p_last_name || '',
-          phone: patient.p_phone || '',
+          phone: formatPhone(patient.p_phone || ''),
           email: patient.p_email || '',
           address: patient.p_address || '',
           city: patient.p_city || '',
           state: patient.p_state || '',
-          zipcode: patient.p_zipcode || '',
+          zipcode: formatZip(patient.p_zipcode || ''),
           emergencyContactName: patient.p_emergency_contact_name || '',
-          emergencyContactPhone: patient.p_emergency_contact_phone || ''
+          emergencyContactPhone: formatPhone(patient.p_emergency_contact_phone || '')
         });
       } catch (err) {
         setMessage(err.message || 'Failed to load profile');
@@ -55,13 +65,42 @@ function PatientSettingsPage() {
   }, [API_BASE_URL, navigate, session?.patientId]);
 
   const updateField = (e) => {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    if (name === 'phone' || name === 'emergencyContactPhone') {
+      setForm((prev) => ({ ...prev, [name]: formatPhone(value) }));
+      return;
+    }
+    if (name === 'zipcode') {
+      setForm((prev) => ({ ...prev, [name]: formatZip(value) }));
+      return;
+    }
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
     setMessage('');
     setSaving(true);
+
+    const phoneDigits = String(form.phone || '').replace(/\D/g, '');
+    const emergencyPhoneDigits = String(form.emergencyContactPhone || '').replace(/\D/g, '');
+    const zipDigits = String(form.zipcode || '').replace(/\D/g, '');
+
+    if (phoneDigits.length && phoneDigits.length !== 10) {
+      setMessage('Phone number must contain exactly 10 digits.');
+      setSaving(false);
+      return;
+    }
+    if (emergencyPhoneDigits.length && emergencyPhoneDigits.length !== 10) {
+      setMessage('Emergency contact phone must contain exactly 10 digits.');
+      setSaving(false);
+      return;
+    }
+    if (zipDigits.length && zipDigits.length !== 5) {
+      setMessage('ZIP code must contain exactly 5 digits.');
+      setSaving(false);
+      return;
+    }
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/patients/${session.patientId}/profile`, {
@@ -143,7 +182,7 @@ function PatientSettingsPage() {
           </div>
           <div className="portal-field">
             <label>Phone</label>
-            <input name="phone" type="tel" value={form.phone} onChange={updateField} />
+            <input name="phone" type="tel" inputMode="numeric" pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}|[0-9]{10}" maxLength={12} value={form.phone} onChange={updateField} />
           </div>
           <div className="portal-field" style={{ gridColumn: '1 / -1' }}>
             <label>Address</label>
@@ -159,7 +198,7 @@ function PatientSettingsPage() {
           </div>
           <div className="portal-field">
             <label>Zip Code</label>
-            <input name="zipcode" value={form.zipcode} onChange={updateField} />
+            <input name="zipcode" inputMode="numeric" pattern="\d{5}" maxLength={5} value={form.zipcode} onChange={updateField} />
           </div>
           <div className="portal-field">
             <label>Emergency Contact Name</label>
@@ -167,7 +206,7 @@ function PatientSettingsPage() {
           </div>
           <div className="portal-field">
             <label>Emergency Contact Phone</label>
-            <input name="emergencyContactPhone" type="tel" value={form.emergencyContactPhone} onChange={updateField} />
+            <input name="emergencyContactPhone" type="tel" inputMode="numeric" pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}|[0-9]{10}" maxLength={12} value={form.emergencyContactPhone} onChange={updateField} />
           </div>
           <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
             <button type="submit" className="portal-primary-btn" disabled={saving} style={{ width: 'fit-content' }}>
