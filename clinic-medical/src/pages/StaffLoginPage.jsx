@@ -23,18 +23,6 @@ function StaffLoginPage() {
     const username = credentials.username.trim();
     const password = credentials.password;
 
-    // Keep a local admin fallback so admin access is not blocked when DB admin data is missing.
-    if (username.toLowerCase() === 'admin' && password === 'password') {
-      setAdminPortalSession({
-        username: 'admin',
-        isAdmin: true,
-        loggedInAt: new Date().toISOString()
-      });
-      navigate('/admin');
-      setIsLoggingIn(false);
-      return;
-    }
-
     try {
       const response = await fetch(`${API_BASE_URL}/api/login`, {
         method: 'POST',
