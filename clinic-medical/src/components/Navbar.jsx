@@ -178,13 +178,19 @@ function Navbar() {
               onMouseEnter={() => setAboutDropdown(true)}
               onMouseLeave={() => setAboutDropdown(false)}
             >
-              <button className="nav-link dropdown-toggle">
+              <button
+                className="nav-link dropdown-toggle"
+                aria-haspopup="menu"
+                aria-expanded={aboutDropdown}
+              >
                 About Us
               </button>
               {aboutDropdown && (
-                <div className="dropdown-menu">
-                  <Link to="/meet-our-staff" className="dropdown-item">Meet Our Staff</Link>
-                  <a href="#ourMotive" className="dropdown-item">Our Motive</a>
+                <div className="dropdown-menu" role="menu">
+                  <Link to="/department" className="dropdown-item" role="menuitem">Department</Link>
+                  <Link to="/meet-our-staff" className="dropdown-item" role="menuitem">Meet Our Staff</Link>
+                  <Link to="/testimonies" className="dropdown-item" role="menuitem">Testimonies</Link>
+                  <a href="#our-motive" className="dropdown-item" role="menuitem">Our Motive</a>
                 </div>
               )}
             </div>
@@ -196,13 +202,17 @@ function Navbar() {
               onMouseEnter={() => setLoginDropdown(true)}
               onMouseLeave={() => setLoginDropdown(false)}
             >
-              <button className="nav-link dropdown-toggle login-btn">
+              <button
+                className="nav-link dropdown-toggle login-btn"
+                aria-haspopup="menu"
+                aria-expanded={loginDropdown}
+              >
                 Login
               </button>
               {loginDropdown && (
-                <div className="dropdown-menu">
-                  <Link to="/patient-login" className="dropdown-item">Patient Login</Link>
-                  <Link to="/staff-login" className="dropdown-item">Staff Login</Link>
+                <div className="dropdown-menu" role="menu">
+                  <Link to="/patient-login" className="dropdown-item" role="menuitem">Patient Login</Link>
+                  <Link to="/staff-login" className="dropdown-item" role="menuitem">Staff Login</Link>
                 </div>
               )}
             </div>
