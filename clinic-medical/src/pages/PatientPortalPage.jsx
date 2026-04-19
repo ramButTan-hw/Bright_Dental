@@ -452,7 +452,7 @@ function PatientPortalPage() {
                         type="button"
                         className="portal-link-btn"
                         style={{ color: '#a53030', borderColor: '#e8b4b4' }}
-                        onClick={() => setCancelState({ open: true, reasonId: '', submitting: false })}
+                        onClick={() => setCancelState({ open: true, cancelNote: '', submitting: false })}
                         >
                         Cancel Appointment
                         </button>
