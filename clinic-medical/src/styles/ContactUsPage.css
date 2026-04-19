@@ -1,0 +1,219 @@
+.contact-page {
+  min-height: 100vh;
+  padding: 90px 20px 72px;
+  background:
+    radial-gradient(circle at top left, rgba(132, 212, 211, 0.18), transparent 28%),
+    linear-gradient(180deg, #f7faf9 0%, #edf5f3 100%);
+}
+
+.contact-page__container {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.contact-page__hero {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.contact-page__kicker {
+  margin: 0 0 0.55rem;
+  color: #005050;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.contact-page__title {
+  margin: 0;
+  color: #181c1c;
+  font-size: 2.5rem;
+  font-weight: 800;
+  font-family: 'Manrope', sans-serif;
+}
+
+.contact-page__intro {
+  max-width: 640px;
+  margin: 0.85rem auto 0;
+  color: #3e4948;
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.contact-page__section {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 80, 80, 0.08);
+  border-radius: 24px;
+  padding: 2rem;
+  box-shadow: 0 18px 40px rgba(17, 48, 47, 0.07);
+  backdrop-filter: blur(10px);
+}
+
+.contact-page__section-header {
+  margin-bottom: 1.5rem;
+}
+
+.contact-page__section-title {
+  margin: 0;
+  color: #005050;
+  font-size: 1.55rem;
+  font-weight: 800;
+  font-family: 'Manrope', sans-serif;
+}
+
+.contact-page__section-copy {
+  margin: 0.45rem 0 0;
+  color: #5a6b69;
+  line-height: 1.6;
+}
+
+.contact-page__status {
+  margin: 0;
+  padding: 2rem 0;
+  text-align: center;
+  color: #66706f;
+}
+
+.contact-page__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+}
+
+.contact-card {
+  overflow: hidden;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 80, 80, 0.1);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.contact-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 34px rgba(0, 0, 0, 0.1);
+}
+
+.contact-card__header {
+  padding: 1rem 1.25rem;
+  color: #ffffff;
+  background: linear-gradient(135deg, #005050, #006a6a);
+}
+
+.contact-card__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.contact-card__address {
+  margin: 0.3rem 0 0;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.contact-card__body {
+  padding: 1.25rem;
+}
+
+.contact-card__table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #3e4948;
+  font-size: 0.94rem;
+}
+
+.contact-card__table td {
+  padding: 0.4rem 0;
+  vertical-align: top;
+}
+
+.contact-card__label {
+  width: 72px;
+  color: #005050;
+  font-weight: 700;
+}
+
+.contact-cta {
+  margin-top: 2rem;
+  padding: 2.2rem;
+  text-align: center;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 80, 80, 0.08);
+}
+
+.contact-cta__title {
+  margin: 0;
+  color: #181c1c;
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.contact-cta__copy {
+  margin: 0.6rem auto 1.35rem;
+  max-width: 620px;
+  color: #3e4948;
+  line-height: 1.7;
+}
+
+.contact-cta__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 220px;
+  padding: 0.85rem 1.5rem;
+  border-radius: 999px;
+  background: #005050;
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 10px 20px rgba(0, 80, 80, 0.18);
+  transition: transform 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.contact-cta__button:hover {
+  background: #006a6a;
+  transform: translateY(-2px);
+  box-shadow: 0 14px 24px rgba(0, 80, 80, 0.22);
+}
+
+@media (max-width: 768px) {
+  .contact-page {
+    padding: 82px 16px 56px;
+  }
+
+  .contact-page__title {
+    font-size: 2.1rem;
+  }
+
+  .contact-page__section {
+    padding: 1.5rem;
+  }
+
+  .contact-cta {
+    padding: 1.75rem 1.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .contact-page__title {
+    font-size: 1.8rem;
+  }
+
+  .contact-page__intro,
+  .contact-page__section-copy,
+  .contact-cta__copy {
+    font-size: 0.95rem;
+  }
+
+  .contact-page__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-card__body {
+    padding: 1rem;
+  }
+}

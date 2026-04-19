@@ -6,10 +6,12 @@ import '../styles/PatientPortalPage.css';
 function PatientInvoicesPage() {
   const navigate = useNavigate();
   const session = useMemo(() => getPatientPortalSession(), []);
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const [billing, setBilling] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [error, setError] = useState('');
+
+  useEffect(() => { document.title = 'My Invoices | Bright Dental'; }, []);
 
   useEffect(() => {
     if (!session?.patientId) {

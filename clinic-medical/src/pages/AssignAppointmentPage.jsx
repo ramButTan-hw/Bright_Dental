@@ -20,6 +20,8 @@ function AssignAppointmentPage() {
     receptionistNotes: ''
   });
 
+  useEffect(() => { document.title = 'Assign Appointment | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.staffId) {
       navigate('/staff-login');
