@@ -27,6 +27,7 @@ import MeetOurStaffPage from './pages/MeetOurStaffPage';
 import TestimoniesPage from './pages/testimonies';
 import FAQPage from './pages/FAQPage';
 import ContactUsPage from './pages/ContactUsPage';
+import NotFoundPage from './pages/NotFoundPage';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { getAdminPortalSession, getReceptionPortalSession } from './utils/patientPortal';
 import './App.css';
@@ -148,6 +149,7 @@ function App() {
             </RequireAdmin>
           }
         />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       {!isStaffPage && <Footer />}
     </div>
