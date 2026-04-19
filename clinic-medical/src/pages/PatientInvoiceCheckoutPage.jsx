@@ -7,7 +7,7 @@ function PatientInvoiceCheckoutPage() {
   const navigate = useNavigate();
   const { invoiceId } = useParams();
   const session = useMemo(() => getPatientPortalSession(), []);
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,6 +26,8 @@ function PatientInvoiceCheckoutPage() {
   const [billingCity, setBillingCity] = useState('');
   const [billingState, setBillingState] = useState('');
   const [billingZip, setBillingZip] = useState('');
+
+  useEffect(() => { document.title = 'Invoice Checkout | Bright Dental'; }, []);
 
   useEffect(() => {
     if (!session?.patientId) {
