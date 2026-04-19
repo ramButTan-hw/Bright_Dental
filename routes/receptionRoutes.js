@@ -764,6 +764,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
     const query = String(parsedUrl.query.query || '').trim();
     const sqlLike = `%${query}%`;
 
+    const numericQuery = Number(query) || 0;
     pool.query(
       `SELECT
         p.patient_id,
@@ -779,12 +780,10 @@ function createReceptionRoutes({ pool, sendJSON }) {
       FROM patients p
       WHERE (? = '' OR
         CONCAT(p.p_first_name, ' ', p.p_last_name) LIKE ? OR
-        p.p_phone LIKE ? OR
-        p.p_email LIKE ? OR
-        p.p_ssn LIKE ?)
+        (? > 0 AND p.patient_id = ?))
       ORDER BY p.p_last_name ASC, p.p_first_name ASC
       LIMIT 100`,
-      [query, sqlLike, sqlLike, sqlLike, sqlLike],
+      [query, sqlLike, numericQuery, numericQuery],
       (err, rows) => {
         if (err) {
           console.error('Error searching reception patients:', err);
