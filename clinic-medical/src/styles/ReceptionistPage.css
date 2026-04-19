@@ -5,65 +5,13 @@
   color: #132524;
 }
 
-.reception-kicker {
-  margin: 0 0 0.4rem;
-  color: #8a6f4d;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
 .reception-header h1 {
   margin: 0;
-  font-size: 2.15rem;
 }
 
 .reception-header p {
   margin: 0.35rem 0 1rem;
   color: #4b6966;
-}
-
-.reception-header-copy {
-  max-width: 42rem;
-}
-
-.reception-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.9rem;
-  margin-bottom: 1rem;
-}
-
-.reception-summary-card {
-  border: 1px solid #d2e4e1;
-  border-radius: 16px;
-  padding: 1rem 1.1rem;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fcfb 100%);
-  box-shadow: 0 8px 18px rgba(6, 55, 53, 0.06);
-}
-
-.reception-summary-label {
-  margin: 0;
-  color: #4b6966;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.reception-summary-value {
-  display: block;
-  margin-top: 0.45rem;
-  color: #0b6d68;
-  font-size: 1.9rem;
-  line-height: 1;
-}
-
-.reception-summary-detail {
-  margin: 0.5rem 0 0;
-  color: #4b6966;
-  line-height: 1.45;
 }
 
 .reception-message {
@@ -205,12 +153,6 @@
   margin-top: 0;
 }
 
-.reception-panel-subtle {
-  margin: -0.2rem 0 0.85rem;
-  color: #4b6966;
-  line-height: 1.5;
-}
-
 .reception-form {
   display: grid;
   gap: 0.55rem;
@@ -339,10 +281,6 @@
   overflow-x: auto;
 }
 
-.reception-search-results {
-  margin-top: 0.75rem;
-}
-
 .reception-table-scroll {
   max-height: 400px;
   overflow-y: auto;
@@ -448,71 +386,6 @@
 .reception-action-btn .btn-icon {
   font-size: 1rem;
   line-height: 1;
-}
-
-.reception-inline-note {
-  margin-top: 0.5rem;
-  color: #4b6966;
-}
-
-.reception-schedule-panel {
-  margin-bottom: 1rem;
-}
-
-.reception-schedule-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.75rem;
-}
-
-.reception-schedule-card {
-  background: #eefbfa;
-  border: 1px solid #d6e7e4;
-  border-radius: 10px;
-  padding: 0.65rem 0.9rem;
-  min-width: 120px;
-}
-
-.reception-schedule-card.is-off {
-  background: #f5f5f5;
-  border-color: #dddddd;
-}
-
-.reception-schedule-day {
-  display: block;
-  color: #105550;
-}
-
-.reception-schedule-card.is-off .reception-schedule-day {
-  color: #8b8f96;
-}
-
-.reception-schedule-time {
-  margin-top: 0.2rem;
-  font-size: 0.85rem;
-  color: #444444;
-}
-
-.reception-schedule-card.is-off .reception-schedule-time {
-  color: #8b8f96;
-}
-
-.reception-request-action-col {
-  width: 40px;
-}
-
-.reception-inline-danger {
-  background: none;
-  border: none;
-  color: #c0392b;
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 1.1rem;
-  padding: 0.2rem 0.5rem;
-}
-
-.reception-inline-danger:hover {
-  color: #962d21;
 }
 
 .reception-report-grid {
@@ -863,10 +736,6 @@
   .reception-header {
     flex-direction: column;
     gap: 0.5rem;
-  }
-
-  .reception-header h1 {
-    font-size: 1.8rem;
   }
 }
 
