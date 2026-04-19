@@ -302,6 +302,11 @@ function PatientPortalPage() {
       <section className="portal-header-card">
         <div>
           <p className="portal-label">Patient Portal</p>
+          {patient && (
+            <h2 style={{ margin: 0, fontWeight: 500, fontSize: '1.35rem', color: '#2a7b2a' }}>
+              Welcome, {patient.p_first_name}!
+            </h2>
+          )}
           <h1>{patient ? `${patient.p_first_name} ${patient.p_last_name}` : 'Patient'}</h1>
           <p>{patient?.p_email || ''}</p>
         </div>
