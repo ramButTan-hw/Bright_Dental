@@ -742,9 +742,9 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
           <p style={{ color: '#666', fontSize: '0.88rem', marginBottom: '1rem' }}>
             The following appointments were automatically cancelled by the system in the last 30 days. Contact these patients to help them reschedule.
           </p>
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '400px' }}>
             <table className="reception-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-              <thead>
+              <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
                 <tr>
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Patient</th>
                   <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', borderBottom: '2px solid #e0e0e0' }}>Email</th>
