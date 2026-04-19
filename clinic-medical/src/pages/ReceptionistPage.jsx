@@ -12,6 +12,8 @@ function PatientSearch() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const debounceRef = useRef(null);
 
+  useEffect(() => { document.title = 'Receptionist Portal | Bright Dental'; }, []);
+
   useEffect(() => {
     const query = String(patientQuery || '').trim();
     if (!query) {
@@ -338,10 +340,8 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
   return (
     <main className="reception-page">
       <section className="reception-header">
-        <div>
-          <h1>Receptionist Page</h1>
-          <p>Manage appointment requests, check-in patients, and search for patients.</p>
-        </div>
+        <h1>Receptionist Page</h1>
+        <p>Manage appointment requests, check-in patients, and search for patients.</p>
         <div className="reception-actions">
           <button className="reception-action-btn reception-action-btn--primary" onClick={() => navigate('/receptionist/register-patient')}>
             <span className="btn-icon">+</span> Register New Patient

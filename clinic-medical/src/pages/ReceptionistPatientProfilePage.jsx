@@ -167,6 +167,8 @@ function ReceptionistPatientProfilePage() {
     }
   };
 
+  useEffect(() => { document.title = 'Patient Profile | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.staffId) {
       navigate('/staff-login');

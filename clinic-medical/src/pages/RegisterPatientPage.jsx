@@ -193,6 +193,8 @@ function RegisterPatientPage() {
   const [insuranceCompanies, setInsuranceCompanies] = useState([]);
   const [insuranceInfo, setInsuranceInfo] = useState({ companyId: '', memberId: '', groupNumber: '' });
 
+  useEffect(() => { document.title = 'Register Patient | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.staffId) {
       navigate('/staff-login');

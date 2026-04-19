@@ -235,6 +235,8 @@ function DentistPatientProfilePage() {
     }
   };
 
+  useEffect(() => { document.title = 'Patient Profile | Bright Dental'; }, []);
+
   useEffect(() => {
     loadDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
