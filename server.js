@@ -412,10 +412,15 @@ pool.query(
 
 pool.query(
   `INSERT INTO cancel_reasons (reason_text, category, created_by)
-   VALUES ('Doctor Unavailable', 'PROVIDER', 'SYSTEM')
+   VALUES
+     ('Doctor Unavailable', 'PROVIDER', 'SYSTEM'),
+     ('Doctor Cancelled', 'PROVIDER', 'SYSTEM'),
+     ('Patient Cancelled', 'PATIENT', 'SYSTEM'),
+     ('Emergency / Clinic Closure', 'CLINIC', 'SYSTEM'),
+     ('Scheduling Error', 'ADMIN', 'SYSTEM')
    ON DUPLICATE KEY UPDATE category = VALUES(category)`,
   (err) => {
-    if (err) console.error('Error ensuring Doctor Unavailable cancel reason:', err.message);
+    if (err) console.error('Error ensuring cancel reasons:', err.message);
   }
 );
 
