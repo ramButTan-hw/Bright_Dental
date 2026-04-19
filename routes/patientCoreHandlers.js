@@ -171,31 +171,32 @@ function createPatientCoreHandlers(deps) {
       return sendJSON(res, 400, { error: 'Username and password required' });
     }
 
-    pool.query(queries.getUserForLogin, [username], (err, results) => {
+    const normalizedUsername = String(username).trim();
+    const adminSecret = process.env.ADMIN_SECRET;
+    if (adminSecret && normalizedUsername.toLowerCase() === 'admin' && password === adminSecret) {
+      const token = crypto.randomBytes(32).toString('hex');
+      return sendJSON(res, 200, {
+        token,
+        user: {
+          user_id: null,
+          patient_id: null,
+          staff_id: null,
+          doctor_id: null,
+          username: 'admin',
+          email: null,
+          role: 'ADMIN',
+          full_name: 'Admin'
+        }
+      });
+    }
+
+    pool.query(queries.getUserForLogin, [normalizedUsername], (err, results) => {
       if (err) {
         console.error('Error during login:', err);
         return sendJSON(res, 500, { error: 'Database error' });
       }
 
       if (results.length === 0) {
-        // Fallback: if no user found and ADMIN_SECRET is set, allow admin login via env variable
-        const adminSecret = process.env.ADMIN_SECRET;
-        if (adminSecret && username.toLowerCase() === 'admin' && password === adminSecret) {
-          const token = crypto.randomBytes(32).toString('hex');
-          return sendJSON(res, 200, {
-            token,
-            user: {
-              user_id: null,
-              patient_id: null,
-              staff_id: null,
-              doctor_id: null,
-              username: 'admin',
-              email: null,
-              role: 'ADMIN',
-              full_name: 'Admin'
-            }
-          });
-        }
         return sendJSON(res, 401, { error: 'Invalid credentials' });
       }
 
@@ -218,7 +219,7 @@ function createPatientCoreHandlers(deps) {
           patient_id: user.patient_id || null,
           staff_id: user.staff_id || null,
           doctor_id: user.doctor_id || null,
-          username,
+          username: normalizedUsername,
           email: user.user_email,
           role: user.user_role,
           full_name: [user.staff_first_name, user.staff_last_name].filter(Boolean).join(' ').trim() || null
