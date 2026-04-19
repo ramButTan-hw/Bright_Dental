@@ -6,7 +6,7 @@ function CreateAppointmentPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
-  const session = getReceptionPortalSession();
+  const session = useMemo(() => getReceptionPortalSession(), []);
 
   const [doctors, setDoctors] = useState([]);
   const [locations, setLocations] = useState([]);

@@ -6,7 +6,7 @@ function AssignAppointmentPage() {
   const navigate = useNavigate();
   const { requestId } = useParams();
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
-  const session = getReceptionPortalSession();
+  const session = useMemo(() => getReceptionPortalSession(), []);
 
   const [request, setRequest] = useState(null);
   const [loadError, setLoadError] = useState('');

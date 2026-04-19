@@ -52,7 +52,7 @@ const formatDateTimeWithMeridiem = (value) => {
 function ReceptionistProfilePage() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const navigate = useNavigate();
-  const session = getReceptionPortalSession();
+  const session = useMemo(() => getReceptionPortalSession(), []);
   const fileInputRef = useRef(null);
 
   const formatEmergencyPhone = (value) => {
