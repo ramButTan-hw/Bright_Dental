@@ -80,7 +80,6 @@ const ALLERGIES_INITIAL_STATE = ALLERGY_OPTIONS.reduce((acc, item) => {
 const WEEKDAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const TIME_PREFERENCE_OPTIONS = [
   { value: '08:00', label: '8:00 AM' },
-  { value: '08:00', label: '8:00 AM' },
   { value: '09:00', label: '9:00 AM' },
   { value: '10:00', label: '10:00 AM' },
   { value: '11:00', label: '11:00 AM' },
@@ -515,7 +514,7 @@ function RegisterPatientPage() {
           password: credentials.password,
           dob: details.dob,
           gender: details.gender,
-          location: details.location,
+          locationId: details.location,
           reason: details.reason,
           ssn: details.ssn,
           driversLicense: details.driversLicense,
@@ -601,7 +600,7 @@ function RegisterPatientPage() {
             <div className="form-grid">
               <label>Date of Birth<input type="date" name="dob" value={details.dob} onChange={updateDetails} max={new Date().toISOString().slice(0, 10)} required /></label>
               <label>Gender<select name="gender" value={details.gender} onChange={updateDetails} required><option value="" disabled>Select gender</option><option value="1">Male</option><option value="2">Female</option><option value="3">Non-binary</option><option value="4">Prefer not to say</option></select></label>
-              <label>Preferred Location<select name="location" value={details.location} onChange={updateDetails} required><option value="" disabled>Select a location</option>{locations.map((loc) => { const addr = `${loc.loc_street_no} ${loc.loc_street_name}, ${loc.location_city}, ${loc.location_state} ${loc.loc_zip_code}`; return <option key={loc.location_id} value={addr}>{addr}</option>; })}</select></label>
+              <label>Preferred Location<select name="location" value={details.location} onChange={updateDetails} required><option value="" disabled>Select a location</option>{locations.map((loc) => { const addr = `${loc.loc_street_no} ${loc.loc_street_name}, ${loc.location_city}, ${loc.location_state} ${loc.loc_zip_code}`; return <option key={loc.location_id} value={loc.location_id}>{addr}</option>; })}</select></label>
               <label>Social Security Number<input type="text" name="ssn" placeholder="XXX-XX-XXXX" value={details.ssn} onChange={updateDetails} pattern="\d{3}-\d{2}-\d{4}" maxLength="11" inputMode="numeric" title="Use SSN format: XXX-XX-XXXX" required /></label>
               <label>Driver's License<input type="text" name="driversLicense" placeholder="Your DL number" value={details.driversLicense} onChange={updateDetails} pattern="[A-Za-z0-9-]{5,20}" minLength="5" maxLength="20" title="Use 5-20 letters, numbers, or hyphens" required /></label>
               <label>Street Address<input type="text" name="address" placeholder="123 Main St" value={details.address} onChange={updateDetails} required /></label>
