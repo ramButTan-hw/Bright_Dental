@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/PatientRegistrationPage.css';
 
 const TOBACCO_ACTIVE_OPTIONS = ['Cigarettes', 'Cigars', 'Smokeless Tobacco'];
@@ -102,24 +103,6 @@ function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
-}
-
-function resolveApiBaseUrl() {
-  const configuredApiUrl = (import.meta.env.VITE_API_URL || '').trim();
-  if (configuredApiUrl) {
-    return configuredApiUrl.replace(/\/+$/, '');
-  }
-
-  if (typeof window === 'undefined') {
-    return 'http://localhost:3001';
-  }
-
-  const localHosts = ['localhost', '127.0.0.1', '::1'];
-  if (localHosts.includes(window.location.hostname)) {
-    return 'http://localhost:3001';
-  }
-
-  return window.location.origin.replace(/\/+$/, '');
 }
 
 function PatientRegistrationPage() {
@@ -243,7 +226,6 @@ function PatientRegistrationPage() {
           }))
         );
       } catch (error) {
-        console.error('Failed to fetch pain symptoms:', error.message);
       }
     };
 
@@ -255,7 +237,6 @@ function PatientRegistrationPage() {
           setInsuranceCompanies(Array.isArray(data) ? data : []);
         }
       } catch (error) {
-        console.error('Failed to fetch insurance companies:', error.message);
       }
     };
 
@@ -267,7 +248,6 @@ function PatientRegistrationPage() {
           setDepartments(Array.isArray(data) ? data : []);
         }
       } catch (error) {
-        console.error('Failed to fetch departments:', error.message);
       }
     };
 
@@ -279,7 +259,6 @@ function PatientRegistrationPage() {
                 setLocations(Array.isArray(data) ? data : []);
             }
         } catch (error) {
-            console.error('Failed to fetch locations:', error.message);
         }
     };
 
@@ -510,7 +489,6 @@ function PatientRegistrationPage() {
       const result = await response.json();
       return Boolean(result.exists);
     } catch (error) {
-      console.error('Email verification error:', error);
       throw new Error('Unable to validate email right now. Please check your connection and try again.');
     }
   };
