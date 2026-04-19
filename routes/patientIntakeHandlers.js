@@ -8,6 +8,38 @@ function createPatientIntakeHandlers(deps) {
     preferredTimeOptions
   } = deps;
 
+  // Checks if all doctors at the given location are already booked at the given date/time.
+  // Returns isFull=true only when every doctor's slot is taken.
+  function checkTimeSlotAvailability(preferredDate, preferredTime, locationId, callback) {
+    if (!locationId) return callback(null, false);
+
+    pool.query(
+      `SELECT
+        (SELECT COUNT(d.doctor_id)
+         FROM doctors d
+         JOIN staff_locations sl ON sl.staff_id = d.staff_id
+         JOIN staff st ON st.staff_id = d.staff_id
+         JOIN users u ON u.user_id = st.user_id
+         WHERE sl.location_id = ? AND COALESCE(u.is_deleted, 0) = 0) AS doctor_count,
+        (SELECT COUNT(*)
+         FROM appointment_slots
+         WHERE location_id = ? AND slot_date = ? AND slot_start_time = ?
+           AND (current_bookings >= max_patients OR is_available = 0)) AS full_slots,
+        (SELECT COUNT(*)
+         FROM appointment_preference_requests
+         WHERE location_id = ? AND preferred_date = ? AND preferred_time = ?
+           AND request_status IN ('PREFERRED_PENDING', 'ASSIGNED')) AS pref_count`,
+      [locationId, locationId, preferredDate, preferredTime, locationId, preferredDate, preferredTime],
+      (err, rows) => {
+        if (err) return callback(err);
+        const doctorCount = Number(rows[0].doctor_count) || 0;
+        if (doctorCount === 0) return callback(null, false);
+        const booked = Math.max(Number(rows[0].full_slots) || 0, Number(rows[0].pref_count) || 0);
+        callback(null, booked >= doctorCount);
+      }
+    );
+  }
+
   function normalizeTenDigitPhone(value) {
     const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
     if (!digits) return null;
@@ -213,7 +245,15 @@ function createPatientIntakeHandlers(deps) {
       return sendJSON(res, 400, { error: 'Please choose at least one available time between 8:00 AM and 7:00 PM' });
     }
 
-    pool.getConnection((err, conn) => {
+    checkTimeSlotAvailability(preferredDate, preferredTime, preferredLocationId, (availErr, isFull) => {
+      if (availErr) {
+        console.error('Error checking slot availability:', availErr);
+        return sendJSON(res, 500, { error: 'Database error' });
+      }
+      if (isFull) {
+        return sendJSON(res, 409, { error: 'That time slot is fully booked at this location. Please select a different time.' });
+      }
+      pool.getConnection((err, conn) => {
       if (err) {
         console.error('DB connection error:', err);
         return sendJSON(res, 500, { error: 'Database connection failed' });
@@ -406,6 +446,7 @@ function createPatientIntakeHandlers(deps) {
         });
       });
     });
+    });
   }
 
   function createPatientNewAppointmentRequest(req, patientId, data, res) {
@@ -481,6 +522,27 @@ function createPatientIntakeHandlers(deps) {
     if (preferredTimes.length === 0) {
       return sendJSON(res, 400, { error: 'Please choose at least one available time between 8:00 AM and 7:00 PM.' });
     }
+
+    pool.query(
+      `SELECT location_id FROM locations
+       WHERE CONCAT(loc_street_no, ' ', loc_street_name, ', ', location_city, ', ', location_state, ' ', loc_zip_code) = ?
+       LIMIT 1`,
+      [normalizedPreferredLocation],
+      (locLookupErr, locLookupRows) => {
+        if (locLookupErr) {
+          console.error('Error looking up location:', locLookupErr);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        const resolvedLocationId = locLookupRows && locLookupRows[0] ? Number(locLookupRows[0].location_id) : null;
+
+        checkTimeSlotAvailability(preferredDate, preferredTime, resolvedLocationId, (availErr, isFull) => {
+          if (availErr) {
+            console.error('Error checking slot availability:', availErr);
+            return sendJSON(res, 500, { error: 'Database error' });
+          }
+          if (isFull) {
+            return sendJSON(res, 409, { error: 'That time slot is fully booked at this location. Please select a different time.' });
+          }
 
     pool.getConnection((err, conn) => {
       if (err) {
@@ -686,6 +748,8 @@ function createPatientIntakeHandlers(deps) {
           });
         });
       });
+    });
+    });
     });
   }
 
