@@ -129,6 +129,15 @@ function AssignAppointmentPage() {
     return DEFAULT_TIME_SLOTS.map((s) => ({ time: s.time, booked: 0, remaining: 1, isFull: false }));
   }, [assignmentDraft.assignedDate, availability, preferredDateKey, preferredTimeShort]);
 
+  const preferredDateDoctorWarning = useMemo(() => {
+    if (!assignmentDraft.assignedDoctorId || !preferredDateKey || !availability.length) return null;
+    const dayData = availability.find((d) => d.date === preferredDateKey);
+    if (!dayData?.timeOptions) return null;
+    const allTimeOff = dayData.timeOptions.every((s) => s.timeOff);
+    if (allTimeOff) return `This doctor has approved time off on the patient's preferred date (${formatDate(request?.preferred_date)}). You will need to choose a different date.`;
+    return null;
+  }, [assignmentDraft.assignedDoctorId, availability, preferredDateKey, request?.preferred_date]);
+
   const selectedDayError = useMemo(() => {
     if (!assignmentDraft.assignedDate || !assignmentDraft.assignedDoctorId) return null;
     const dayData = availability.find((d) => d.date === assignmentDraft.assignedDate);
@@ -225,6 +234,9 @@ function AssignAppointmentPage() {
             <option value="">Select dentist</option>
             {doctors.map((doctor) => <option key={doctor.doctor_id} value={doctor.doctor_id}>{doctor.doctor_name}</option>)}
           </select>
+          {preferredDateDoctorWarning && (
+            <p className="reception-message" style={{ color: '#b53030', margin: '0 0 8px' }}>{preferredDateDoctorWarning}</p>
+          )}
           <input type="date" value={assignmentDraft.assignedDate} onChange={(e) => setAssignField('assignedDate', e.target.value)} required />
           {selectedDayError && (
             <p className="reception-message" style={{ color: '#b53030', margin: '0 0 8px' }}>{selectedDayError}</p>
