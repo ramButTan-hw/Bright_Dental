@@ -133,6 +133,8 @@ function ReceptionistProfilePage() {
   const [scheduleStatus, setScheduleStatus] = useState('');
   const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
 
+  useEffect(() => { document.title = 'Receptionist Profile | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.userId) {
       navigate('/staff-login');

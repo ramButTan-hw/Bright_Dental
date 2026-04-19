@@ -124,6 +124,8 @@ function DentistProfilePage() {
   const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
 
+  useEffect(() => { document.title = 'Dentist Dashboard | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.userId) {
       navigate('/staff-login');
@@ -622,7 +624,7 @@ function DentistProfilePage() {
           <h2>My Locations</h2>
           <p className="dentist-profile-subtle">Assign yourself to one or more clinic locations. One must be your primary.</p>
 
-          <div className="dentist-profile-form" style={{ gridTemplateColumns: '1fr', gap: '0.6rem' }}>
+          <div className="dentist-profile-form dentist-profile-form--single-col">
             <label>
               Add Location
               <select onChange={(e) => { addStaffLocation(e.target.value); e.target.value = ''; }} defaultValue="">
@@ -636,10 +638,10 @@ function DentistProfilePage() {
             </label>
 
             {staffLocations.length > 0 && (
-              <div className="dentist-profile-timeoff-history" style={{ marginTop: 0 }}>
-                <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
+              <div className="dentist-profile-timeoff-history dentist-profile-timeoff-history--no-top">
+                <ul className="dentist-location-list">
                   {staffLocations.map((sl) => (
-                    <li key={sl.locationId} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                    <li key={sl.locationId} className="dentist-location-item">
                       <input
                         type="radio"
                         name="primaryLocation"
@@ -647,14 +649,13 @@ function DentistProfilePage() {
                         onChange={() => setPrimaryLocation(sl.locationId)}
                         title="Set as primary"
                       />
-                      <span style={{ flex: 1 }}>
+                      <span className="dentist-location-name">
                         {sl.fullAddress}
-                        {sl.isPrimary && <strong style={{ color: '#0b6d68', marginLeft: '0.4rem' }}>(Primary)</strong>}
+                        {sl.isPrimary && <strong className="dentist-location-primary">(Primary)</strong>}
                       </span>
                       <button
                         type="button"
-                        className="dentist-profile-secondary"
-                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                        className="dentist-profile-secondary dentist-profile-secondary--sm"
                         onClick={() => removeStaffLocation(sl.locationId)}
                       >
                         Remove
@@ -665,7 +666,7 @@ function DentistProfilePage() {
               </div>
             )}
 
-            <div className="dentist-profile-actions" style={{ marginTop: '0.2rem' }}>
+            <div className="dentist-profile-actions dentist-profile-actions--mt-sm">
               <button type="button" className="dentist-profile-primary" onClick={saveStaffLocations} disabled={isSavingLocations}>
                 {isSavingLocations ? 'Saving...' : 'Save Locations'}
               </button>
@@ -784,7 +785,7 @@ function DentistProfilePage() {
               <ul>
                 {approvedSchedule.map((s) => (
                   <li key={s.schedule_id}>
-                    <strong>{s.day_of_week}</strong>: {s.is_off ? <em style={{ color: '#999' }}>OFF</em> : <>{String(s.start_time || '').slice(0, 5)} — {String(s.end_time || '').slice(0, 5)}</>}
+                    <strong>{s.day_of_week}</strong>: {s.is_off ? <em className="dentist-schedule-muted">OFF</em> : <>{String(s.start_time || '').slice(0, 5)} — {String(s.end_time || '').slice(0, 5)}</>}
                   </li>
                 ))}
               </ul>
@@ -797,7 +798,7 @@ function DentistProfilePage() {
               <ul>
                 {scheduleRequests.filter((r) => r.request_status === 'PENDING').map((r) => (
                   <li key={r.request_id}>
-                    <strong>{r.day_of_week}</strong>: {r.is_off ? <em style={{ color: '#999' }}>OFF</em> : <>{String(r.start_time || '').slice(0, 5)} — {String(r.end_time || '').slice(0, 5)}</>} <em>(Pending)</em>
+                    <strong>{r.day_of_week}</strong>: {r.is_off ? <em className="dentist-schedule-muted">OFF</em> : <>{String(r.start_time || '').slice(0, 5)} — {String(r.end_time || '').slice(0, 5)}</>} <em>(Pending)</em>
                   </li>
                 ))}
               </ul>
@@ -806,21 +807,21 @@ function DentistProfilePage() {
 
           <form className="dentist-profile-form" onSubmit={handleScheduleSubmit}>
             {scheduleEntries.map((entry, idx) => (
-              <div key={entry.day} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-                <span style={{ flex: '0 0 100px', fontWeight: 600 }}>{entry.day.charAt(0) + entry.day.slice(1).toLowerCase()}</span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+              <div key={entry.day} className="dentist-schedule-row">
+                <span className="dentist-schedule-day">{entry.day.charAt(0) + entry.day.slice(1).toLowerCase()}</span>
+                <label className="dentist-schedule-off-label">
                   <input type="checkbox" checked={!!entry.isOff} onChange={(e) => updateScheduleEntry(idx, 'isOff', e.target.checked)} />
                   OFF
                 </label>
                 {!entry.isOff && (
                   <>
-                    <label style={{ flex: '1 1 100px' }}>
+                    <label className="dentist-schedule-time-label">
                       Start
                       <select value={entry.startTime} onChange={(e) => updateScheduleEntry(idx, 'startTime', e.target.value)}>
                         {SCHEDULE_TIME_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                       </select>
                     </label>
-                    <label style={{ flex: '1 1 100px' }}>
+                    <label className="dentist-schedule-time-label">
                       End
                       <select value={entry.endTime} onChange={(e) => updateScheduleEntry(idx, 'endTime', e.target.value)}>
                         {SCHEDULE_TIME_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}

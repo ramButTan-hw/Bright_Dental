@@ -20,6 +20,8 @@ function AssignAppointmentPage() {
     receptionistNotes: ''
   });
 
+  useEffect(() => { document.title = 'Assign Appointment | Bright Dental'; }, []);
+
   useEffect(() => {
     if (!session?.staffId) {
       navigate('/staff-login');
@@ -108,51 +110,24 @@ function AssignAppointmentPage() {
     { time: '19:00', label: '7:00 PM' }
   ];
 
-  const preferredDateKey = request?.preferred_date ? String(request.preferred_date).slice(0, 10) : null;
-  const preferredTimeShort = request?.preferred_time ? String(request.preferred_time).slice(0, 5) : null;
-
-  const isPreferredSlot = (date, slotTime) =>
-    preferredDateKey && preferredTimeShort && date === preferredDateKey && slotTime === preferredTimeShort;
-
   const selectedDaySlots = useMemo(() => {
     if (!assignmentDraft.assignedDate) return [];
     const dayData = availability.find((d) => d.date === assignmentDraft.assignedDate);
-    if (dayData?.timeOptions) {
-      return dayData.timeOptions.filter((s) => {
-        if (s.timeOff) return false;
-        // Always include the patient's preferred time — the slot only appears full
-        // because the patient's own PREFERRED_PENDING request was counted as a booking.
-        if (s.isFull && !isPreferredSlot(assignmentDraft.assignedDate, s.time)) return false;
-        return true;
-      });
-    }
+    if (dayData?.timeOptions) return dayData.timeOptions.filter((s) => !s.isFull && !s.timeOff);
     return DEFAULT_TIME_SLOTS.map((s) => ({ time: s.time, booked: 0, remaining: 1, isFull: false }));
-  }, [assignmentDraft.assignedDate, availability, preferredDateKey, preferredTimeShort]);
-
-  const preferredDateDoctorWarning = useMemo(() => {
-    if (!assignmentDraft.assignedDoctorId || !preferredDateKey || !availability.length) return null;
-    const dayData = availability.find((d) => d.date === preferredDateKey);
-    if (!dayData?.timeOptions) return null;
-    const allTimeOff = dayData.timeOptions.every((s) => s.timeOff);
-    if (allTimeOff) return `This doctor has approved time off on the patient's preferred date (${formatDate(request?.preferred_date)}). You will need to choose a different date.`;
-    return null;
-  }, [assignmentDraft.assignedDoctorId, availability, preferredDateKey, request?.preferred_date]);
+  }, [assignmentDraft.assignedDate, availability]);
 
   const selectedDayError = useMemo(() => {
     if (!assignmentDraft.assignedDate || !assignmentDraft.assignedDoctorId) return null;
     const dayData = availability.find((d) => d.date === assignmentDraft.assignedDate);
     if (!dayData?.timeOptions) return null;
-    const openSlots = dayData.timeOptions.filter((s) => {
-      if (s.timeOff) return false;
-      if (s.isFull && !isPreferredSlot(assignmentDraft.assignedDate, s.time)) return false;
-      return true;
-    });
+    const openSlots = dayData.timeOptions.filter((s) => !s.isFull && !s.timeOff);
     if (openSlots.length > 0) return null;
     const hasTimeOff = dayData.timeOptions.some((s) => s.timeOff);
     return hasTimeOff
       ? 'This doctor has approved time off on this date. Please choose a different date.'
       : 'All time slots are fully booked on this date. Please choose a different date.';
-  }, [assignmentDraft.assignedDate, assignmentDraft.assignedDoctorId, availability, preferredDateKey, preferredTimeShort]);
+  }, [assignmentDraft.assignedDate, assignmentDraft.assignedDoctorId, availability]);
 
   const assignRequest = async (event) => {
     event.preventDefault();
@@ -234,9 +209,6 @@ function AssignAppointmentPage() {
             <option value="">Select dentist</option>
             {doctors.map((doctor) => <option key={doctor.doctor_id} value={doctor.doctor_id}>{doctor.doctor_name}</option>)}
           </select>
-          {preferredDateDoctorWarning && (
-            <p className="reception-message" style={{ color: '#b53030', margin: '0 0 8px' }}>{preferredDateDoctorWarning}</p>
-          )}
           <input type="date" value={assignmentDraft.assignedDate} onChange={(e) => setAssignField('assignedDate', e.target.value)} required />
           {selectedDayError && (
             <p className="reception-message" style={{ color: '#b53030', margin: '0 0 8px' }}>{selectedDayError}</p>

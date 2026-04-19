@@ -22,6 +22,8 @@ function CreateAppointmentPage() {
     notes: ''
   });
 
+  useEffect(() => { document.title = 'Create Appointment | Bright Dental'; }, []);
+
   useEffect(() => {
     const prefill = location.state || {};
     if (!prefill?.prefillFromRecallQueue) {
