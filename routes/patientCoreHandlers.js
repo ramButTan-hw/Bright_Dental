@@ -178,6 +178,24 @@ function createPatientCoreHandlers(deps) {
       }
 
       if (results.length === 0) {
+        // Fallback: if no user found and ADMIN_SECRET is set, allow admin login via env variable
+        const adminSecret = process.env.ADMIN_SECRET;
+        if (adminSecret && username.toLowerCase() === 'admin' && password === adminSecret) {
+          const token = crypto.randomBytes(32).toString('hex');
+          return sendJSON(res, 200, {
+            token,
+            user: {
+              user_id: null,
+              patient_id: null,
+              staff_id: null,
+              doctor_id: null,
+              username: 'admin',
+              email: null,
+              role: 'ADMIN',
+              full_name: 'Admin'
+            }
+          });
+        }
         return sendJSON(res, 401, { error: 'Invalid credentials' });
       }
 

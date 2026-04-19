@@ -846,7 +846,34 @@ function DentistPatientProfilePage() {
                         <p><strong>{entry.label}</strong></p>
                         <p>Tooth {entry.tooth} | Surface {entry.surface}</p>
                         <p>{entry.description}</p>
+                        {/* Treatment Priority Badge */}
+                        {entry.type === 'TREATMENT' && detail.completedTreatments && (() => {
+                          const planId = String(entry.uniqueId).replace('treatment-', '');
+                          const treatment = detail.completedTreatments.find((t) => String(t.plan_id) === planId);
+                          if (!treatment || !treatment.priority) return null;
+                          let color = '#bdbdbd';
+                          if (treatment.priority === 'High') color = '#e53935';
+                          else if (treatment.priority === 'Medium') color = '#fbc02d';
+                          else if (treatment.priority === 'Low') color = '#43a047';
+                          return (
+                            <span style={{
+                              display: 'inline-block',
+                              marginTop: '0.3rem',
+                              padding: '0.18em 0.85em',
+                              borderRadius: '1em',
+                              fontWeight: 700,
+                              fontSize: '0.93em',
+                              background: color,
+                              color: '#fff',
+                              letterSpacing: '0.03em',
+                              boxShadow: '0 1px 4px rgba(0,0,0,0.07)'
+                            }}>
+                              Priority: {treatment.priority}
+                            </span>
+                          );
+                        })()}
                       </div>
+                      {/* Edit/Delete Buttons */}
                       {entry.type === 'TREATMENT' && entry.uniqueId.startsWith('treatment-') && (
                         <div style={{ display: 'flex', gap: '0.4rem', flexDirection: 'column' }}>
                           <button

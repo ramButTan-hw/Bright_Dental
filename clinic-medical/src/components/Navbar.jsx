@@ -87,18 +87,20 @@ function Navbar() {
     }
   }, [location.pathname]);
 
+  const isActive = (to) => location.pathname === to;
+
   return (
     <>
     <nav className="navbar">
       <div className="navbar-container">
         <div className="navbar-brand">
-          <Link to="/" className="brand-name">Bright Dental</Link>
+          <Link to="/" className={`brand-name${isActive('/') ? ' active' : ''}`}>Bright Dental</Link>
         </div>
 
         {isLoggedIn ? (
           <div className="nav-menu">
-            <Link to="/patient-portal" className="nav-link">Dashboard</Link>
-            <Link to="/contact-us" className="nav-link">Contact Us</Link>
+            <Link to="/patient-portal" className={`nav-link${isActive('/patient-portal') ? ' active' : ''}`}>Dashboard</Link>
+            <Link to="/contact-us" className={`nav-link${isActive('/contact-us') ? ' active' : ''}`}>Contact Us</Link>
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
@@ -110,7 +112,7 @@ function Navbar() {
           </div>
         ) : isAdminLoggedIn ? (
           <div className="nav-menu">
-            <Link to="/admin" className="nav-link">Admin Dashboard</Link>
+            <Link to="/admin" className={`nav-link${isActive('/admin') ? ' active' : ''}`}>Admin Dashboard</Link>
             <button
               type="button"
               className="nav-link login-btn nav-icon-btn"
@@ -122,7 +124,7 @@ function Navbar() {
           </div>
         ) : isDentistLoggedIn ? (
           <div className="nav-menu">
-            <Link to="/dentist-login" className="nav-link">Dentist Page</Link>
+            <Link to="/dentist-login" className={`nav-link${isActive('/dentist-login') ? ' active' : ''}`}>Dentist Page</Link>
             <button
               type="button"
               className="nav-profile-photo-btn"
@@ -147,7 +149,7 @@ function Navbar() {
           </div>
         ) : isReceptionLoggedIn ? (
           <div className="nav-menu">
-            <Link to="/receptionist" className="nav-link">Receptionist Page</Link>
+            <Link to="/receptionist" className={`nav-link${isActive('/receptionist') ? ' active' : ''}`}>Receptionist Page</Link>
             <button
               type="button"
               className="nav-profile-photo-btn"
@@ -179,7 +181,7 @@ function Navbar() {
               onMouseLeave={() => setAboutDropdown(false)}
             >
               <button
-                className="nav-link dropdown-toggle"
+                className={`nav-link dropdown-toggle${isActive('/department') || isActive('/meet-our-staff') || isActive('/testimonies') ? ' active' : ''}`}
                 aria-haspopup="menu"
                 aria-expanded={aboutDropdown}
               >
@@ -195,7 +197,7 @@ function Navbar() {
               )}
             </div>
 
-            <Link to="/contact-us" className="nav-link">Contact Us</Link>
+            <Link to="/contact-us" className={`nav-link${isActive('/contact-us') ? ' active' : ''}`}>Contact Us</Link>
 
             <div
               className="nav-item dropdown"
@@ -203,7 +205,7 @@ function Navbar() {
               onMouseLeave={() => setLoginDropdown(false)}
             >
               <button
-                className="nav-link dropdown-toggle login-btn"
+                className={`nav-link dropdown-toggle login-btn${isActive('/patient-login') || isActive('/staff-login') ? ' active' : ''}`}
                 aria-haspopup="menu"
                 aria-expanded={loginDropdown}
               >
@@ -217,7 +219,7 @@ function Navbar() {
               )}
             </div>
 
-            <Link to="/patient-registration" className="nav-link cta-button">Book Appointment</Link>
+            <Link to="/patient-registration" className={`nav-link cta-button${isActive('/patient-registration') ? ' active' : ''}`}>Book Appointment</Link>
           </div>
         )}
       </div>
