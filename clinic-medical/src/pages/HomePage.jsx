@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import '../styles/HomePage.css';
 
 function HomePage() {
@@ -24,6 +24,8 @@ function HomePage() {
     }
   ];
 
+  useEffect(() => { document.title = 'Home | Bright Dental'; }, []);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % slides.length);
@@ -46,7 +48,7 @@ function HomePage() {
         <div className="slides-container">
           {slides.map((slide, index) => (
             <div
-              key={index}
+              key={slide.pitch}
               className={`slide ${index === currentSlide ? 'active' : ''}`}
               style={{
                 backgroundImage: `url('${slide.image}')`,
@@ -70,9 +72,9 @@ function HomePage() {
 
         {/* Slide Indicators */}
         <div className="slide-indicators">
-          {slides.map((_, index) => (
+          {slides.map((slide, index) => (
             <div
-              key={index}
+              key={slide.pitch}
               className={`indicator ${index === currentSlide ? 'active' : ''}`}
               onClick={() => setCurrentSlide(index)}
             ></div>
@@ -86,8 +88,13 @@ function HomePage() {
           <h2>Experience the Bright Dental Standard</h2>
           <p>Ready to redefine your dental journey? Our coordinators are waiting to assist you.</p>
           <div className="cta-buttons">
-            <button className="btn-primary" onClick={() => navigate('/patient-registration')}>Book Online</button>
-            <button className="btn-secondary" onClick={() => navigate('/meet-our-staff')}>Call (832) 461-3355</button>
+            <a href="/patient-registration" className="btn-primary btn-link">Book Online</a>
+            <a href="tel:8324613355" className="btn-secondary btn-link">Call (832) 461-3355</a>
+          </div>
+
+          {/* Minimal teal FAQ panel */}
+          <div className="mini-faq-panel">
+            <Link to="/faq" className="mini-faq-link">FAQ</Link>
           </div>
         </div>
       </section>
