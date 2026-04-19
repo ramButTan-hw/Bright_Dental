@@ -1088,7 +1088,7 @@ const pagedOutstandingPatients = useMemo(
                 {overviewCards.map((card) => (
                   <article className="metric-card" key={card.label}>
                     <h2>{card.label}</h2>
-                    <p className={Number(card.value) > 0 ? undefined : 'admin-metric-zero'}>{card.value}</p>
+                    <p style={{ color: Number(card.value) > 0 ? 'inherit' : '#6d7e7d' }}>{card.value}</p>
                     <small>{card.hint}</small>
                   </article>
                 ))}
@@ -1156,7 +1156,7 @@ const pagedOutstandingPatients = useMemo(
                       </tbody>
                     </table>
                   </div>
-                  <div className="admin-panel-footer">
+                  <div style={{ marginTop: '0.65rem' }}>
                     <button type="button" className="admin-ghost-button" onClick={() => setActiveSection('scheduling')}>Open Full Schedule</button>
                   </div>
                 </article>
@@ -1231,7 +1231,7 @@ const pagedOutstandingPatients = useMemo(
                 </div>
               </article>
 
-              <article className="admin-panel admin-panel--full">
+              <article className="admin-panel" style={{ gridColumn: '1 / -1' }}>
                 <h2>Cancelled Appointment Requests</h2>
                 <div className="table-wrap">
                   <table>
@@ -1242,7 +1242,7 @@ const pagedOutstandingPatients = useMemo(
                         <th>Preferred Time</th>
                         <th>Location</th>
                         <th>Appointment Reason</th>
-                        <th className="admin-th-narrow"></th>
+                        <th style={{ width: '80px' }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1256,7 +1256,7 @@ const pagedOutstandingPatients = useMemo(
                           <td>
                             <button
                               type="button"
-                              className="admin-btn-restore"
+                              style={{ background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.3rem 0.6rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
                               onClick={async () => {
                                 try {
                                   await safeJson(await fetch(`${API_BASE_URL}/api/admin/appointment-requests/${req.preference_request_id}/restore`, { method: 'PUT' }));
@@ -1319,8 +1319,8 @@ const pagedOutstandingPatients = useMemo(
               <section className="admin-panel">
                 <div className="admin-panel-header-row">
                   <div>
-                    <p className="admin-label admin-label--sm-gap">Clinic Performance</p>
-                    <h2 className="admin-h2-flush">How the practice is doing</h2>
+                    <p className="admin-label" style={{ marginBottom: '0.25rem' }}>Clinic Performance</p>
+                    <h2 style={{ margin: 0 }}>How the practice is doing</h2>
                     <p className="muted">Production, collections, provider output, patient growth, and outstanding balances for the selected range.</p>
                   </div>
                   <div className="report-date-range">
@@ -1434,13 +1434,13 @@ const pagedOutstandingPatients = useMemo(
                 </div>
 
                 {summary && (
-                  <div className="admin-summary-row">
-                    <article className="metric-card metric-card--flex">
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', margin: '1rem 0 0' }}>
+                    <article className="metric-card" style={{ flex: '1', minWidth: '160px' }}>
                       <h2>Patient Collections</h2>
                       <p>{formatMoney(summary.metrics?.patientCollected)}</p>
                       <small>All-time from patients</small>
                     </article>
-                    <article className="metric-card metric-card--flex">
+                    <article className="metric-card" style={{ flex: '1', minWidth: '160px' }}>
                       <h2>Insurance Collections</h2>
                       <p>{formatMoney(summary.metrics?.insuranceCollected)}</p>
                       <small>All-time from other sources</small>
@@ -1473,7 +1473,7 @@ const pagedOutstandingPatients = useMemo(
                   </article>
                   <article className="metric-card">
                     <h2>Outstanding A/R</h2>
-                    <p className={clinicPerformanceReport.summary.totalOutstanding > 0 ? 'admin-td-overdue' : undefined}>
+                    <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
                       {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
                     </p>
                   </article>
@@ -1528,9 +1528,9 @@ const pagedOutstandingPatients = useMemo(
                 <>
                   {activeReportTab === 'monthly' && (
                     <article className="admin-panel">
-                      <div className="admin-panel-header-row admin-panel-header-row--mb">
-                        <h2 className="admin-h2-flush">Production & Collections by Month</h2>
-                        <div className="admin-btn-row">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                        <h2 style={{ margin: 0 }}>Production & Collections by Month</h2>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
                           <button
                             type="button"
                             className={`admin-btn${monthlyTrendsSort === 'date' ? ' is-active' : ''}`}
@@ -1580,7 +1580,7 @@ const pagedOutstandingPatients = useMemo(
                                 });
                               return (
                                 <>
-                                  <tr key={month.period_key} className="admin-tr-month">
+                                  <tr key={month.period_key} style={{ background: '#e8f2f0', fontWeight: 700 }}>
                                     <td>{month.period_label}</td>
                                     <td>{month.total_appointments}</td>
                                     <td>{month.completed_appointments}</td>
@@ -1594,28 +1594,28 @@ const pagedOutstandingPatients = useMemo(
                                     <td>{formatMoney(month.total_outstanding)}</td>
                                   </tr>
                                   {monthAppts.length > 0 && (
-                                    <tr className="admin-tr-sub-header">
-                                      <td className="admin-td-indent">Date</td>
+                                    <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>Date</td>
                                       <td>Patient</td>
                                       <td colSpan="9" />
                                     </tr>
                                   )}
                                   {monthAppts.map((appt) => (
-                                    <tr key={appt.appointment_id} className="admin-tr-appt">
-                                      <td className="admin-td-indent">
+                                    <tr key={appt.appointment_id} style={{ background: '#f9fdfb', fontSize: '0.87rem', color: '#334240' }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>
                                         {String(appt.appointment_date || '').slice(0, 10)}
                                       </td>
                                       <td>{appt.patient_name}</td>
-                                      <td className="admin-td-completed">
+                                      <td style={{ color: '#1d6b41', fontWeight: 600 }}>
                                         {appt.status_name === 'COMPLETED' ? '✓' : ''}
                                       </td>
-                                      <td className="admin-td-alert">
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
                                         {['CANCELED', 'CANCELLED'].includes(appt.status_name) ? '✓' : ''}
                                       </td>
-                                      <td className="admin-td-alert">
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
                                         {appt.status_name === 'NO_SHOW' ? '✓' : ''}
                                       </td>
-                                      <td className="admin-td-scheduled">
+                                      <td style={{ color: '#4b6966', fontWeight: 600 }}>
                                         {['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(appt.status_name) ? '✓' : ''}
                                       </td>
                                       <td>{formatMoney(appt.production)}</td>
@@ -1636,9 +1636,9 @@ const pagedOutstandingPatients = useMemo(
 
                   {activeReportTab === 'providers' && (
                     <article className="admin-panel">
-                      <div className="admin-panel-header-row admin-panel-header-row--mb">
-                        <h2 className="admin-h2-flush">Provider Productivity</h2>
-                        <div className="admin-btn-row">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                        <h2 style={{ margin: 0 }}>Provider Productivity</h2>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
                           <button
                             type="button"
                             className={`admin-btn${monthlyTrendsSort === 'date' ? ' is-active' : ''}`}
@@ -1692,7 +1692,7 @@ const pagedOutstandingPatients = useMemo(
                                 });
                               return (
                                 <>
-                                  <tr key={row.doctor_id} className="admin-tr-month">
+                                  <tr key={row.doctor_id} style={{ background: '#e8f2f0', fontWeight: 700 }}>
                                     <td>Dr. {row.doctor_name}</td>
                                     <td>{row.total_appointments}</td>
                                     <td>{row.completed_appointments}</td>
@@ -1707,28 +1707,28 @@ const pagedOutstandingPatients = useMemo(
                                     <td>{formatMoney(row.total_outstanding)}</td>
                                   </tr>
                                   {providerAppts.length > 0 && (
-                                    <tr className="admin-tr-sub-header">
-                                      <td className="admin-td-indent">Date</td>
+                                    <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>Date</td>
                                       <td>Patient</td>
                                       <td colSpan="10" />
                                     </tr>
                                   )}
                                   {providerAppts.map((appt) => (
-                                    <tr key={appt.appointment_id} className="admin-tr-appt">
-                                      <td className="admin-td-indent">
+                                    <tr key={appt.appointment_id} style={{ background: '#f9fdfb', fontSize: '0.87rem', color: '#334240' }}>
+                                      <td style={{ paddingLeft: '1.5rem' }}>
                                         {String(appt.appointment_date || '').slice(0, 10)}
                                       </td>
                                       <td>{appt.patient_name}</td>
-                                      <td className="admin-td-completed">
+                                      <td style={{ color: '#1d6b41', fontWeight: 600 }}>
                                         {appt.status_name === 'COMPLETED' ? '✓' : ''}
                                       </td>
-                                      <td className="admin-td-alert">
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
                                         {['CANCELED', 'CANCELLED'].includes(appt.status_name) ? '✓' : ''}
                                       </td>
-                                      <td className="admin-td-alert">
+                                      <td style={{ color: '#9d2e2e', fontWeight: 600 }}>
                                         {appt.status_name === 'NO_SHOW' ? '✓' : ''}
                                       </td>
-                                      <td className="admin-td-scheduled">
+                                      <td style={{ color: '#4b6966', fontWeight: 600 }}>
                                         {['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(appt.status_name) ? '✓' : ''}
                                       </td>
                                       <td>{formatMoney(appt.production)}</td>
@@ -1771,13 +1771,13 @@ const pagedOutstandingPatients = useMemo(
                               );
                               return (
                                 <>
-                                  <tr key={month.period_key} className="admin-tr-month">
+                                  <tr key={month.period_key} style={{ background: '#e8f2f0', fontWeight: 700 }}>
                                     <td>{month.period_label}</td>
                                     <td>{month.new_patients}</td>
                                     <td colSpan="5" />
                                   </tr>
                                   {monthPatients.length > 0 && (
-                                    <tr className="admin-tr-sub-header">
+                                    <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
                                       <td colSpan="2" />
                                       <td>Patient</td>
                                       <td>Registered</td>
@@ -1787,7 +1787,7 @@ const pagedOutstandingPatients = useMemo(
                                     </tr>
                                   )}
                                   {monthPatients.map((p) => (
-                                    <tr key={p.patient_id} className="admin-tr-appt">
+                                    <tr key={p.patient_id} style={{ background: '#f9fdfb', fontSize: '0.87rem', color: '#334240' }}>
                                       <td colSpan="2" />
                                       <td>{p.patient_name}</td>
                                       <td>{String(p.registered_date || '').slice(0, 10)}</td>
@@ -1832,7 +1832,7 @@ const pagedOutstandingPatients = useMemo(
                                 <td>{formatMoney(row.insurance_covered)}</td>
                                 <td>{formatMoney(row.patient_responsibility)}</td>
                                 <td>{formatMoney(row.patient_paid)}</td>
-                                <td className="admin-td-overdue-bold">{formatMoney(row.patient_due)}</td>
+                                <td style={{ color: '#9d2e2e', fontWeight: 700 }}>{formatMoney(row.patient_due)}</td>
                               </tr>
                             )) : <tr><td colSpan="8">No outstanding balances to show.</td></tr>}
                           </tbody>
@@ -1844,8 +1844,8 @@ const pagedOutstandingPatients = useMemo(
 
                   {activeReportTab === 'financial' && (
                     <article className="admin-panel">
-                      <h2 className="admin-h2-mb">Financial Detail Ledger</h2>
-                      <div className="admin-filter-row">
+                      <h2 style={{ margin: '0 0 0.75rem' }}>Financial Detail Ledger</h2>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginBottom: '0.75rem', alignItems: 'flex-end' }}>
                         <label className="admin-inline-filter">
                           Patient
                           <input type="text" placeholder="Search name…" value={financialDetailPatient} onChange={(e) => setFinancialDetailPatient(e.target.value)} />
@@ -1857,9 +1857,9 @@ const pagedOutstandingPatients = useMemo(
                       {financialDetailError && <p className="admin-error">{financialDetailError}</p>}
                       {financialDetailLoading && <p className="admin-loading">Loading financial detail…</p>}
                       {!financialDetailLoading && financialDetail.totals && (
-                        <div className="admin-summary-box">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem', background: '#f0f7f6', border: '1px solid #d7e7e5', borderRadius: '10px', padding: '0.6rem 1rem' }}>
                           <span><strong>Patient Responsibility:</strong> {formatMoney(financialDetail.totals.patient_responsibility)}</span>
-                          <span className="admin-separator">|</span>
+                          <span style={{ color: '#555' }}>|</span>
                           <span><strong>Refunded:</strong> {formatMoney(financialDetail.totals.total_refunded)}</span>
                         </div>
                       )}
@@ -1890,16 +1890,16 @@ const pagedOutstandingPatients = useMemo(
                                     <td>{row.patient_name}</td>
                                     <td>{formatDate(row.appointment_date)}</td>
                                     <td>{row.doctor_name}</td>
-                                    <td className="admin-td-sm">{row.visit_status}</td>
+                                    <td style={{ fontSize: '0.78rem' }}>{row.visit_status}</td>
                                     <td>{row.invoice_id ? `#${row.invoice_id}` : '—'}</td>
                                     <td>{formatMoney(row.gross_charge)}</td>
                                     <td>{formatMoney(row.insurance_covered)}</td>
                                     <td>{formatMoney(row.patient_responsibility)}</td>
                                     <td>{formatMoney(row.patient_paid)}</td>
                                     <td>{row.total_refunded > 0 ? formatMoney(row.total_refunded) : '—'}</td>
-                                    <td className={row.balance_due > 0 ? 'admin-td-overdue-bold' : 'admin-td-paid-bold'}>{formatMoney(row.balance_due)}</td>
-                                    <td className="admin-td-sm">{row.payment_status}</td>
-                                    <td className={`admin-td-sm ${row.fee_note ? 'admin-td-fee-note' : 'admin-td-none'}`}>{row.fee_note || '—'}</td>
+                                    <td style={{ color: row.balance_due > 0 ? '#9d2e2e' : '#2a7a4f', fontWeight: 700 }}>{formatMoney(row.balance_due)}</td>
+                                    <td style={{ fontSize: '0.78rem' }}>{row.payment_status}</td>
+                                    <td style={{ fontSize: '0.78rem', color: row.fee_note ? '#7a5100' : '#aaa' }}>{row.fee_note || '—'}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -1923,7 +1923,7 @@ const pagedOutstandingPatients = useMemo(
               {overpaidInvoices.length > 0 && (
                 <section className="admin-panel">
                   <div className="admin-panel-header">
-                    <h2>Overpaid Invoices <span className="admin-badge-count">{overpaidInvoices.length}</span></h2>
+                    <h2>Overpaid Invoices <span style={{ fontSize: '0.8rem', fontWeight: 600, background: '#fde8a0', color: '#7a5100', borderRadius: '999px', padding: '0.15em 0.6em', marginLeft: '0.4rem' }}>{overpaidInvoices.length}</span></h2>
                     <p className="muted">Patients who have paid more than their current invoice total. Click "Refund" to pre-fill the form below.</p>
                   </div>
                   <div className="table-wrap">
@@ -1950,12 +1950,13 @@ const pagedOutstandingPatients = useMemo(
                             <td>{inv.doctor_name || '—'}</td>
                             <td>{formatMoney(inv.patient_amount)}</td>
                             <td>{formatMoney(inv.net_paid)}</td>
-                            <td className="admin-td-overdue-bold">{formatMoney(inv.overpayment)}</td>
-                            <td className="admin-td-reason">{inv.reason}</td>
+                            <td style={{ color: '#9d2e2e', fontWeight: 700 }}>{formatMoney(inv.overpayment)}</td>
+                            <td style={{ color: '#555', fontSize: '0.82rem' }}>{inv.reason}</td>
                             <td>
                               <button
                                 type="button"
-                                className="admin-btn admin-btn--sm"
+                                className="admin-btn"
+                                style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
                                 onClick={() => {
                                   setRefundForm({ invoiceId: String(inv.invoice_id), amount: String(inv.overpayment), reason: inv.reason });
                                   lookupInvoice(inv.invoice_id);
@@ -1997,7 +1998,7 @@ const pagedOutstandingPatients = useMemo(
                     }
                   }}
                 >
-                  <div className="admin-invoice-grid">
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem', alignItems: 'end' }}>
                     <input
                       type="number"
                       placeholder="Invoice ID"
@@ -2010,9 +2011,9 @@ const pagedOutstandingPatients = useMemo(
                 </form>
 
                 {refundForm.invoiceData && (
-                  <div className="refund-invoice-details">
+                  <div className="refund-invoice-details" style={{ marginTop: '1.5rem', padding: '1rem', background: '#f9f9f9', borderRadius: '4px', border: '1px solid #ddd' }}>
                     <h3>Invoice Details</h3>
-                    <div className="admin-detail-grid">
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                       <div>
                         <p className="muted">Patient</p>
                         <p className="bold">{refundForm.invoiceData.patient_name}</p>
@@ -2035,11 +2036,11 @@ const pagedOutstandingPatients = useMemo(
                       </div>
                       <div>
                         <p className="muted">Total Refunded</p>
-                        <p className="bold admin-refund-negative">-{formatMoney(refundForm.invoiceData.total_refunded)}</p>
+                        <p className="bold" style={{ color: '#9d2e2e' }}>-{formatMoney(refundForm.invoiceData.total_refunded)}</p>
                       </div>
                       <div>
                         <p className="muted">Net Paid</p>
-                        <p className={`bold${refundForm.invoiceData.net_paid > refundForm.invoiceData.patient_amount ? ' admin-refund-overpaid' : ''}`}>
+                        <p className="bold" style={{ color: refundForm.invoiceData.net_paid > refundForm.invoiceData.patient_amount ? '#27ae60' : 'inherit' }}>
                           {formatMoney(refundForm.invoiceData.net_paid)}
                         </p>
                       </div>
@@ -2050,10 +2051,11 @@ const pagedOutstandingPatients = useMemo(
                     </div>
 
                     <form
-                      className="admin-form admin-form--bordered"
+                      className="admin-form"
                       onSubmit={processRefund}
+                      style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #ddd' }}
                     >
-                      <div className="admin-two-col-grid">
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                         <input
                           type="number"
                           step="0.01"
@@ -2071,11 +2073,11 @@ const pagedOutstandingPatients = useMemo(
                           onChange={(e) => setRefundForm((prev) => ({ ...prev, reason: e.target.value }))}
                         />
                       </div>
-                      <button type="submit" className="admin-btn--mt">Process Refund</button>
+                      <button type="submit" style={{ marginTop: '1rem' }}>Process Refund</button>
                       <button
                         type="button"
                         onClick={() => setRefundForm({ invoiceId: '', amount: '', reason: '' })}
-                        className="admin-btn--clear"
+                        style={{ marginTop: '1rem', marginLeft: '0.5rem', background: '#95a5a6' }}
                       >
                         Clear
                       </button>
@@ -2109,7 +2111,7 @@ const pagedOutstandingPatients = useMemo(
                             <td>{formatDate(refund.created_at)}</td>
                             <td>{refund.patient_name}</td>
                             <td>{refund.invoice_id}</td>
-                            <td className="admin-td-refund">-{formatMoney(refund.refund_amount)}</td>
+                            <td style={{ color: '#9d2e2e' }}>-{formatMoney(refund.refund_amount)}</td>
                             <td>{formatMoney(refund.invoice_total)}</td>
                             <td>{refund.reason || '—'}</td>
                             <td>{refund.refunded_by}</td>
@@ -2169,32 +2171,32 @@ const pagedOutstandingPatients = useMemo(
                     };
 
                     return (
-                      <div key={staff.staff_id} className="admin-staff-accordion">
+                      <div key={staff.staff_id} style={{ border: '1px solid #ddd', borderRadius: '6px', marginBottom: '0.5rem' }}>
                         <button
                           type="button"
                           onClick={() => setExpandedStaff((prev) => ({ ...prev, [`req_${staff.staff_id}`]: !prev[`req_${staff.staff_id}`] }))}
-                          className={`admin-staff-toggle admin-staff-toggle--pending${isOpen ? ' is-open' : ''}`}
+                          style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.7rem 1rem', background: '#fff8e1', border: 'none', cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600, borderRadius: isOpen ? '6px 6px 0 0' : '6px' }}
                         >
-                          <span>{staff.staff_name} <span className="admin-staff-role-meta">({String(staff.role || '').replace('_', ' ')}) — {staff.entries.length} day(s) — {new Date(staff.submitted_at).toLocaleDateString()}</span></span>
+                          <span>{staff.staff_name} <span style={{ fontWeight: 400, color: '#666', fontSize: '0.85rem' }}>({String(staff.role || '').replace('_', ' ')}) — {staff.entries.length} day(s) — {new Date(staff.submitted_at).toLocaleDateString()}</span></span>
                           <span>{isOpen ? '▲' : '▼'}</span>
                         </button>
                         {isOpen && (
-                          <div className="admin-staff-body">
-                            <table className="admin-staff-table">
-                              <thead><tr><th>Day</th><th>Start</th><th>End</th></tr></thead>
+                          <div style={{ padding: '0.7rem 1rem' }}>
+                            <table style={{ width: '100%', fontSize: '0.9rem' }}>
+                              <thead><tr><th style={{ textAlign: 'left' }}>Day</th><th style={{ textAlign: 'left' }}>Start</th><th style={{ textAlign: 'left' }}>End</th></tr></thead>
                               <tbody>
                                 {staff.entries.map((r) => (
                                   <tr key={r.request_id}>
                                     <td>{r.day_of_week.charAt(0) + r.day_of_week.slice(1).toLowerCase()}</td>
-                                    <td>{r.is_off ? <em className="admin-td-off">OFF</em> : String(r.start_time || '').slice(0, 5)}</td>
+                                    <td>{r.is_off ? <em style={{ color: '#999' }}>OFF</em> : String(r.start_time || '').slice(0, 5)}</td>
                                     <td>{r.is_off ? '' : String(r.end_time || '').slice(0, 5)}</td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
-                            <div className="admin-staff-actions">
-                              <button type="button" onClick={approveAll} className="admin-btn-approve-all">Approve All</button>
-                              <button type="button" onClick={denyAll} className="admin-btn-deny-all">Deny All</button>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                              <button type="button" onClick={approveAll} style={{ background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Approve All</button>
+                              <button type="button" onClick={denyAll} style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Deny All</button>
                             </div>
                           </div>
                         )}
@@ -2256,37 +2258,37 @@ const pagedOutstandingPatients = useMemo(
                     };
 
                     return (
-                      <div key={staff.staff_id} className="admin-staff-accordion">
+                      <div key={staff.staff_id} style={{ border: '1px solid #ddd', borderRadius: '6px', marginBottom: '0.5rem' }}>
                         <button
                           type="button"
                           onClick={() => setExpandedStaff((prev) => ({ ...prev, [staff.staff_id]: !prev[staff.staff_id] }))}
-                          className={`admin-staff-toggle admin-staff-toggle--view${isOpen ? ' is-open' : ''}`}
+                          style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.7rem 1rem', background: '#f8f9fa', border: 'none', cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600, borderRadius: isOpen ? '6px 6px 0 0' : '6px' }}
                         >
-                          <span>{staff.staff_name} <span className="admin-staff-role-meta">({String(staff.role || '').replace('_', ' ')})</span></span>
+                          <span>{staff.staff_name} <span style={{ fontWeight: 400, color: '#666', fontSize: '0.85rem' }}>({String(staff.role || '').replace('_', ' ')})</span></span>
                           <span>{isOpen ? '▲' : '▼'}</span>
                         </button>
                         {isOpen && (
-                          <div className="admin-staff-body">
+                          <div style={{ padding: '0.7rem 1rem' }}>
                             {!editing ? (
                               <>
-                                <table className="admin-staff-table">
-                                  <thead><tr><th>Day</th><th>Start</th><th>End</th></tr></thead>
+                                <table style={{ width: '100%', fontSize: '0.9rem' }}>
+                                  <thead><tr><th style={{ textAlign: 'left' }}>Day</th><th style={{ textAlign: 'left' }}>Start</th><th style={{ textAlign: 'left' }}>End</th></tr></thead>
                                   <tbody>
                                     {staff.days.map((d, i) => (
                                       <tr key={i}>
                                         <td>{d.day_of_week.charAt(0) + d.day_of_week.slice(1).toLowerCase()}</td>
-                                        <td>{d.is_off ? <em className="admin-td-off">OFF</em> : String(d.start_time || '').slice(0, 5)}</td>
+                                        <td>{d.is_off ? <em style={{ color: '#999' }}>OFF</em> : String(d.start_time || '').slice(0, 5)}</td>
                                         <td>{d.is_off ? '' : String(d.end_time || '').slice(0, 5)}</td>
                                       </tr>
                                     ))}
                                   </tbody>
                                 </table>
-                                <button type="button" onClick={startEditing} className="admin-btn-edit">Edit Schedule</button>
+                                <button type="button" onClick={startEditing} style={{ marginTop: '0.5rem', background: '#2980b9', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Edit Schedule</button>
                               </>
                             ) : (
                               <>
-                                <table className="admin-staff-table">
-                                  <thead><tr><th>Day</th><th>OFF</th><th>Start</th><th>End</th></tr></thead>
+                                <table style={{ width: '100%', fontSize: '0.9rem' }}>
+                                  <thead><tr><th style={{ textAlign: 'left' }}>Day</th><th style={{ textAlign: 'left' }}>OFF</th><th style={{ textAlign: 'left' }}>Start</th><th style={{ textAlign: 'left' }}>End</th></tr></thead>
                                   <tbody>
                                     {editing.map((entry, dayIdx) => (
                                       <tr key={entry.day}>
@@ -2295,15 +2297,15 @@ const pagedOutstandingPatients = useMemo(
                                           <input type="checkbox" checked={!!entry.isOff} onChange={(e) => updateEntry(dayIdx, 'isOff', e.target.checked)} />
                                         </td>
                                         <td>
-                                          {entry.isOff ? <span className="admin-td-off">—</span> : (
-                                            <select value={entry.startTime} onChange={(e) => updateEntry(dayIdx, 'startTime', e.target.value)} className="admin-select-sm">
+                                          {entry.isOff ? <span style={{ color: '#999' }}>—</span> : (
+                                            <select value={entry.startTime} onChange={(e) => updateEntry(dayIdx, 'startTime', e.target.value)} style={{ fontSize: '0.85rem' }}>
                                               {ADMIN_TIME_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                                             </select>
                                           )}
                                         </td>
                                         <td>
-                                          {entry.isOff ? <span className="admin-td-off">—</span> : (
-                                            <select value={entry.endTime} onChange={(e) => updateEntry(dayIdx, 'endTime', e.target.value)} className="admin-select-sm">
+                                          {entry.isOff ? <span style={{ color: '#999' }}>—</span> : (
+                                            <select value={entry.endTime} onChange={(e) => updateEntry(dayIdx, 'endTime', e.target.value)} style={{ fontSize: '0.85rem' }}>
                                               {ADMIN_TIME_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                                             </select>
                                           )}
@@ -2312,9 +2314,9 @@ const pagedOutstandingPatients = useMemo(
                                     ))}
                                   </tbody>
                                 </table>
-                                <div className="admin-staff-actions">
-                                  <button type="button" onClick={saveSchedule} className="admin-btn-save">Save</button>
-                                  <button type="button" onClick={() => setEditingSchedules((prev) => { const copy = { ...prev }; delete copy[staff.staff_id]; return copy; })} className="admin-btn-cancel-edit">Cancel</button>
+                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                  <button type="button" onClick={saveSchedule} style={{ background: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Save</button>
+                                  <button type="button" onClick={() => setEditingSchedules((prev) => { const copy = { ...prev }; delete copy[staff.staff_id]; return copy; })} style={{ background: '#95a5a6', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Cancel</button>
                                 </div>
                               </>
                             )}
@@ -2343,7 +2345,7 @@ const pagedOutstandingPatients = useMemo(
                       </thead>
                       <tbody>
                         {scheduleGaps.map((g, idx) => (
-                          <tr key={idx} className={g.type === 'NO_COVERAGE' ? 'admin-tr-gap-critical' : g.type === 'NO_DOCTOR' ? 'admin-tr-gap-warning' : 'admin-tr-gap-info'}>
+                          <tr key={idx} style={{ background: g.type === 'NO_COVERAGE' ? '#f8d7da' : g.type === 'NO_DOCTOR' ? '#fff3cd' : '#e8f0fe' }}>
                             <td>{g.day_of_week.charAt(0) + g.day_of_week.slice(1).toLowerCase()}</td>
                             <td>{String(g.gap_start || '').slice(0, 5)}</td>
                             <td>{String(g.gap_end || '').slice(0, 5)}</td>
@@ -2500,11 +2502,12 @@ const pagedOutstandingPatients = useMemo(
                       </form>
                       <ul className="compact-list">
                         {locations.map((location) => (
-                          <li key={location.location_id} className="admin-location-item">
+                          <li key={location.location_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                             <span>{location.full_address}</span>
                             <button
                               type="button"
-                              className="admin-btn admin-btn-remove"
+                              className="admin-btn"
+                              style={{ padding: '0.3rem 0.6rem', backgroundColor: '#8f2d2d' }}
                               onClick={() => handleLocationDelete(location)}
                             >
                               Remove
@@ -2658,19 +2661,27 @@ const pagedOutstandingPatients = useMemo(
                           </thead>
                           <tbody>
                             {allStaff.length ? allStaff.map((member) => (
-                              <tr key={member.staff_id} className={member.is_deleted ? 'admin-tr-deleted' : undefined}>
+                              <tr key={member.staff_id} style={member.is_deleted ? { opacity: 0.5 } : {}}>
                                 <td>{member.first_name} {member.last_name}</td>
                                 <td>{member.user_username}</td>
                                 <td>{member.user_role}</td>
                                 <td>{member.user_email}</td>
                                 <td>{member.location_address || 'Unassigned'}</td>
                                 <td>
-                                  <span className={`admin-status-badge ${member.is_deleted ? 'admin-status-badge--inactive' : 'admin-status-badge--active'}`}>
+                                  <span style={{
+                                    display: 'inline-block',
+                                    padding: '0.15rem 0.5rem',
+                                    borderRadius: '999px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    background: member.is_deleted ? '#f8d7da' : '#d4edda',
+                                    color: member.is_deleted ? '#721c24' : '#155724'
+                                  }}>
                                     {member.is_deleted ? 'Deactivated' : 'Active'}
                                   </span>
                                 </td>
                                 <td>
-                                  <div className="admin-row-actions admin-row-actions--col">
+                                  <div className="admin-row-actions" style={{ flexDirection: 'column', gap: '0.3rem' }}>
                                     <button
                                       type="button"
                                       className="admin-action-btn approve"
@@ -2679,14 +2690,14 @@ const pagedOutstandingPatients = useMemo(
                                       {member.is_deleted ? 'Restore' : 'Deactivate'}
                                     </button>
                                     {resetPasswordStaffId === member.staff_id ? (
-                                      <div className="admin-reset-col">
-                                        <div className="admin-reset-row">
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                        <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
                                           <input
                                             type="password"
                                             placeholder="New password"
                                             value={resetPasswordValue}
                                             onChange={(e) => { setResetPasswordValue(e.target.value); setResetPasswordMessage(''); }}
-                                            className="admin-reset-input"
+                                            style={{ width: '160px', padding: '0.2rem 0.4rem', fontSize: '0.8rem' }}
                                             minLength={8}
                                             title="At least 8 characters, 1 uppercase, 1 lowercase, and 1 number"
                                           />
@@ -2694,7 +2705,7 @@ const pagedOutstandingPatients = useMemo(
                                           <button type="button" className="admin-action-btn deny" onClick={() => { setResetPasswordStaffId(null); setResetPasswordValue(''); setResetPasswordMessage(''); }}>X</button>
                                         </div>
                                         {resetPasswordMessage && (
-                                          <p className={`admin-reset-msg ${resetPasswordMessage.includes('successfully') ? 'admin-reset-msg--success' : 'admin-reset-msg--error'}`}>
+                                          <p style={{ margin: 0, fontSize: '0.78rem', color: resetPasswordMessage.includes('successfully') ? '#007a4d' : '#b91c1c' }}>
                                             {resetPasswordMessage}
                                           </p>
                                         )}
