@@ -89,6 +89,7 @@ function HomePage() {
             <button className="btn-primary" onClick={() => navigate('/patient-registration')}>Book Online</button>
             <button className="btn-secondary" onClick={() => navigate('/meet-our-staff')}>Call (832) 461-3355</button>
           </div>
+          <button className="btn-faq-link" onClick={() => navigate('/faq')}>Frequently Asked Questions</button>
         </div>
       </section>
     </main>

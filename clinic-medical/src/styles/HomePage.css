@@ -341,6 +341,22 @@
   border-color: white;
 }
 
+.btn-faq-link {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-decoration: underline;
+  margin-top: 1rem;
+  opacity: 0.85;
+  transition: opacity 0.3s ease;
+}
+
+.btn-faq-link:hover {
+  opacity: 1;
+}
+
 /* Responsive Design */
 @media (max-width: 1024px) {
   .bento-grid {
