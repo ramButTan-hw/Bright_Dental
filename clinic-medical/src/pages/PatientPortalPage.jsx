@@ -159,7 +159,7 @@ function PatientPortalPage() {
     return !Number.isNaN(date.getTime()) && date >= new Date(now.getFullYear(), now.getMonth(), now.getDate());
   }).sort((a, b) => toAppointmentTimestamp(a) - toAppointmentTimestamp(b));
 
-  const nextAppointment = upcomingAppointments[upcomingAppointments.length - 1] || null;
+  const nextAppointment = upcomingAppointments[0] || null;
 
   const hasActiveRequest = appointmentRequests.some((request) => {
     const status = String(request?.request_status || '').toUpperCase();
