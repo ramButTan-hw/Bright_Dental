@@ -15,17 +15,27 @@ function createAppointmentPreferenceHandlers(deps) {
     const hasLocationFilter = Boolean(preferredLocation);
     const doctorIdParam = Number(parsedUrl.query.doctorId) || 0;
     const hasDoctorFilter = doctorIdParam > 0;
+    const excludeRequestId = Number(parsedUrl.query.excludeRequestId) || 0;
+    const hasExcludeFilter = excludeRequestId > 0;
 
     const locationFilterSql = hasLocationFilter
       ? ' AND LOWER(TRIM(preferred_location)) = ?'
+      : '';
+    const excludeRequestSql = hasExcludeFilter
+      ? ' AND preference_request_id != ?'
       : '';
 
     const queryParams = [days];
     if (hasLocationFilter) {
       queryParams.push(preferredLocation);
     }
+    if (hasExcludeFilter) {
+      queryParams.push(excludeRequestId);
+    }
 
-    // Fetch both preference requests AND actual booked appointment slots
+    // Fetch both preference requests AND actual booked appointment slots.
+    // excludeRequestId omits the request being assigned so its own preferred
+    // time does not appear artificially full to the receptionist.
     pool.query(
       `SELECT
         preferred_date,
@@ -35,6 +45,7 @@ function createAppointmentPreferenceHandlers(deps) {
       WHERE request_status IN ('PREFERRED_PENDING', 'ASSIGNED')
         AND preferred_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
         ${locationFilterSql}
+        ${excludeRequestSql}
       GROUP BY preferred_date, preferred_time`,
       queryParams,
       (err, prefResults) => {
