@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/Services.css';
+import CDImg from '../assets/CD.jpg';
+import OImg from '../assets/O.jpg';
+import OGImg from '../assets/OG.jpg';
+import PDImg from '../assets/PD.jpg';
+import PeriodonticsImg from '../assets/Periodontics.jpg';
+import ProsthodonticsImg from '../assets/Prosthodontics.jpg';
+import EImg from '../assets/E.jpg';
+import GDImg from '../assets/GD.jpg';
 
 function getMarker(name) {
   return String(name || '')
@@ -50,16 +58,29 @@ export default function Services() {
 
         {!loading && !error && (
           <div className="services-grid">
-            {departments.map((dept) => (
-              <div key={dept.department_id} className="service-card">
-                <div className="service-icon-wrapper">
-                  <div className="service-icon" aria-hidden="true">{getMarker(dept.department_name)}</div>
+            {departments.map((dept) => {
+              let deptImg = null;
+              if (dept.department_name === 'Cosmetic Dentistry') deptImg = CDImg;
+              else if (dept.department_name === 'Orthodontics') deptImg = OImg;
+              else if (dept.department_name === 'Oral Surgery') deptImg = OGImg;
+              else if (dept.department_name === 'Pediatric Dentistry') deptImg = PDImg;
+              else if (dept.department_name === 'Periodontics') deptImg = PeriodonticsImg;
+              else if (dept.department_name === 'Prosthodontics') deptImg = ProsthodonticsImg;
+              else if (dept.department_name === 'Endodontics') deptImg = EImg;
+              else if (dept.department_name === 'General Dentistry') deptImg = GDImg;
+              return (
+                <div key={dept.department_id} className="service-card">
+                  <div className="service-icon-wrapper">
+                    {deptImg && (
+                      <img src={deptImg} alt={dept.department_name} className="service-icon-img" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 12, border: '2px solid #e0bfae', background: '#fff' }} />
+                    )}
+                  </div>
+                  <h3 className="service-title">{dept.department_name}</h3>
+                  <p className="service-description">{dept.description}</p>
+                  <div className="service-flourish"></div>
                 </div>
-                <h3 className="service-title">{dept.department_name}</h3>
-                <p className="service-description">{dept.description}</p>
-                <div className="service-flourish"></div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
