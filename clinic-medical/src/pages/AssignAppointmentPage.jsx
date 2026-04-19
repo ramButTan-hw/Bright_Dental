@@ -161,7 +161,7 @@ function AssignAppointmentPage() {
         <section className="reception-header">
           <h1>Assign Appointment</h1>
         </section>
-        <p className="reception-message reception-message--error">{loadError}</p>
+        <p className="reception-message" style={{ color: '#b53030' }}>{loadError}</p>
         <button className="reception-action-btn reception-action-btn--secondary" onClick={() => navigate('/receptionist')}>&larr; Back to Dashboard</button>
       </main>
     );
@@ -210,7 +210,7 @@ function AssignAppointmentPage() {
           </select>
           <input type="date" value={assignmentDraft.assignedDate} onChange={(e) => setAssignField('assignedDate', e.target.value)} required />
           {selectedDayError && (
-            <p className="reception-message reception-message--error">{selectedDayError}</p>
+            <p className="reception-message" style={{ color: '#b53030', margin: '0 0 8px' }}>{selectedDayError}</p>
           )}
           <select value={assignmentDraft.assignedTime} onChange={(e) => setAssignField('assignedTime', e.target.value)} required disabled={!assignmentDraft.assignedDate || !!selectedDayError}>
             <option value="">{!assignmentDraft.assignedDate ? 'Select a date first' : selectedDayError ? 'No available times' : 'Select a time'}</option>

@@ -316,7 +316,7 @@ function PatientPortalPage() {
           {canCreateNewAppointment ? (
             <Link to="/patient-portal/new-appointment" className="portal-primary-btn">New Appointment</Link>
           ) : (
-            <span className="portal-primary-btn portal-btn--disabled">
+            <span className="portal-primary-btn" style={{ opacity: 0.6, pointerEvents: 'none' }}>
               New Appointment Unavailable
             </span>
           )}
@@ -444,9 +444,9 @@ function PatientPortalPage() {
               <p><strong>Status:</strong> {nextAppointment.appointment_status || 'Pending'}</p>
               <p><strong>Location:</strong> {nextAppointment.location_address || 'To be confirmed'}</p>
               {nextAppointment.status_name !== 'CANCELLED' && (
-                <div className="portal-cancel-actions">
+                <div style={{ marginTop: '0.75rem' }}>
                   {!cancelState.open ? (
-                    <div className="portal-btn-row">
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button
                         type="button"
                         className="portal-link-btn"
@@ -456,28 +456,30 @@ function PatientPortalPage() {
                         </button>
                         <button
                         type="button"
-                        className="portal-link-btn portal-link-btn--danger"
+                        className="portal-link-btn"
+                        style={{ color: '#a53030', borderColor: '#e8b4b4' }}
                         onClick={() => setCancelState({ open: true, reasonId: '', submitting: false })}
                         >
                         Cancel Appointment
                         </button>
                     </div>
                   ) : (
-                    <div className="portal-cancel-form">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <select
-                        className="portal-cancel-select"
                         value={cancelState.reasonId}
                         onChange={(e) => setCancelState((prev) => ({ ...prev, reasonId: e.target.value }))}
+                        style={{ border: '1px solid #c7dcda', borderRadius: '0.5rem', padding: '0.5rem 0.6rem' }}
                       >
                         <option value="">Select a reason</option>
                         {cancelReasons.map((r) => (
                           <option key={r.reason_id} value={r.reason_id}>{r.reason_text}</option>
                         ))}
                       </select>
-                      <div className="portal-btn-row">
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button
                           type="button"
-                          className="portal-link-btn portal-link-btn--danger"
+                          className="portal-link-btn"
+                          style={{ color: '#a53030', borderColor: '#e8b4b4' }}
                           disabled={!cancelState.reasonId || cancelState.submitting}
                           onClick={handleCancelAppointment}
                         >
@@ -504,22 +506,27 @@ function PatientPortalPage() {
         <article className="portal-card" id="primary-dentist-section">
           <h2>Primary Dentist</h2>
           {primaryDentist ? (
-            <div className="portal-dentist-row">
-              <div className="portal-dentist-avatar">
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+              <div style={{
+                width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
+                background: '#e0eeec', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: '2px solid #c7dcda'
+              }}>
                 {primaryDentist.profile_image_base64 ? (
                   <img
                     src={`data:image/jpeg;base64,${primaryDentist.profile_image_base64}`}
                     alt={primaryDentist.doctor_name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : (
-                  <span className="portal-dentist-initials">
+                  <span style={{ fontSize: '1.6rem', color: '#6a8a87' }}>
                     {(primaryDentist.doctor_name || '').split(' ').map((n) => n[0]).join('')}
                   </span>
                 )}
               </div>
               <div>
-                <p className="portal-dentist-name">{primaryDentist.doctor_name}</p>
-                <p className="portal-dentist-specialty">{primaryDentist.specialties}</p>
+                <p style={{ margin: '0 0 0.15rem', fontWeight: 700, fontSize: '1.05rem' }}>{primaryDentist.doctor_name}</p>
+                <p style={{ margin: '0.15rem 0', color: '#4b6966', fontSize: '0.88rem' }}>{primaryDentist.specialties}</p>
                 {primaryDentist.doctor_phone && <p><strong>Phone:</strong> {primaryDentist.doctor_phone}</p>}
                 {primaryDentist.doctor_city && <p><strong>Location:</strong> {primaryDentist.doctor_city}{primaryDentist.doctor_state ? `, ${primaryDentist.doctor_state}` : ''}</p>}
                 <p><strong>Visits:</strong> {primaryDentist.visit_count}</p>
@@ -549,15 +556,15 @@ function PatientPortalPage() {
       </section>
 
       {/* Pharmacy & Prescriptions */}
-      <section className="portal-grid portal-grid--single">
+      <section className="portal-grid" style={{ gridTemplateColumns: '1fr' }}>
         <article className="portal-card">
           <h2>My Pharmacy</h2>
           {patientPharmacy.length > 0 ? patientPharmacy.map((ph) => (
-            <div key={ph.pharm_id} className="portal-pharmacy-item">
+            <div key={ph.pharm_id} style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', padding: '0.5rem 0' }}>
               <div>
-                <p className="portal-pharmacy-name">{ph.pharm_name}{ph.is_primary ? ' (Primary)' : ''}</p>
-                <p className="portal-pharmacy-address">{[ph.ph_address_1, ph.ph_city, ph.ph_state, ph.ph_zipcode].filter(Boolean).join(', ')}</p>
-                {ph.pharm_phone && <p className="portal-pharmacy-phone"><strong>Phone:</strong> {ph.pharm_phone}</p>}
+                <p style={{ fontWeight: 700, margin: '0 0 0.2rem' }}>{ph.pharm_name}{ph.is_primary ? ' (Primary)' : ''}</p>
+                <p style={{ margin: '0.1rem 0', color: '#4b6966' }}>{[ph.ph_address_1, ph.ph_city, ph.ph_state, ph.ph_zipcode].filter(Boolean).join(', ')}</p>
+                {ph.pharm_phone && <p style={{ margin: '0.1rem 0' }}><strong>Phone:</strong> {ph.pharm_phone}</p>}
               </div>
               <button
                 type="button"
@@ -569,7 +576,7 @@ function PatientPortalPage() {
               </button>
             </div>
           )) : (
-            <p className="portal-muted">No pharmacy assigned. Contact the front desk to set one up.</p>
+            <p style={{ color: '#4b6966' }}>No pharmacy assigned. Contact the front desk to set one up.</p>
           )}
           <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button type="button" className="portal-link-btn" onClick={() => setPharmacyChangeForm({ open: true, type: 'ADD', patientPharmacyId: null, pharmId: '', isPrimary: false, patientNote: '' })}>Request Pharmacy Add</button>
@@ -716,39 +723,45 @@ function PatientPortalPage() {
         {prescriptions.length === 0 ? (
           <p>No prescriptions on file.</p>
         ) : (
-          <div className="portal-rx-list">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {prescriptions.map((rx) => {
               const isExpired = rx.end_date && new Date(rx.end_date) < new Date();
               return (
-                <div key={rx.prescription_id} className={`portal-rx-card${isExpired ? ' portal-rx-card--expired' : ''}`}>
-                  <div className="portal-rx-header">
+                <div key={rx.prescription_id} style={{
+                  border: '1px solid #d6e7e4',
+                  borderRadius: '10px',
+                  padding: '0.85rem 1rem',
+                  background: isExpired ? '#f9fafa' : '#fbfefd',
+                  opacity: isExpired ? 0.6 : 1
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <div>
-                      <p className="portal-rx-name">
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: '1.05rem' }}>
                         {rx.medication_name}
-                        {rx.strength ? <span className="portal-rx-strength"> ({rx.strength})</span> : ''}
+                        {rx.strength ? <span style={{ fontWeight: 400, color: '#4b6966' }}> ({rx.strength})</span> : ''}
                       </p>
-                      <p className="portal-rx-dosage">
+                      <p style={{ margin: '0.2rem 0 0', color: '#4b6966', fontSize: '0.9rem' }}>
                         {rx.dosage ? `${rx.dosage} — ` : ''}{rx.frequency || 'As directed'}
                       </p>
                     </div>
-                    <div className="portal-rx-meta">
-                      <p>Prescribed by <strong>{rx.prescribing_doctor || 'N/A'}</strong></p>
-                      <p>Pharmacy: {rx.pharmacy_name || 'N/A'}</p>
+                    <div style={{ textAlign: 'right', fontSize: '0.85rem', color: '#4b6966' }}>
+                      <p style={{ margin: 0 }}>Prescribed by <strong>{rx.prescribing_doctor || 'N/A'}</strong></p>
+                      <p style={{ margin: '0.1rem 0 0' }}>Pharmacy: {rx.pharmacy_name || 'N/A'}</p>
                     </div>
                   </div>
 
                   {rx.instructions && (
-                    <p className="portal-rx-instructions">
+                    <p style={{ margin: '0.6rem 0 0', padding: '0.5rem 0.65rem', background: '#eef5f3', borderRadius: '6px', fontSize: '0.88rem', lineHeight: '1.45', color: '#1c2a28' }}>
                       {rx.instructions}
                     </p>
                   )}
 
-                  <div className="portal-rx-dates">
+                  <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginTop: '0.5rem', fontSize: '0.85rem', color: '#4b6966' }}>
                     <span><strong>Start:</strong> {rx.start_date ? formatDate(rx.start_date) : '—'}</span>
                     <span>
                       <strong>Stop:</strong>{' '}
                       {rx.end_date ? (
-                        <span className={isExpired ? 'portal-rx-expired' : ''}>
+                        <span style={isExpired ? { color: '#9d2e2e', fontWeight: 600 } : {}}>
                           {formatDate(rx.end_date)}{isExpired ? ' (ended)' : ''}
                         </span>
                       ) : 'Ongoing'}
@@ -798,7 +811,15 @@ function PatientPortalPage() {
                       <td>{item.appointment_status || item.status_name || 'N/A'}</td>
                       <td>
                         {inv ? (
-                          <span className={`portal-pay-badge portal-pay-badge--${payStatus === 'Paid' ? 'paid' : payStatus === 'Partial' ? 'partial' : 'due'}`}>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '999px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            background: payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : '#f8d7da',
+                            color: payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : '#721c24'
+                          }}>
                             {payStatus}{amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
                           </span>
                         ) : '—'}
@@ -847,7 +868,8 @@ function PatientPortalPage() {
                         {canCancel ? (
                           <button
                             type="button"
-                            className="portal-secondary-btn portal-secondary-btn--sm"
+                            className="portal-secondary-btn"
+                            style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}
                             onClick={async () => {
                               try {
                                 const res = await fetch(`${API_BASE_URL}/api/patients/${session.patientId}/appointment-requests/${request.preference_request_id}/cancel`, {

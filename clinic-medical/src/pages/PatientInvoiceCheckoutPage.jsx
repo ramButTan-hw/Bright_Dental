@@ -188,7 +188,7 @@ function PatientInvoiceCheckoutPage() {
         {success && <p className="portal-success">{success}</p>}
 
         {/* Invoice summary row */}
-        <div className="portal-invoice-stats">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
           <div>
             <p className="portal-stat-label">Date</p>
             <p className="portal-stat-value">{formatDate(invoice.appointment_date)}</p>
@@ -215,7 +215,7 @@ function PatientInvoiceCheckoutPage() {
           </div>
           <div>
             <p className="portal-stat-label">Balance Due</p>
-            <p className={`portal-stat-value ${amountDue > 0 ? 'portal-stat-value--owing' : 'portal-stat-value--paid-full'}`}>
+            <p className="portal-stat-value" style={{ color: amountDue > 0 ? '#9d2e2e' : '#155724', fontWeight: 700 }}>
               {formatMoney(amountDue)}
             </p>
           </div>
@@ -255,8 +255,8 @@ function PatientInvoiceCheckoutPage() {
                 ))}
               </tbody>
               <tfoot>
-                <tr>
-                  <td colSpan="4">Totals</td>
+                <tr style={{ fontWeight: 700 }}>
+                  <td colSpan="4" style={{ textAlign: 'right' }}>Totals</td>
                   <td>{formatMoney(treatments.reduce((s, t) => s + Number(t.estimated_cost || 0), 0))}</td>
                   <td></td>
                   <td>{formatMoney(treatments.reduce((s, t) => s + Number(t.insurance_covered || 0), 0))}</td>
@@ -275,9 +275,9 @@ function PatientInvoiceCheckoutPage() {
         {amountDue <= 0 ? (
           <p>This invoice is fully paid. No further payment is required.</p>
         ) : (
-          <form onSubmit={handleSubmitPayment} className="portal-checkout-form">
+          <form onSubmit={handleSubmitPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* Payment amount & card type */}
-            <div className="portal-checkout-grid">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem' }}>
               <label className="portal-field">
                 <span>Payment Amount</span>
                 <input
@@ -304,10 +304,10 @@ function PatientInvoiceCheckoutPage() {
             </div>
 
             {/* Card details */}
-            <fieldset className="portal-checkout-fieldset">
-              <legend>Card Details</legend>
-              <div className="portal-checkout-grid">
-                <label className="portal-field portal-field-full">
+            <fieldset style={{ border: '1px solid #c7dcda', borderRadius: '0.6rem', padding: '1rem 1.25rem', margin: 0 }}>
+              <legend style={{ fontWeight: 700, padding: '0 0.4rem', color: '#1f2d2b' }}>Card Details</legend>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem' }}>
+                <label className="portal-field" style={{ gridColumn: '1 / -1' }}>
                   <span>Card Number</span>
                   <input
                     type="text"
@@ -322,7 +322,7 @@ function PatientInvoiceCheckoutPage() {
                     required
                   />
                 </label>
-                <label className="portal-field portal-field-full">
+                <label className="portal-field" style={{ gridColumn: '1 / -1' }}>
                   <span>Cardholder Name</span>
                   <input
                     type="text"
@@ -369,10 +369,10 @@ function PatientInvoiceCheckoutPage() {
             </fieldset>
 
             {/* Billing address */}
-            <fieldset className="portal-checkout-fieldset">
-              <legend>Billing Address</legend>
-              <div className="portal-checkout-grid">
-                <label className="portal-field portal-field-full">
+            <fieldset style={{ border: '1px solid #c7dcda', borderRadius: '0.6rem', padding: '1rem 1.25rem', margin: 0 }}>
+              <legend style={{ fontWeight: 700, padding: '0 0.4rem', color: '#1f2d2b' }}>Billing Address</legend>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem' }}>
+                <label className="portal-field" style={{ gridColumn: '1 / -1' }}>
                   <span>Street Address</span>
                   <input
                     type="text"
@@ -418,7 +418,7 @@ function PatientInvoiceCheckoutPage() {
               </div>
             </fieldset>
 
-            <button type="submit" className="portal-primary-btn portal-checkout-submit" disabled={saving || !methodId}>
+            <button type="submit" className="portal-primary-btn" disabled={saving || !methodId} style={{ alignSelf: 'flex-start' }}>
               {saving ? 'Processing...' : `Pay ${paymentAmount ? formatMoney(Number(paymentAmount)) : formatMoney(amountDue)}`}
             </button>
           </form>
