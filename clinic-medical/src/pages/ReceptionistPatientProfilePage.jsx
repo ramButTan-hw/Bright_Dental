@@ -1007,7 +1007,10 @@ function ReceptionistPatientProfilePage() {
                       {(() => {
                         const avail = (slotAvailability[req.preference_request_id] || []).find((d) => d.date === form.assignedDate);
                         const allSlots = avail?.timeOptions || [];
-                        const openSlots = allSlots.filter((s) => !s.isFull && !s.timeOff);
+                        const prefDateKey = req.preferred_date ? String(req.preferred_date).slice(0, 10) : null;
+                        const prefTimeShort = req.preferred_time ? String(req.preferred_time).slice(0, 5) : null;
+                        const isPreferredSlot = (s) => prefDateKey && prefTimeShort && form.assignedDate === prefDateKey && s.time === prefTimeShort;
+                        const openSlots = allSlots.filter((s) => !s.timeOff && (!s.isFull || isPreferredSlot(s)));
                         const hasTimeOff = allSlots.some((s) => s.timeOff);
                         const allFull = allSlots.length > 0 && openSlots.length === 0;
 
