@@ -108,24 +108,42 @@ function AssignAppointmentPage() {
     { time: '19:00', label: '7:00 PM' }
   ];
 
+  const preferredDateKey = request?.preferred_date ? String(request.preferred_date).slice(0, 10) : null;
+  const preferredTimeShort = request?.preferred_time ? String(request.preferred_time).slice(0, 5) : null;
+
+  const isPreferredSlot = (date, slotTime) =>
+    preferredDateKey && preferredTimeShort && date === preferredDateKey && slotTime === preferredTimeShort;
+
   const selectedDaySlots = useMemo(() => {
     if (!assignmentDraft.assignedDate) return [];
     const dayData = availability.find((d) => d.date === assignmentDraft.assignedDate);
-    if (dayData?.timeOptions) return dayData.timeOptions.filter((s) => !s.isFull && !s.timeOff);
+    if (dayData?.timeOptions) {
+      return dayData.timeOptions.filter((s) => {
+        if (s.timeOff) return false;
+        // Always include the patient's preferred time — the slot only appears full
+        // because the patient's own PREFERRED_PENDING request was counted as a booking.
+        if (s.isFull && !isPreferredSlot(assignmentDraft.assignedDate, s.time)) return false;
+        return true;
+      });
+    }
     return DEFAULT_TIME_SLOTS.map((s) => ({ time: s.time, booked: 0, remaining: 1, isFull: false }));
-  }, [assignmentDraft.assignedDate, availability]);
+  }, [assignmentDraft.assignedDate, availability, preferredDateKey, preferredTimeShort]);
 
   const selectedDayError = useMemo(() => {
     if (!assignmentDraft.assignedDate || !assignmentDraft.assignedDoctorId) return null;
     const dayData = availability.find((d) => d.date === assignmentDraft.assignedDate);
     if (!dayData?.timeOptions) return null;
-    const openSlots = dayData.timeOptions.filter((s) => !s.isFull && !s.timeOff);
+    const openSlots = dayData.timeOptions.filter((s) => {
+      if (s.timeOff) return false;
+      if (s.isFull && !isPreferredSlot(assignmentDraft.assignedDate, s.time)) return false;
+      return true;
+    });
     if (openSlots.length > 0) return null;
     const hasTimeOff = dayData.timeOptions.some((s) => s.timeOff);
     return hasTimeOff
       ? 'This doctor has approved time off on this date. Please choose a different date.'
       : 'All time slots are fully booked on this date. Please choose a different date.';
-  }, [assignmentDraft.assignedDate, assignmentDraft.assignedDoctorId, availability]);
+  }, [assignmentDraft.assignedDate, assignmentDraft.assignedDoctorId, availability, preferredDateKey, preferredTimeShort]);
 
   const assignRequest = async (event) => {
     event.preventDefault();
