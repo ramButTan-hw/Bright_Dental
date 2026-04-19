@@ -151,9 +151,6 @@ function App() {
         />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
-      <Routes>
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
       {!isStaffPage && <Footer />}
     </div>
   );
