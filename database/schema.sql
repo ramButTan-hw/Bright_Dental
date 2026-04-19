@@ -1365,7 +1365,7 @@ BEGIN
 END $$
 
 
-DELIMITER $$
+DELIMITER ;
 
 -- Trigger: Enforce valid appointment status transitions (state machine)
 DROP TRIGGER IF EXISTS appointments_enforce_status_transition $$

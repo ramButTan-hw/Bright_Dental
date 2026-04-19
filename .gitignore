@@ -137,6 +137,3 @@ dist
 
 # Seed and backfill scripts
 database/seeds/
-
-# macOS
-.DS_Store
