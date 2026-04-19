@@ -53,6 +53,7 @@ function AssignAppointmentPage() {
         setDoctors(Array.isArray(doctorsData) ? doctorsData : []);
       } catch (error) {
         if (!cancelled) {
+          console.error('Failed to load assign-appointment data:', error);
           setLoadError(error.message || 'Failed to load appointment request');
         }
       }

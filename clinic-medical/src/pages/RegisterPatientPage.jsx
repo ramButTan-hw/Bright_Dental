@@ -216,8 +216,8 @@ function RegisterPatientPage() {
             pain: 0
           }))
         );
-      } catch {
-        // silently fall back to empty list
+      } catch (error) {
+        console.error('Failed to fetch pain symptoms:', error.message);
       }
     };
 
@@ -227,8 +227,8 @@ function RegisterPatientPage() {
         if (!response.ok) throw new Error(`API returned ${response.status}`);
         const data = await response.json();
         setDoctors(Array.isArray(data) ? data : []);
-      } catch {
-        // silently fall back to empty list
+      } catch (error) {
+        console.error('Failed to fetch doctors:', error.message);
       }
     };
 
@@ -238,8 +238,8 @@ function RegisterPatientPage() {
         if (!response.ok) throw new Error(`API returned ${response.status}`);
         const data = await response.json();
         setDepartments(Array.isArray(data) ? data : []);
-      } catch {
-        // silently fall back to empty list
+      } catch (error) {
+        console.error('Failed to fetch departments:', error.message);
       }
     };
 
@@ -249,8 +249,8 @@ function RegisterPatientPage() {
         if (!response.ok) throw new Error(`API returned ${response.status}`);
         const data = await response.json();
         setLocations(Array.isArray(data) ? data : []);
-      } catch {
-        // silently fall back to empty list
+      } catch (error) {
+        console.error('Failed to fetch locations:', error.message);
       }
     };
 
@@ -260,8 +260,8 @@ function RegisterPatientPage() {
         if (!response.ok) throw new Error(`API returned ${response.status}`);
         const data = await response.json();
         setInsuranceCompanies(Array.isArray(data) ? data : []);
-      } catch {
-        // silently fall back to empty list
+      } catch (error) {
+        console.error('Failed to fetch insurance companies:', error.message);
       }
     };
 
@@ -289,7 +289,8 @@ function RegisterPatientPage() {
       if (!response.ok) throw new Error(`API returned ${response.status}`);
       const data = await response.json();
       setAvailability(data.availability || []);
-    } catch {
+    } catch (error) {
+      console.error('Failed to fetch availability:', error.message);
       setAvailability([]);
     }
   };

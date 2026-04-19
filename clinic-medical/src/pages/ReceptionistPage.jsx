@@ -63,14 +63,7 @@ function PatientSearch() {
             </thead>
             <tbody>
               {patientSearchResults.map((patient) => (
-                <tr
-                  key={patient.patient_id}
-                  className="reception-clickable-row"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => goToPatientProfile(patient.patient_id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToPatientProfile(patient.patient_id); } }}
-                >
+                <tr key={patient.patient_id} className="reception-clickable-row" onClick={() => goToPatientProfile(patient.patient_id)}>
                   <td>{patient.patient_id}</td>
                   <td>{patient.p_first_name} {patient.p_last_name}</td>
                   <td>{patient.p_phone || 'N/A'}</td>
@@ -511,18 +504,15 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
             </thead>
             <tbody>
               {requests.map((request) => (
-                <tr
-                  key={request.preference_request_id}
-                  className="reception-clickable-row"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => navigateToPatientProfile(request.patient_id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToPatientProfile(request.patient_id); } }}
-                >
-                  <td>{request.p_first_name} {request.p_last_name}</td>
-                  <td>{formatDate(request.preferred_date)} {formatTime(request.preferred_time)}</td>
-                  <td>{request.preferred_location || 'N/A'}</td>
-                  <td>{request.appointment_reason || 'N/A'}</td>
+                <tr key={request.preference_request_id} className="reception-clickable-row">
+                  <td onClick={() => navigateToPatientProfile(request.patient_id)}>
+                    {request.p_first_name} {request.p_last_name}
+                  </td>
+                  <td onClick={() => navigateToPatientProfile(request.patient_id)}>
+                    {formatDate(request.preferred_date)} {formatTime(request.preferred_time)}
+                  </td>
+                  <td onClick={() => navigateToPatientProfile(request.patient_id)}>{request.preferred_location || 'N/A'}</td>
+                  <td onClick={() => navigateToPatientProfile(request.patient_id)}>{request.appointment_reason || 'N/A'}</td>
                   <td>
                     <button
                       type="button"
@@ -710,14 +700,7 @@ const doctorTimeOffNotification = visibleNotifications.find((notification) => no
                 const canCheckIn = status === 'SCHEDULED' || status === 'CONFIRMED' || status === 'RESCHEDULED';
                 const canMarkNoShow = status !== 'CHECKED_IN' && status !== 'NO_SHOW' && status !== 'CANCELLED' && status !== 'COMPLETED';
                 return (
-                  <tr
-                    key={appointment.appointment_id}
-                    className="reception-clickable-row"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => navigateToPatientProfile(appointment.patient_id)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToPatientProfile(appointment.patient_id); } }}
-                  >
+                  <tr key={appointment.appointment_id} className="reception-clickable-row" onClick={() => navigateToPatientProfile(appointment.patient_id)}>
                     <td>{formatTime(appointment.appointment_time)}</td>
                     <td>{appointment.patient_name}</td>
                     <td>{appointment.doctor_name}</td>
