@@ -79,7 +79,9 @@ function PatientPortalPage() {
   };
 
   const session = useMemo(() => getPatientPortalSession(), []);
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
+
+  useEffect(() => { document.title = 'Patient Portal | Bright Dental'; }, []);
 
   useEffect(() => {
     if (!session?.patientId) {
@@ -555,10 +557,10 @@ function PatientPortalPage() {
 
       {/* Pharmacy & Prescriptions */}
       <section className="portal-grid" style={{ gridTemplateColumns: '1fr' }}>
-        <article className="portal-card" id="pharmacy-section">
+        <article className="portal-card">
           <h2>My Pharmacy</h2>
           {patientPharmacy.length > 0 ? patientPharmacy.map((ph) => (
-            <div key={ph.pharm_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', padding: '0.75rem 0', borderBottom: '1px solid #e4eeee' }}>
+            <div key={ph.pharm_id} style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', padding: '0.5rem 0' }}>
               <div>
                 <p style={{ fontWeight: 700, margin: '0 0 0.2rem' }}>{ph.pharm_name}{ph.is_primary ? ' (Primary)' : ''}</p>
                 <p style={{ margin: '0.1rem 0', color: '#4b6966' }}>{[ph.ph_address_1, ph.ph_city, ph.ph_state, ph.ph_zipcode].filter(Boolean).join(', ')}</p>
@@ -815,10 +817,10 @@ function PatientPortalPage() {
                             borderRadius: '999px',
                             fontSize: '0.78rem',
                             fontWeight: 700,
-                            background: badgeBg,
-                            color: badgeColor
+                            background: payStatus === 'Paid' ? '#d4edda' : payStatus === 'Partial' ? '#fff3cd' : '#f8d7da',
+                            color: payStatus === 'Paid' ? '#155724' : payStatus === 'Partial' ? '#856404' : '#721c24'
                           }}>
-                            {payStatus}{payStatus !== 'Refunded' && amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
+                            {payStatus}{amtDue > 0 ? ` — ${formatMoney(amtDue)}` : ''}
                           </span>
                         ) : '—'}
                       </td>

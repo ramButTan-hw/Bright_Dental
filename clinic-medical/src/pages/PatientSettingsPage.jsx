@@ -6,7 +6,7 @@ import '../styles/PatientPortalPage.css';
 function PatientSettingsPage() {
   const navigate = useNavigate();
   const session = useMemo(() => getPatientPortalSession(), []);
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
 
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -30,6 +30,8 @@ function PatientSettingsPage() {
   };
 
   const formatZip = (value) => String(value || '').replace(/\D/g, '').slice(0, 5);
+
+  useEffect(() => { document.title = 'Settings | Bright Dental'; }, []);
 
   useEffect(() => {
     if (!session?.patientId) {
@@ -167,7 +169,7 @@ function PatientSettingsPage() {
 
       <section className="portal-card">
         <h2>Edit Profile</h2>
-        <form onSubmit={handleSave} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem' }}>
+        <form onSubmit={handleSave} className="settings-form">
           <div className="portal-field">
             <label>First Name</label>
             <input name="firstName" value={form.firstName} onChange={updateField} required />
@@ -184,7 +186,7 @@ function PatientSettingsPage() {
             <label>Phone</label>
             <input name="phone" type="tel" inputMode="numeric" pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}|[0-9]{10}" maxLength={12} value={form.phone} onChange={updateField} />
           </div>
-          <div className="portal-field" style={{ gridColumn: '1 / -1' }}>
+          <div className="portal-field settings-form__full">
             <label>Address</label>
             <input name="address" value={form.address} onChange={updateField} />
           </div>
@@ -208,19 +210,19 @@ function PatientSettingsPage() {
             <label>Emergency Contact Phone</label>
             <input name="emergencyContactPhone" type="tel" inputMode="numeric" pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}|[0-9]{10}" maxLength={12} value={form.emergencyContactPhone} onChange={updateField} />
           </div>
-          <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
-            <button type="submit" className="portal-primary-btn" disabled={saving} style={{ width: 'fit-content' }}>
+          <div className="settings-form__full settings-form__actions">
+            <button type="submit" className="portal-primary-btn settings-form__submit" disabled={saving}>
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </form>
       </section>
 
-      <section className="portal-card" style={{ marginTop: '1.5rem' }}>
+      <section className="portal-card settings-section--mt">
         <h2>Change Password</h2>
         {pwMessage && <p className={pwMessage.includes('successfully') ? 'portal-success' : 'portal-error'}>{pwMessage}</p>}
-        <form onSubmit={handlePasswordChange} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem' }}>
-          <div className="portal-field" style={{ gridColumn: '1 / -1' }}>
+        <form onSubmit={handlePasswordChange} className="settings-form">
+          <div className="portal-field settings-form__full">
             <label>Current Password</label>
             <input type="password" value={pwForm.currentPassword} onChange={(e) => setPwForm((p) => ({ ...p, currentPassword: e.target.value }))} required />
           </div>
@@ -232,8 +234,8 @@ function PatientSettingsPage() {
             <label>Confirm New Password</label>
             <input type="password" value={pwForm.confirmPassword} onChange={(e) => setPwForm((p) => ({ ...p, confirmPassword: e.target.value }))} minLength={8} required />
           </div>
-          <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
-            <button type="submit" className="portal-primary-btn" disabled={pwSaving} style={{ width: 'fit-content' }}>
+          <div className="settings-form__full settings-form__actions">
+            <button type="submit" className="portal-primary-btn settings-form__submit" disabled={pwSaving}>
               {pwSaving ? 'Updating...' : 'Change Password'}
             </button>
           </div>

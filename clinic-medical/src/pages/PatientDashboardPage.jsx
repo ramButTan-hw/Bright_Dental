@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { getReceptionPortalSession, resolveApiBaseUrl } from '../utils/patientPortal';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import '../styles/ReceptionistPage.css';
+import '../styles/PatientPortalPage.css';
 
 function PatientDashboardPage() {
   const { patientId } = useParams();
@@ -39,6 +41,8 @@ function PatientDashboardPage() {
     }
     return payload;
   };
+
+  useEffect(() => { document.title = 'Patient Dashboard | Bright Dental'; }, []);
 
   useEffect(() => {
     const loadPatientData = async () => {
@@ -233,7 +237,7 @@ function PatientDashboardPage() {
                 </div>
 
                 <div className="portal-field portal-field-full">
-                    <button type="submit" className="portal-primary-btn" style={{ width: 'fit-content' }}>
+                    <button type="submit" className="portal-primary-btn settings-form__submit">
                         Save Changes
                     </button>
                 </div>
