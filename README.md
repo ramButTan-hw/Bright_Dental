@@ -12,6 +12,7 @@ DB_PORT=3306
 DB_USER=your_mysql_user
 DB_PASSWORD=your_mysql_password
 DB_NAME=medical-clinic
+ADMIN_SECRET=your_admin_password
 ```
 
 ### 2. Install Dependencies
