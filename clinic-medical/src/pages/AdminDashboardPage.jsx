@@ -1525,6 +1525,105 @@ const pagedOutstandingPatients = useMemo(
                       {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
                     </p>
                   </article>
+                  {activeReportTab === 'monthly' && (
+                    <>
+                      <article className="metric-card">
+                        <h2>Production</h2>
+                        <p>{formatMoney(clinicPerformanceReport.summary.totalProduction)}</p>
+                        <small>Gross charges in range</small>
+                      </article>
+                      <article className="metric-card">
+                        <h2>Collected</h2>
+                        <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
+                        <small>After refunds</small>
+                      </article>
+                      <article className="metric-card">
+                        <h2>Collection Rate</h2>
+                        <p>{formatPercent(clinicPerformanceReport.summary.collectionRate)}</p>
+                        <small>Collected vs patient responsibility</small>
+                      </article>
+                      {financialDetail.totals && (
+                        <article className="metric-card">
+                          <h2>Patient Responsibility</h2>
+                          <p>{formatMoney(financialDetail.totals.patient_responsibility)}</p>
+                          <small>What patients owe in range</small>
+                        </article>
+                      )}
+                    </>
+                  )}
+
+                  {activeReportTab === 'providers' && (
+                    <>
+                      <article className="metric-card">
+                        <h2>Completed Visits</h2>
+                        <p>{clinicPerformanceReport.summary.completedAppointments}</p>
+                        <small>{formatPercent(clinicPerformanceReport.summary.completionRate)} completion rate</small>
+                      </article>
+                      <article className="metric-card">
+                        <h2>No-Shows</h2>
+                        <p>{clinicPerformanceReport.summary.noShowAppointments}</p>
+                        <small>{formatPercent(clinicPerformanceReport.summary.noShowRate)} no-show rate</small>
+                      </article>
+                    </>
+                  )}
+
+                  {activeReportTab === 'growth' && (
+                    <>
+                      <article className="metric-card">
+                        <h2>New Patients</h2>
+                        <p>{clinicPerformanceReport.summary.newPatients}</p>
+                        <small>Registered in range</small>
+                      </article>
+                      <article className="metric-card">
+                        <h2>Active Patients</h2>
+                        <p>{clinicPerformanceReport.summary.activePatients}</p>
+                        <small>Seen in range</small>
+                      </article>
+                    </>
+                  )}
+
+                  {activeReportTab === 'outstanding' && (
+                    <article className="metric-card">
+                      <h2>Outstanding A/R</h2>
+                      <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
+                        {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
+                      </p>
+                    </article>
+                  )}
+
+                  {activeReportTab === 'financial' && (
+                    <>
+                      <article className="metric-card">
+                        <h2>Production</h2>
+                        <p>{formatMoney(clinicPerformanceReport.summary.totalProduction)}</p>
+                        <small>Gross charges in range</small>
+                      </article>
+                      <article className="metric-card">
+                        <h2>Collected</h2>
+                        <p>{formatMoney(clinicPerformanceReport.summary.netCollected)}</p>
+                        <small>After refunds</small>
+                      </article>
+                      <article className="metric-card">
+                        <h2>Collection Rate</h2>
+                        <p>{formatPercent(clinicPerformanceReport.summary.collectionRate)}</p>
+                        <small>Collected vs patient responsibility</small>
+                      </article>
+                      {financialDetail.totals && (
+                        <>
+                          <article className="metric-card">
+                            <h2>Patient Responsibility</h2>
+                            <p>{formatMoney(financialDetail.totals.patient_responsibility)}</p>
+                            <small>What patients owe in range</small>
+                          </article>
+                          <article className="metric-card">
+                            <h2>Refunded</h2>
+                            <p>{formatMoney(financialDetail.totals.total_refunded)}</p>
+                            <small>Total refunds issued in range</small>
+                          </article>
+                        </>
+                      )}
+                    </>
+                  )}
                 </section>
               )}
 
@@ -1672,19 +1771,10 @@ const pagedOutstandingPatients = useMemo(
                               <th>Cancelled</th>
                               <th>No-Show</th>
                               <th>Scheduled</th>
-                              <th>Production</th>
-                              <th>Patient Collected</th>
-                              <th>Insurance Collected</th>
-                              <th>Collected</th>
-                              <th>Collection Rate</th>
-                              <th>Outstanding</th>
                             </tr>
                           </thead>
                           <tbody>
                             {clinicPerformanceReport.providerPerformance.length ? clinicPerformanceReport.providerPerformance.map((row) => {
-                              const collectionRate = Number(row.total_production || 0) > 0
-                                ? (Number(row.total_collected || 0) / Number(row.total_production || 0)) * 100
-                                : 0;
                               const providerAppts = clinicPerformanceReport.appointmentRows
                                 .filter((a) => Number(a.doctor_id) === Number(row.doctor_id))
                                 .sort((a, b) => {
@@ -1706,18 +1796,12 @@ const pagedOutstandingPatients = useMemo(
                                     <td>{row.cancelled_appointments}</td>
                                     <td>{row.no_show_appointments}</td>
                                     <td>{row.scheduled_appointments}</td>
-                                    <td>{formatMoney(row.total_production)}</td>
-                                    <td>{formatMoney(row.patient_collected)}</td>
-                                    <td>{formatMoney(row.insurance_collected)}</td>
-                                    <td>{formatMoney(row.total_collected)}</td>
-                                    <td>{formatPercent(collectionRate)}</td>
-                                    <td>{formatMoney(row.total_outstanding)}</td>
                                   </tr>
                                   {providerAppts.length > 0 && (
                                     <tr style={{ background: '#f0f7f5', fontSize: '0.78rem', color: '#6b8a87', fontWeight: 600 }}>
                                       <td style={{ paddingLeft: '1.5rem' }}>Date</td>
                                       <td>Patient</td>
-                                      <td colSpan="10" />
+                                      <td colSpan="4" />
                                     </tr>
                                   )}
                                   {providerAppts.map((appt) => (
@@ -1738,17 +1822,11 @@ const pagedOutstandingPatients = useMemo(
                                       <td style={{ color: '#4b6966', fontWeight: 600 }}>
                                         {['SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'CHECKED_IN'].includes(appt.status_name) ? '✓' : ''}
                                       </td>
-                                      <td>{formatMoney(appt.production)}</td>
-                                      <td>{formatMoney(appt.patient_collected)}</td>
-                                      <td>{formatMoney(appt.insurance_collected)}</td>
-                                      <td>{formatMoney(appt.total_collected)}</td>
-                                      <td />
-                                      <td>{formatMoney(appt.outstanding)}</td>
                                     </tr>
                                   ))}
                                 </>
                               );
-                            }) : <tr><td colSpan="12">No provider productivity data for this range.</td></tr>}
+                            }) : <tr><td colSpan="6">No provider productivity data for this range.</td></tr>}
                           </tbody>
                         </table>
                       </div>

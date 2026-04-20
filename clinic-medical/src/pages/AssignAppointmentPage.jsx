@@ -70,7 +70,7 @@ function AssignAppointmentPage() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE_URL}/api/appointments/preferred-availability?doctorId=${doctorId}`);
+      const res = await fetch(`${API_BASE_URL}/api/appointments/preferred-availability?doctorId=${doctorId}&excludeRequestId=${requestId}`);
       const data = await res.json().catch(() => ({}));
       setAvailability(Array.isArray(data?.availability) ? data.availability : []);
     } catch {
@@ -108,12 +108,30 @@ function AssignAppointmentPage() {
     { time: '19:00', label: '7:00 PM' }
   ];
 
+  const preferredDateKey = request?.preferred_date ? String(request.preferred_date).slice(0, 10) : null;
+
   const selectedDaySlots = useMemo(() => {
     if (!assignmentDraft.assignedDate) return [];
     const dayData = availability.find((d) => d.date === assignmentDraft.assignedDate);
-    if (dayData?.timeOptions) return dayData.timeOptions.filter((s) => !s.isFull && !s.timeOff);
+    if (dayData?.timeOptions) return dayData.timeOptions.filter((s) => !s.timeOff);
     return DEFAULT_TIME_SLOTS.map((s) => ({ time: s.time, booked: 0, remaining: 1, isFull: false }));
   }, [assignmentDraft.assignedDate, availability]);
+
+  const selectedTimeFullWarning = useMemo(() => {
+    if (!assignmentDraft.assignedTime || !assignmentDraft.assignedDate) return null;
+    const dayData = availability.find((d) => d.date === assignmentDraft.assignedDate);
+    const slot = dayData?.timeOptions?.find((s) => s.time === assignmentDraft.assignedTime);
+    return slot?.isFull ? 'This time slot is already fully booked. Please select a different time.' : null;
+  }, [assignmentDraft.assignedTime, assignmentDraft.assignedDate, availability]);
+
+  const preferredDateDoctorWarning = useMemo(() => {
+    if (!assignmentDraft.assignedDoctorId || !preferredDateKey || !availability.length) return null;
+    const dayData = availability.find((d) => d.date === preferredDateKey);
+    if (!dayData?.timeOptions) return null;
+    const allTimeOff = dayData.timeOptions.every((s) => s.timeOff);
+    if (allTimeOff) return `This doctor has approved time off on the patient's preferred date (${formatDate(request?.preferred_date)}). You will need to choose a different date.`;
+    return null;
+  }, [assignmentDraft.assignedDoctorId, availability, preferredDateKey, request?.preferred_date]);
 
   const selectedDayError = useMemo(() => {
     if (!assignmentDraft.assignedDate || !assignmentDraft.assignedDoctorId) return null;
@@ -207,6 +225,9 @@ function AssignAppointmentPage() {
             <option value="">Select dentist</option>
             {doctors.map((doctor) => <option key={doctor.doctor_id} value={doctor.doctor_id}>{doctor.doctor_name}</option>)}
           </select>
+          {preferredDateDoctorWarning && (
+            <p className="reception-message" style={{ color: '#b53030', margin: '0 0 8px' }}>{preferredDateDoctorWarning}</p>
+          )}
           <input type="date" value={assignmentDraft.assignedDate} onChange={(e) => setAssignField('assignedDate', e.target.value)} required />
           {selectedDayError && (
             <p className="reception-message" style={{ color: '#b53030', margin: '0 0 8px' }}>{selectedDayError}</p>
@@ -215,12 +236,15 @@ function AssignAppointmentPage() {
             <option value="">{!assignmentDraft.assignedDate ? 'Select a date first' : selectedDayError ? 'No available times' : 'Select a time'}</option>
             {selectedDaySlots.map((slot) => (
               <option key={slot.time} value={slot.time}>
-                {formatTime(slot.time)} ({slot.remaining} open)
+                {formatTime(slot.time)} {slot.isFull ? '(Full)' : `(${slot.remaining} open)`}
               </option>
             ))}
           </select>
+          {selectedTimeFullWarning && (
+            <p className="reception-message" style={{ color: '#b53030', margin: '0 0 8px' }}>{selectedTimeFullWarning}</p>
+          )}
           <textarea rows="2" placeholder="Receptionist Notes" value={assignmentDraft.receptionistNotes} onChange={(e) => setAssignField('receptionistNotes', e.target.value)} />
-          <button type="submit">Assign Appointment</button>
+          <button type="submit" disabled={!!selectedTimeFullWarning}>Assign Appointment</button>
         </form>
       </section>
     </main>

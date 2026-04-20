@@ -9,6 +9,7 @@ import PatientInvoiceCheckoutPage from './pages/PatientInvoiceCheckoutPage';
 import PatientNewAppointmentPage from './pages/PatientNewAppointmentPage';
 import PatientSettingsPage from './pages/PatientSettingsPage';
 import OurMotive from "./pages/OurMotive";
+import Services from "./pages/Services";
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import StaffLoginPage from './pages/StaffLoginPage';
 import DentistLoginPage from './pages/DentistLoginPage';
@@ -23,7 +24,10 @@ import RegisterPatientPage from './pages/RegisterPatientPage';
 import AssignAppointmentPage from './pages/AssignAppointmentPage';
 import PatientDashboardPage from './pages/PatientDashboardPage';
 import MeetOurStaffPage from './pages/MeetOurStaffPage';
+import TestimoniesPage from './pages/testimonies';
+import FAQPage from './pages/FAQPage';
 import ContactUsPage from './pages/ContactUsPage';
+import NotFoundPage from './pages/NotFoundPage';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { getAdminPortalSession, getReceptionPortalSession } from './utils/patientPortal';
 import './App.css';
@@ -55,7 +59,10 @@ function App() {
       <Navbar />
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/department" element={<Services />} />
         <Route path="/meet-our-staff" element={<MeetOurStaffPage />} />
+        <Route path="/testimonies" element={<TestimoniesPage />} />
+        <Route path="/faq" element={<FAQPage />} />
         <Route path="/contact-us" element={<ContactUsPage />} />
         <Route path="/patient-registration" element={<PatientRegistrationPage />} />
         <Route path="/patient-login" element={<PatientLoginPage />} />
@@ -142,6 +149,7 @@ function App() {
             </RequireAdmin>
           }
         />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       {!isStaffPage && <Footer />}
     </div>

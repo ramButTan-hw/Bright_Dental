@@ -561,8 +561,11 @@ function createReceptionRoutes({ pool, sendJSON }) {
         } catch (error) {
           conn.rollback(() => {
             conn.release();
-            if (error.message.includes('required') || error.message.includes('format') || error.message.includes('booked')) {
+            if (error.message.includes('required') || error.message.includes('format')) {
               return sendJSON(res, 400, { error: error.message });
+            }
+            if (error.message.includes('booked') || error.message.includes('full') || error.message.includes('already')) {
+              return sendJSON(res, 409, { error: error.message });
             }
             if (error.code === 'ER_DUP_ENTRY') {
               return sendJSON(res, 409, { error: 'The selected time slot already exists for this doctor' });
@@ -764,6 +767,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
     const query = String(parsedUrl.query.query || '').trim();
     const sqlLike = `%${query}%`;
 
+    const numericQuery = Number(query) || 0;
     pool.query(
       `SELECT
         p.patient_id,
@@ -779,12 +783,10 @@ function createReceptionRoutes({ pool, sendJSON }) {
       FROM patients p
       WHERE (? = '' OR
         CONCAT(p.p_first_name, ' ', p.p_last_name) LIKE ? OR
-        p.p_phone LIKE ? OR
-        p.p_email LIKE ? OR
-        p.p_ssn LIKE ?)
+        (? > 0 AND p.patient_id = ?))
       ORDER BY p.p_last_name ASC, p.p_first_name ASC
       LIMIT 100`,
-      [query, sqlLike, sqlLike, sqlLike, sqlLike],
+      [query, sqlLike, numericQuery, numericQuery],
       (err, rows) => {
         if (err) {
           console.error('Error searching reception patients:', err);

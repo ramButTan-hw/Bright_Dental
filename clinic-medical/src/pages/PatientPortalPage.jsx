@@ -50,8 +50,7 @@ function PatientPortalPage() {
   const [invoices, setInvoices] = useState([]);
   const [appointmentRequests, setAppointmentRequests] = useState([]);
   const [primaryDentist, setPrimaryDentist] = useState(null);
-  const [cancelReasons, setCancelReasons] = useState([]);
-  const [cancelState, setCancelState] = useState({ open: false, reasonId: '', submitting: false });
+  const [cancelState, setCancelState] = useState({ open: false, cancelNote: '', submitting: false });
   const [prescriptions, setPrescriptions] = useState([]);
   const [patientPharmacy, setPatientPharmacy] = useState([]);
   const [patientInsurance, setPatientInsurance] = useState([]);
@@ -92,13 +91,12 @@ function PatientPortalPage() {
       setError('');
 
       try {
-        const [patientRes, appointmentsRes, invoicesRes, requestsRes, primaryDentistRes, cancelReasonsRes, rxRes, pharmRes, cancelledBySystemRes, insuranceRes, insuranceRequestsRes] = await Promise.all([
+        const [patientRes, appointmentsRes, invoicesRes, requestsRes, primaryDentistRes, rxRes, pharmRes, cancelledBySystemRes, insuranceRes, insuranceRequestsRes] = await Promise.all([
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/appointments`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/invoices`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/appointment-requests`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/primary-dentist`),
-          fetchWithTimeout(`${API_BASE_URL}/api/cancel-reasons`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/prescriptions`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/pharmacy`),
           fetchWithTimeout(`${API_BASE_URL}/api/patients/${session.patientId}/appointments/cancelled-by-system`),
@@ -110,13 +108,12 @@ function PatientPortalPage() {
           throw new Error('Unable to load patient profile.');
         }
 
-        const [patientPayload, appointmentsPayload, invoicesPayload, requestsPayload, primaryDentistPayload, cancelReasonsPayload, rxPayload, pharmPayload, cancelledBySystemPayload, insurancePayload, insuranceRequestsPayload] = await Promise.all([
+        const [patientPayload, appointmentsPayload, invoicesPayload, requestsPayload, primaryDentistPayload, rxPayload, pharmPayload, cancelledBySystemPayload, insurancePayload, insuranceRequestsPayload] = await Promise.all([
           readJsonSafely(patientRes, null),
           appointmentsRes.ok ? readJsonSafely(appointmentsRes, []) : Promise.resolve([]),
           invoicesRes.ok ? readJsonSafely(invoicesRes, []) : Promise.resolve([]),
           requestsRes.ok ? readJsonSafely(requestsRes, []) : Promise.resolve([]),
           primaryDentistRes.ok ? readJsonSafely(primaryDentistRes, { assigned: false, dentist: null }) : Promise.resolve({ assigned: false, dentist: null }),
-          cancelReasonsRes.ok ? readJsonSafely(cancelReasonsRes, []) : Promise.resolve([]),
           rxRes.ok ? readJsonSafely(rxRes, []) : Promise.resolve([]),
           pharmRes.ok ? readJsonSafely(pharmRes, []) : Promise.resolve([]),
           cancelledBySystemRes.ok ? readJsonSafely(cancelledBySystemRes, []) : Promise.resolve([]),
@@ -133,7 +130,6 @@ function PatientPortalPage() {
         setInvoices(Array.isArray(invoicesPayload) ? invoicesPayload : []);
         setAppointmentRequests(Array.isArray(requestsPayload) ? requestsPayload : []);
         setPrimaryDentist(primaryDentistPayload?.dentist || null);
-        setCancelReasons(Array.isArray(cancelReasonsPayload) ? cancelReasonsPayload : []);
         setPrescriptions(Array.isArray(rxPayload) ? rxPayload : []);
         setPatientPharmacy(Array.isArray(pharmPayload) ? pharmPayload : []);
         setCancelledAppts(Array.isArray(cancelledBySystemPayload) ? cancelledBySystemPayload : []);
@@ -271,17 +267,17 @@ function PatientPortalPage() {
   }).sort((a, b) => toAppointmentTimestamp(b) - toAppointmentTimestamp(a));
 
   const handleCancelAppointment = async () => {
-    if (!cancelState.reasonId || !nextAppointment) return;
+    if (!cancelState.cancelNote.trim() || !nextAppointment) return;
     setCancelState((prev) => ({ ...prev, submitting: true }));
     try {
       const response = await fetch(`${API_BASE_URL}/api/patients/${session.patientId}/appointments/${nextAppointment.appointment_id}/cancel`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reasonId: Number(cancelState.reasonId) })
+        body: JSON.stringify({ cancelNote: cancelState.cancelNote.trim() })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Failed to cancel appointment');
-      setCancelState({ open: false, reasonId: '', submitting: false });
+      setCancelState({ open: false, cancelNote: '', submitting: false });
       setError('');
       const [refreshRes, refreshReqRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/patients/${session.patientId}/appointments`),
@@ -456,29 +452,26 @@ function PatientPortalPage() {
                         type="button"
                         className="portal-link-btn"
                         style={{ color: '#a53030', borderColor: '#e8b4b4' }}
-                        onClick={() => setCancelState({ open: true, reasonId: '', submitting: false })}
+                        onClick={() => setCancelState({ open: true, cancelNote: '', submitting: false })}
                         >
                         Cancel Appointment
                         </button>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <select
-                        value={cancelState.reasonId}
-                        onChange={(e) => setCancelState((prev) => ({ ...prev, reasonId: e.target.value }))}
-                        style={{ border: '1px solid #c7dcda', borderRadius: '0.5rem', padding: '0.5rem 0.6rem' }}
-                      >
-                        <option value="">Select a reason</option>
-                        {cancelReasons.map((r) => (
-                          <option key={r.reason_id} value={r.reason_id}>{r.reason_text}</option>
-                        ))}
-                      </select>
+                      <textarea
+                        value={cancelState.cancelNote}
+                        onChange={(e) => setCancelState((prev) => ({ ...prev, cancelNote: e.target.value }))}
+                        placeholder="Please tell us why you need to cancel..."
+                        rows={3}
+                        style={{ border: '1px solid #c7dcda', borderRadius: '0.5rem', padding: '0.5rem 0.6rem', resize: 'vertical', fontFamily: 'inherit', fontSize: '0.95rem' }}
+                      />
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button
                           type="button"
                           className="portal-link-btn"
                           style={{ color: '#a53030', borderColor: '#e8b4b4' }}
-                          disabled={!cancelState.reasonId || cancelState.submitting}
+                          disabled={!cancelState.cancelNote.trim() || cancelState.submitting}
                           onClick={handleCancelAppointment}
                         >
                           {cancelState.submitting ? 'Cancelling...' : 'Confirm Cancel'}

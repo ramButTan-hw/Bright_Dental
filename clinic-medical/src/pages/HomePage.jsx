@@ -86,9 +86,10 @@ function HomePage() {
           <h2>Experience the Bright Dental Standard</h2>
           <p>Ready to redefine your dental journey? Our coordinators are waiting to assist you.</p>
           <div className="cta-buttons">
-            <button className="btn-primary">Book Online</button>
-            <button className="btn-secondary">Call (832) 461-3355</button>
+            <button className="btn-primary" onClick={() => navigate('/patient-registration')}>Book Online</button>
+            <button className="btn-secondary" onClick={() => navigate('/meet-our-staff')}>Call (832) 461-3355</button>
           </div>
+          <button className="btn-faq-link" onClick={() => navigate('/faq')}>Frequently Asked Questions</button>
         </div>
       </section>
     </main>
