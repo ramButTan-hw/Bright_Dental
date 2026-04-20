@@ -109,33 +109,21 @@
   opacity: 1;
 }
 
-/* Service Icon */
-.service-icon-wrapper {
-  margin-bottom: 25px;
-  display: flex;
-  justify-content: center;
-}
-
-.service-icon {
-  width: 80px;
+/* Department Image (Overrides marker) */
+.service-icon-img {
+  width: 110px;
   height: 80px;
-  background: linear-gradient(135deg, rgba(212, 165, 116, 0.15), rgba(13, 115, 119, 0.08));
-  border-radius: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 2px;
+  object-fit: cover;
+  border-radius: 18px;
   border: 2px solid var(--soft-gold);
-  transition: all 0.4s ease;
-  color: var(--primary-teal);
+  background: #fff;
+  box-shadow: 0 2px 8px var(--shadow-light);
+  display: block;
 }
 
-.service-card:hover .service-icon {
-  transform: scale(1.06) translateY(-2px);
-  background: linear-gradient(135deg, rgba(212, 165, 116, 0.25), rgba(13, 115, 119, 0.15));
-  border-color: var(--primary-teal);
+/* Remove marker background for icon if image is present */
+.service-icon {
+  display: none;
 }
 
 /* Service Title */
