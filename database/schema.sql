@@ -1433,13 +1433,6 @@ CREATE TRIGGER appointments_validate_slot_on_insert
 BEFORE INSERT ON appointments
 FOR EACH ROW
 BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
-
     IF NOT EXISTS (
         SELECT 1
         FROM appointment_slots s
@@ -1456,11 +1449,15 @@ BEGIN
             SET MESSAGE_TEXT = 'Appointment must match the selected slot (doctor, location, date, and time)';
     END IF;
 
-    IF NEW.status_id <> cancelled_status_id AND EXISTS (
+    IF NEW.status_id NOT IN (
+        SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+    ) AND EXISTS (
         SELECT 1
         FROM appointments a
         WHERE a.slot_id = NEW.slot_id
-          AND a.status_id <> cancelled_status_id
+          AND a.status_id NOT IN (
+              SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+          )
     ) THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'This slot already has an active appointment';
@@ -1472,13 +1469,6 @@ CREATE TRIGGER appointments_validate_slot_on_update
 BEFORE UPDATE ON appointments
 FOR EACH ROW
 BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
-
     IF NOT EXISTS (
         SELECT 1
         FROM appointment_slots s
@@ -1495,11 +1485,15 @@ BEGIN
             SET MESSAGE_TEXT = 'Updated appointment must match the selected slot (doctor, location, date, and time)';
     END IF;
 
-    IF NEW.status_id <> cancelled_status_id AND EXISTS (
+    IF NEW.status_id NOT IN (
+        SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+    ) AND EXISTS (
         SELECT 1
         FROM appointments a
         WHERE a.slot_id = NEW.slot_id
-          AND a.status_id <> cancelled_status_id
+          AND a.status_id NOT IN (
+              SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+          )
           AND a.appointment_id <> NEW.appointment_id
     ) THEN
         SIGNAL SQLSTATE '45000'
@@ -1513,26 +1507,23 @@ CREATE TRIGGER appointments_sync_slot_on_insert
 AFTER INSERT ON appointments
 FOR EACH ROW
 BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
-
     UPDATE appointment_slots s
     SET s.current_bookings = (
             SELECT COUNT(*)
             FROM appointments a
             WHERE a.slot_id = s.slot_id
-              AND a.status_id <> cancelled_status_id
+              AND a.status_id NOT IN (
+                  SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+              )
         ),
         s.is_available = (
             (
                 SELECT COUNT(*)
                 FROM appointments a
                 WHERE a.slot_id = s.slot_id
-                  AND a.status_id <> cancelled_status_id
+                  AND a.status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+                  )
             ) < s.max_patients
         )
     WHERE s.slot_id = NEW.slot_id;
@@ -1543,26 +1534,23 @@ CREATE TRIGGER appointments_sync_slot_on_update
 AFTER UPDATE ON appointments
 FOR EACH ROW
 BEGIN
-    DECLARE cancelled_status_id INT DEFAULT 4;
-
-    SELECT status_id INTO cancelled_status_id
-    FROM appointment_statuses
-    WHERE status_name = 'CANCELLED'
-    LIMIT 1;
-
     UPDATE appointment_slots s
     SET s.current_bookings = (
             SELECT COUNT(*)
             FROM appointments a
             WHERE a.slot_id = s.slot_id
-              AND a.status_id <> cancelled_status_id
+              AND a.status_id NOT IN (
+                  SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+              )
         ),
         s.is_available = (
             (
                 SELECT COUNT(*)
                 FROM appointments a
                 WHERE a.slot_id = s.slot_id
-                  AND a.status_id <> cancelled_status_id
+                  AND a.status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+                  )
             ) < s.max_patients
         )
     WHERE s.slot_id = NEW.slot_id;
@@ -1573,14 +1561,18 @@ BEGIN
                 SELECT COUNT(*)
                 FROM appointments a
                 WHERE a.slot_id = s.slot_id
-                  AND a.status_id <> cancelled_status_id
+                  AND a.status_id NOT IN (
+                      SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+                  )
             ),
             s.is_available = (
                 (
                     SELECT COUNT(*)
                     FROM appointments a
                         WHERE a.slot_id = s.slot_id
-                      AND a.status_id <> cancelled_status_id
+                      AND a.status_id NOT IN (
+                          SELECT status_id FROM appointment_statuses WHERE status_name IN ('CANCELLED', 'NO_SHOW')
+                      )
                 ) < s.max_patients
             )
         WHERE s.slot_id = OLD.slot_id;

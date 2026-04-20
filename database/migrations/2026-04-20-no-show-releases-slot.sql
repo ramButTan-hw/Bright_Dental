@@ -1,39 +1,7 @@
--- Recreate validation and slot-sync triggers that may be missing in older DBs
--- due to previous schema import delimiter issues.
+-- Ensure NO_SHOW appointments release slot capacity like CANCELLED appointments.
+-- This prevents slots from staying locked after a no-show.
 
 DELIMITER $$
-
-DROP TRIGGER IF EXISTS patient_checklist_require_other_text_on_insert $$
-CREATE TRIGGER patient_checklist_require_other_text_on_insert
-BEFORE INSERT ON patient_checklist_responses
-FOR EACH ROW
-BEGIN
-    IF NEW.is_checked = TRUE AND EXISTS (
-        SELECT 1
-        FROM clinical_checklist_items ci
-        WHERE ci.checklist_item_id = NEW.checklist_item_id
-          AND ci.requires_free_text = TRUE
-    ) AND (NEW.other_text IS NULL OR TRIM(NEW.other_text) = '') THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'other_text is required for this checklist item';
-    END IF;
-END $$
-
-DROP TRIGGER IF EXISTS patient_checklist_require_other_text_on_update $$
-CREATE TRIGGER patient_checklist_require_other_text_on_update
-BEFORE UPDATE ON patient_checklist_responses
-FOR EACH ROW
-BEGIN
-    IF NEW.is_checked = TRUE AND EXISTS (
-        SELECT 1
-        FROM clinical_checklist_items ci
-        WHERE ci.checklist_item_id = NEW.checklist_item_id
-          AND ci.requires_free_text = TRUE
-    ) AND (NEW.other_text IS NULL OR TRIM(NEW.other_text) = '') THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'other_text is required for this checklist item';
-    END IF;
-END $$
 
 DROP TRIGGER IF EXISTS appointments_validate_slot_on_insert $$
 CREATE TRIGGER appointments_validate_slot_on_insert
