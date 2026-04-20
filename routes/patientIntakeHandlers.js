@@ -10,8 +10,8 @@ function createPatientIntakeHandlers(deps) {
 
   // Checks if all doctors at the given location are already booked at the given date/time.
   // Returns isFull=true only when every doctor's slot is taken.
-  function checkTimeSlotAvailability(preferredDate, preferredTime, locationId, callback) {
-    if (!locationId) return callback(null, false);
+  function checkTimeSlotAvailability(preferredDate, preferredTime, locationId, locationText, callback) {
+    if (!locationId && !locationText) return callback(null, false);
 
     pool.query(
       `SELECT
@@ -27,9 +27,10 @@ function createPatientIntakeHandlers(deps) {
            AND (current_bookings >= max_patients OR is_available = 0)) AS full_slots,
         (SELECT COUNT(*)
          FROM appointment_preference_requests
-         WHERE location_id = ? AND preferred_date = ? AND preferred_time = ?
+         WHERE (location_id = ? OR LOWER(TRIM(preferred_location)) = LOWER(TRIM(?)))
+           AND preferred_date = ? AND preferred_time = ?
            AND request_status IN ('PREFERRED_PENDING', 'ASSIGNED')) AS pref_count`,
-      [locationId, locationId, preferredDate, preferredTime, locationId, preferredDate, preferredTime],
+      [locationId, locationId, preferredDate, preferredTime, locationId, locationText, preferredDate, preferredTime],
       (err, rows) => {
         if (err) return callback(err);
         const doctorCount = Number(rows[0].doctor_count) || 0;
@@ -245,7 +246,7 @@ function createPatientIntakeHandlers(deps) {
       return sendJSON(res, 400, { error: 'Please choose at least one available time between 8:00 AM and 7:00 PM' });
     }
 
-    checkTimeSlotAvailability(preferredDate, preferredTime, preferredLocationId, (availErr, isFull) => {
+    checkTimeSlotAvailability(preferredDate, preferredTime, preferredLocationId, null, (availErr, isFull) => {
       if (availErr) {
         console.error('Error checking slot availability:', availErr);
         return sendJSON(res, 500, { error: 'Database error' });
@@ -535,7 +536,7 @@ function createPatientIntakeHandlers(deps) {
         }
         const resolvedLocationId = locLookupRows && locLookupRows[0] ? Number(locLookupRows[0].location_id) : null;
 
-        checkTimeSlotAvailability(preferredDate, preferredTime, resolvedLocationId, (availErr, isFull) => {
+        checkTimeSlotAvailability(preferredDate, preferredTime, resolvedLocationId, normalizedPreferredLocation, (availErr, isFull) => {
           if (availErr) {
             console.error('Error checking slot availability:', availErr);
             return sendJSON(res, 500, { error: 'Database error' });
