@@ -222,6 +222,67 @@ function createReceptionRoutes({ pool, sendJSON }) {
     return Number(rows[0].status_id);
   }
 
+  async function applyLateArrivalFeeIfNeeded(conn, appointmentId, appointmentDate, appointmentTime) {
+    const scheduledAt = new Date(`${String(appointmentDate).slice(0, 10)}T${String(appointmentTime).slice(0, 8)}`);
+    if (Number.isNaN(scheduledAt.getTime())) {
+      return false;
+    }
+
+    const minutesLate = (Date.now() - scheduledAt.getTime()) / 60000;
+    if (minutesLate <= LATE_ARRIVAL_GRACE_MINUTES) {
+      return false;
+    }
+
+    const [invoiceRows] = await conn.promise().query(
+      `SELECT invoice_id, fee_note
+       FROM invoices
+       WHERE appointment_id = ?
+       LIMIT 1`,
+      [appointmentId]
+    );
+
+    const invoice = invoiceRows?.[0] || null;
+    const lateFeeNote = `Late arrival fee (${Math.max(0, Math.floor(minutesLate))} min past scheduled time)`;
+
+    if (!invoice) {
+      await conn.promise().query(
+        `INSERT INTO invoices (
+          appointment_id,
+          insurance_id,
+          amount,
+          insurance_covered_amount,
+          patient_amount,
+          payment_status,
+          fee_note,
+          created_by,
+          updated_by
+        ) VALUES (?, NULL, ?, 0, ?, 'Unpaid', ?, 'RECEPTION_PORTAL', 'RECEPTION_PORTAL')`,
+        [appointmentId, FEE_LATE_ARRIVAL, FEE_LATE_ARRIVAL, lateFeeNote]
+      );
+      return true;
+    }
+
+    const existingNote = String(invoice.fee_note || '');
+    if (existingNote.includes('Late arrival fee')) {
+      return false;
+    }
+
+    await conn.promise().query(
+      `UPDATE invoices
+       SET amount = amount + ?,
+           patient_amount = patient_amount + ?,
+           fee_note = CASE
+             WHEN fee_note IS NULL OR TRIM(fee_note) = '' THEN ?
+             ELSE CONCAT(fee_note, '; ', ?)
+           END,
+           updated_by = 'RECEPTION_PORTAL'
+       WHERE invoice_id = ?`,
+      [FEE_LATE_ARRIVAL, FEE_LATE_ARRIVAL, lateFeeNote, lateFeeNote, invoice.invoice_id]
+    );
+
+    return true;
+  }
+
   async function createScheduledAppointment(conn, payload) {
     const patientId = Number(payload?.patientId || 0);
     const doctorId = Number(payload?.doctorId || 0);
@@ -715,6 +776,15 @@ function createReceptionRoutes({ pool, sendJSON }) {
 
         try {
           const checkedInStatusId = await getAppointmentStatusId(conn, 'CHECKED_IN');
+          const [[apptRow]] = await conn.promise().query(
+            'SELECT appointment_date, appointment_time FROM appointments WHERE appointment_id = ? LIMIT 1',
+            [appointmentId]
+          );
+
+          if (!apptRow) {
+            throw new Error('Appointment not found');
+          }
+
           const [updateResult] = await conn.promise().query(
             `UPDATE appointments
              SET status_id = ?, updated_by = 'RECEPTION_PORTAL'
@@ -726,6 +796,13 @@ function createReceptionRoutes({ pool, sendJSON }) {
             throw new Error('Appointment not found');
           }
 
+          const feeApplied = await applyLateArrivalFeeIfNeeded(
+            conn,
+            appointmentId,
+            apptRow.appointment_date,
+            apptRow.appointment_time
+          );
+
           conn.commit((commitErr) => {
             conn.release();
             if (commitErr) {
@@ -733,9 +810,11 @@ function createReceptionRoutes({ pool, sendJSON }) {
               return sendJSON(res, 500, { error: 'Database error' });
             }
             return sendJSON(res, 200, {
-              message: `Patient checked in as late. Late-arrival fee policy (${FEE_LATE_ARRIVAL.toFixed(2)}) is enforced by database trigger.`,
-              feeApplied: true,
-              feeAmount: FEE_LATE_ARRIVAL
+              message: feeApplied
+                ? `Patient checked in as late. Late-arrival fee policy (${FEE_LATE_ARRIVAL.toFixed(2)}) was applied.`
+                : 'Patient checked in successfully',
+              feeApplied,
+              feeAmount: feeApplied ? FEE_LATE_ARRIVAL : 0
             });
           });
         } catch (error) {
