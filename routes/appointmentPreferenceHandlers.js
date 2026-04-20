@@ -433,7 +433,7 @@ function createAppointmentPreferenceHandlers(deps) {
           }
 
           const [prefRows] = await conn.promise().query(
-            `SELECT patient_id, preferred_location FROM appointment_preference_requests
+            `SELECT patient_id, preferred_location, location_id FROM appointment_preference_requests
              WHERE preference_request_id = ? AND request_status <> 'CANCELLED'
              LIMIT 1 FOR UPDATE`,
             [preferenceRequestId]
@@ -445,6 +445,7 @@ function createAppointmentPreferenceHandlers(deps) {
           }
 
           const patientId = Number(prefRows[0].patient_id);
+          const preferredLocationId = prefRows[0].location_id ? Number(prefRows[0].location_id) : null;
           const normalizedTime = normalizeTimeValue(assignedTime);
           const appointmentEndTime = addMinutesToTime(normalizedTime, 30);
           const statusId = await getAppointmentStatusId(conn, 'SCHEDULED');
@@ -489,8 +490,8 @@ function createAppointmentPreferenceHandlers(deps) {
                 doctor_id, location_id, slot_date, slot_start_time, slot_end_time,
                 duration_minutes, is_available, max_patients, current_bookings,
                 slot_type, created_by, updated_by
-                ) VALUES (?, NULL, ?, ?, ?, 30, TRUE, 1, 0, 'REGULAR', ?, ?)`,
-                [assignedDoctorId, assignedDate, normalizedTime, appointmentEndTime, receptionistActor, receptionistActor]
+                ) VALUES (?, ?, ?, ?, ?, 30, TRUE, 1, 0, 'REGULAR', ?, ?)`,
+                [assignedDoctorId, preferredLocationId, assignedDate, normalizedTime, appointmentEndTime, receptionistActor, receptionistActor]
             );
             slotId = Number(slotInsert.insertId);
           }
@@ -500,8 +501,8 @@ function createAppointmentPreferenceHandlers(deps) {
               slot_id, location_id, patient_id, doctor_id,
               appointment_time, appointment_date, status_id,
               notes, created_by, updated_by
-            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [slotId, patientId, assignedDoctorId, normalizedTime, assignedDate, statusId, receptionistNotes, receptionistActor, receptionistActor]
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [slotId, preferredLocationId, patientId, assignedDoctorId, normalizedTime, assignedDate, statusId, receptionistNotes, receptionistActor, receptionistActor]
           );
 
           await conn.promise().query(
