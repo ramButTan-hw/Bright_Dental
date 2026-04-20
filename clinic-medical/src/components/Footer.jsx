@@ -40,6 +40,7 @@ function Footer() {
               <Link to="/">Home</Link>
               <Link to="/meet-our-staff">About Us</Link>
               <Link to="/contact-us">Contact</Link>
+              <Link to="/appointment-checklist">Dental Appointment Checklist</Link>
             </div>
           </div>
         </div>

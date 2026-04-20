@@ -31,6 +31,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { getAdminPortalSession, getReceptionPortalSession } from './utils/patientPortal';
 import './App.css';
+import DentalAppointmentChecklist from './pages/DentalAppointmentChecklist';
 
 function RequireAdmin({ children }) {
   const adminSession = getAdminPortalSession();
@@ -149,6 +150,8 @@ function App() {
             </RequireAdmin>
           }
         />
+        <Route path="/useless" element={<UselessPage />} />
+        <Route path="/appointment-checklist" element={<DentalAppointmentChecklist />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       {!isStaffPage && <Footer />}
@@ -157,3 +160,5 @@ function App() {
 }
 
 export default App;
+
+import UselessPage from './pages/UselessPage';
