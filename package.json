@@ -7,6 +7,9 @@
     "start": "node database/bootstrap-db.js && node server.js",
     "dev": "node database/bootstrap-db.js && node server.js",
     "bootstrap": "node database/bootstrap-db.js",
+    "verify:schema": "node database/verify-db-schema.js",
+    "verify:schema:local": "node database/verify-db-schema.js --target=local",
+    "verify:schema:railway": "node database/verify-db-schema.js --target=railway",
     "build": "cd clinic-medical && npm install && npm run build",
     "test": "echo \"Error: no test specified\" && exit 1",
     "copy": "node database/init-db.js"

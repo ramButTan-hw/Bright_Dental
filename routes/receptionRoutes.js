@@ -208,35 +208,8 @@ function createReceptionRoutes({ pool, sendJSON }) {
   }
 
   const FEE_NO_SHOW = 50.00;
-  const FEE_LATE_CANCEL = 35.00;
   const FEE_LATE_ARRIVAL = 25.00;
   const LATE_ARRIVAL_GRACE_MINUTES = 15;
-
-  // Adds a penalty fee to the appointment's invoice (or creates one if none exists).
-  // Must be called inside an active transaction on `conn`.
-  async function applyFeeToInvoice(conn, appointmentId, feeAmount, feeNote) {
-    const [[existing]] = await conn.promise().query(
-      'SELECT invoice_id, amount, patient_amount FROM invoices WHERE appointment_id = ? LIMIT 1',
-      [appointmentId]
-    );
-    if (existing) {
-      await conn.promise().query(
-        `UPDATE invoices
-         SET amount = amount + ?, patient_amount = patient_amount + ?,
-             fee_note = ?, updated_by = 'SYSTEM_FEE'
-         WHERE invoice_id = ?`,
-        [feeAmount, feeAmount, feeNote, existing.invoice_id]
-      );
-    } else {
-      await conn.promise().query(
-        `INSERT INTO invoices
-         (appointment_id, insurance_id, amount, insurance_covered_amount, patient_amount,
-          payment_status, fee_note, created_by, updated_by)
-         VALUES (?, NULL, ?, 0, ?, 'Unpaid', ?, 'SYSTEM_FEE', 'SYSTEM_FEE')`,
-        [appointmentId, feeAmount, feeAmount, feeNote]
-      );
-    }
-  }
 
   async function getAppointmentStatusId(conn, statusName) {
     const [rows] = await conn.promise().query(
@@ -611,8 +584,8 @@ function createReceptionRoutes({ pool, sendJSON }) {
             throw new Error('Appointment not found');
           }
 
-          // Apply late arrival fee if check-in is more than grace period past scheduled time
-          let feeApplied = false;
+          // The DB trigger applies late-arrival fee if check-in happens past the grace period.
+          let isLateByPolicy = false;
           if (apptRow) {
             const apptDateStr = apptRow.appointment_date instanceof Date
               ? apptRow.appointment_date.toISOString().slice(0, 10)
@@ -620,9 +593,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
             const scheduledAt = new Date(`${apptDateStr}T${apptRow.appointment_time}`);
             const minutesLate = (Date.now() - scheduledAt.getTime()) / 60000;
             if (minutesLate > LATE_ARRIVAL_GRACE_MINUTES) {
-              await applyFeeToInvoice(conn, appointmentId, FEE_LATE_ARRIVAL,
-                `Late arrival fee (${Math.round(minutesLate)} min past scheduled time)`);
-              feeApplied = true;
+              isLateByPolicy = true;
             }
           }
 
@@ -633,11 +604,11 @@ function createReceptionRoutes({ pool, sendJSON }) {
               return sendJSON(res, 500, { error: 'Database error' });
             }
             return sendJSON(res, 200, {
-              message: feeApplied
-                ? `Patient checked in. A $${FEE_LATE_ARRIVAL.toFixed(2)} late arrival fee has been added to their invoice.`
+              message: isLateByPolicy
+                ? `Patient checked in. Late-arrival fee policy (${FEE_LATE_ARRIVAL.toFixed(2)}) is enforced by database trigger.`
                 : 'Patient checked in successfully',
-              feeApplied,
-              feeAmount: feeApplied ? FEE_LATE_ARRIVAL : 0
+              feeApplied: isLateByPolicy,
+              feeAmount: isLateByPolicy ? FEE_LATE_ARRIVAL : 0
             });
           });
         } catch (error) {
@@ -680,8 +651,6 @@ function createReceptionRoutes({ pool, sendJSON }) {
             throw new Error('Appointment not found');
           }
 
-          await applyFeeToInvoice(conn, appointmentId, FEE_NO_SHOW, 'No-show fee');
-
           conn.commit((commitErr) => {
             conn.release();
             if (commitErr) {
@@ -689,7 +658,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
               return sendJSON(res, 500, { error: 'Database error' });
             }
             return sendJSON(res, 200, {
-              message: `Appointment marked as no-show. A $${FEE_NO_SHOW.toFixed(2)} no-show fee has been added to their invoice.`,
+              message: `Appointment marked as no-show. No-show fee policy (${FEE_NO_SHOW.toFixed(2)}) is enforced by database trigger.`,
               feeApplied: true,
               feeAmount: FEE_NO_SHOW
             });
@@ -734,8 +703,6 @@ function createReceptionRoutes({ pool, sendJSON }) {
             throw new Error('Appointment not found');
           }
 
-          await applyFeeToInvoice(conn, appointmentId, FEE_LATE_ARRIVAL, 'Late arrival fee');
-
           conn.commit((commitErr) => {
             conn.release();
             if (commitErr) {
@@ -743,7 +710,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
               return sendJSON(res, 500, { error: 'Database error' });
             }
             return sendJSON(res, 200, {
-              message: `Patient checked in as late. A $${FEE_LATE_ARRIVAL.toFixed(2)} late arrival fee has been added to their invoice.`,
+              message: `Patient checked in as late. Late-arrival fee policy (${FEE_LATE_ARRIVAL.toFixed(2)}) is enforced by database trigger.`,
               feeApplied: true,
               feeAmount: FEE_LATE_ARRIVAL
             });

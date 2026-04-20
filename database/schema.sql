@@ -1587,6 +1587,8 @@ BEGIN
     END IF;
 END $$
 
+DELIMITER ;
+
 -- Patient Billing Summary
 CREATE OR REPLACE VIEW vw_report_patient_billing AS
 SELECT
