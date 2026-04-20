@@ -1520,7 +1520,7 @@ const pagedOutstandingPatients = useMemo(
               {!clinicPerformanceLoading && clinicPerformanceReport.summary && activeReportTab === 'outstanding' && (
                 <section className="admin-metrics-grid" style={{ gridTemplateColumns: '1fr' }}>
                   <article className="metric-card">
-                    <h2>Total Outstanding</h2>
+                    <h2>Outstanding A/R</h2>
                     <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
                       {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
                     </p>
@@ -1582,14 +1582,6 @@ const pagedOutstandingPatients = useMemo(
                     </>
                   )}
 
-                  {activeReportTab === 'outstanding' && (
-                    <article className="metric-card">
-                      <h2>Outstanding A/R</h2>
-                      <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
-                        {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
-                      </p>
-                    </article>
-                  )}
 
                   {activeReportTab === 'financial' && (
                     <>
