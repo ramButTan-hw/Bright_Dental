@@ -166,7 +166,7 @@ function PatientPortalPage() {
 
   const visibleRequests = appointmentRequests.filter((r) => {
     const status = String(r?.request_status || '').toUpperCase();
-    return status === 'PREFERRED_PENDING';
+    return status === 'PREFERRED_PENDING' || status === 'ASSIGNED';
   });
 
   const invoiceByAppointmentId = useMemo(() => {

@@ -326,7 +326,7 @@ CREATE TABLE IF NOT EXISTS appointment_preference_requests (
     preferred_location VARCHAR(255),
     location_id INT,
     appointment_reason VARCHAR(255),
-    request_status ENUM('PREFERRED_PENDING', 'ASSIGNED', 'CANCELLED', 'COMPLETED') NOT NULL DEFAULT 'PREFERRED_PENDING',
+    request_status ENUM('PREFERRED_PENDING', 'ASSIGNED', 'NO_SHOW', 'CANCELLED', 'COMPLETED') NOT NULL DEFAULT 'PREFERRED_PENDING',
     assigned_doctor_id INT,
     assigned_date DATE,
     assigned_time TIME,

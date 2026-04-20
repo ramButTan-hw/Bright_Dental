@@ -639,6 +639,18 @@ function createReceptionRoutes({ pool, sendJSON }) {
         }
 
         try {
+          const [[appointmentInfo]] = await conn.promise().query(
+            `SELECT appointment_id, patient_id, doctor_id, appointment_date, appointment_time
+             FROM appointments
+             WHERE appointment_id = ?
+             LIMIT 1`,
+            [appointmentId]
+          );
+
+          if (!appointmentInfo) {
+            throw new Error('Appointment not found');
+          }
+
           const noShowStatusId = await getAppointmentStatusId(conn, 'NO_SHOW');
           const [updateResult] = await conn.promise().query(
             `UPDATE appointments
@@ -650,6 +662,17 @@ function createReceptionRoutes({ pool, sendJSON }) {
           if (!updateResult.affectedRows) {
             throw new Error('Appointment not found');
           }
+
+          await conn.promise().query(
+            `UPDATE appointment_preference_requests
+             SET request_status = 'NO_SHOW', updated_by = 'RECEPTION_PORTAL'
+             WHERE patient_id = ?
+               AND assigned_doctor_id = ?
+               AND assigned_date = ?
+               AND assigned_time = ?
+               AND request_status = 'ASSIGNED'`,
+            [appointmentInfo.patient_id, appointmentInfo.doctor_id, appointmentInfo.appointment_date, appointmentInfo.appointment_time]
+          );
 
           conn.commit((commitErr) => {
             conn.release();
