@@ -9,6 +9,7 @@ import PeriodonticsImg from '../assets/Periodontics.jpg';
 import ProsthodonticsImg from '../assets/Prosthodontics.jpg';
 import EImg from '../assets/E.jpg';
 import GDImg from '../assets/GD.jpg';
+import FallbackImg from '../assets/react.svg'; // Use your own fallback image if desired
 
 function getMarker(name) {
   return String(name || '')
@@ -68,12 +69,11 @@ export default function Services() {
               else if (dept.department_name === 'Prosthodontics') deptImg = ProsthodonticsImg;
               else if (dept.department_name === 'Endodontics') deptImg = EImg;
               else if (dept.department_name === 'General Dentistry') deptImg = GDImg;
+              else deptImg = FallbackImg;
               return (
                 <div key={dept.department_id} className="service-card">
                   <div className="service-icon-wrapper">
-                    {deptImg && (
-                      <img src={deptImg} alt={dept.department_name} className="service-icon-img" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 12, border: '2px solid #e0bfae', background: '#fff' }} />
-                    )}
+                    <img src={deptImg} alt={dept.department_name} className="service-icon-img" />
                   </div>
                   <h3 className="service-title">{dept.department_name}</h3>
                   <p className="service-description">{dept.description}</p>
