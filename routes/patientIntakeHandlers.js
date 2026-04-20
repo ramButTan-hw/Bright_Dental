@@ -37,7 +37,9 @@ function createPatientIntakeHandlers(deps) {
          FROM appointment_preference_requests
          WHERE (location_id = ${resolvedIdSql} OR LOWER(TRIM(preferred_location)) = LOWER(TRIM(?)))
            AND preferred_date = ? AND preferred_time = ?
-           AND request_status IN ('PREFERRED_PENDING', 'ASSIGNED')) AS pref_count`,
+           AND request_status IN ('PREFERRED_PENDING', 'ASSIGNED')
+           AND COALESCE(created_by, '') NOT IN ('SYSTEM_SEED')
+           AND COALESCE(created_by, '') NOT LIKE 'LIVE_SEED_%') AS pref_count`,
       locationId
         ? [locationId, locationId, preferredDate, preferredTime, locationId, locationText, preferredDate, preferredTime]
         : [locationText, locationText, preferredDate, preferredTime, locationText, locationText, preferredDate, preferredTime],

@@ -126,6 +126,8 @@ const queries = {
       apr.created_at
     FROM appointment_preference_requests apr
     WHERE apr.patient_id = ?
+      AND COALESCE(apr.created_by, '') NOT IN ('SYSTEM_SEED')
+      AND COALESCE(apr.created_by, '') NOT LIKE 'LIVE_SEED_%'
     ORDER BY apr.created_at DESC
   `,
 

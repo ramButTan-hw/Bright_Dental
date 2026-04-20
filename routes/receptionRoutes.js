@@ -1099,7 +1099,10 @@ function createReceptionRoutes({ pool, sendJSON }) {
                               FROM appointment_preference_requests apr
                               LEFT JOIN doctors d ON d.doctor_id = apr.assigned_doctor_id
                               LEFT JOIN staff st ON st.staff_id = d.staff_id
-                              WHERE apr.patient_id = ? AND apr.request_status IN ('PREFERRED_PENDING', 'ASSIGNED')
+                              WHERE apr.patient_id = ?
+                                AND apr.request_status IN ('PREFERRED_PENDING', 'ASSIGNED')
+                                AND COALESCE(apr.created_by, '') NOT IN ('SYSTEM_SEED')
+                                AND COALESCE(apr.created_by, '') NOT LIKE 'LIVE_SEED_%'
                               ORDER BY apr.created_at DESC`,
                               [patientId],
                               (prefErr, prefRows) => {
