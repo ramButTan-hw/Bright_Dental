@@ -728,11 +728,12 @@ const pagedOutstandingPatients = useMemo(
         body: JSON.stringify(insuranceForm)
       });
       if (res.ok) {
-        alert('Insurance Company Added Successfully');
+        setActionMessage('Insurance added successfully.');
         setInsuranceForm(EMPTY_INSURANCE_FORM);
         loadAdminData();
       }
     } catch (err) {
+      setActionMessage(err.message || 'Failed to add insurance.');
       console.error(err);
     }
   };
