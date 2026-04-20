@@ -693,18 +693,20 @@ function createPatientIntakeHandlers(deps) {
                         preferred_date,
                         preferred_time,
                         preferred_location,
+                        location_id,
                         available_days,
                         available_times,
                         appointment_reason,
                         request_status,
                         created_by,
                         updated_by
-                      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PREFERRED_PENDING', 'PORTAL', 'PORTAL')`,
                       [
                         patientId,
                         preferredDate,
                         preferredTime,
                         normalizedPreferredLocation,
+                        resolvedLocationId,
                         preferredWeekdays.join(', '),
                         preferredTimes.join(', '),
                         String(reason).trim()
