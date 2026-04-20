@@ -222,16 +222,11 @@ function createReceptionRoutes({ pool, sendJSON }) {
     return Number(rows[0].status_id);
   }
 
-  async function applyLateArrivalFeeIfNeeded(conn, appointmentId, appointmentDate, appointmentTime) {
+  async function applyLateArrivalFee(conn, appointmentId, appointmentDate, appointmentTime) {
     const scheduledAt = new Date(`${String(appointmentDate).slice(0, 10)}T${String(appointmentTime).slice(0, 8)}`);
-    if (Number.isNaN(scheduledAt.getTime())) {
-      return false;
-    }
-
-    const minutesLate = (Date.now() - scheduledAt.getTime()) / 60000;
-    if (minutesLate <= LATE_ARRIVAL_GRACE_MINUTES) {
-      return false;
-    }
+    const minutesLate = Number.isNaN(scheduledAt.getTime())
+      ? null
+      : Math.max(0, Math.floor((Date.now() - scheduledAt.getTime()) / 60000));
 
     const [invoiceRows] = await conn.promise().query(
       `SELECT invoice_id, fee_note
@@ -242,7 +237,9 @@ function createReceptionRoutes({ pool, sendJSON }) {
     );
 
     const invoice = invoiceRows?.[0] || null;
-    const lateFeeNote = `Late arrival fee (${Math.max(0, Math.floor(minutesLate))} min past scheduled time)`;
+    const lateFeeNote = minutesLate === null
+      ? 'Late arrival fee'
+      : `Late arrival fee (${minutesLate} min past scheduled time)`;
 
     if (!invoice) {
       await conn.promise().query(
@@ -658,6 +655,15 @@ function createReceptionRoutes({ pool, sendJSON }) {
             }
           }
 
+          const feeApplied = isLateByPolicy && apptRow
+            ? await applyLateArrivalFee(
+                conn,
+                appointmentId,
+                apptRow.appointment_date,
+                apptRow.appointment_time
+              )
+            : false;
+
           conn.commit((commitErr) => {
             conn.release();
             if (commitErr) {
@@ -665,11 +671,11 @@ function createReceptionRoutes({ pool, sendJSON }) {
               return sendJSON(res, 500, { error: 'Database error' });
             }
             return sendJSON(res, 200, {
-              message: isLateByPolicy
-                ? `Patient checked in. Late-arrival fee policy (${FEE_LATE_ARRIVAL.toFixed(2)}) is enforced by database trigger.`
+              message: feeApplied
+                ? `Patient checked in. Late-arrival fee (${FEE_LATE_ARRIVAL.toFixed(2)}) was applied.`
                 : 'Patient checked in successfully',
-              feeApplied: isLateByPolicy,
-              feeAmount: isLateByPolicy ? FEE_LATE_ARRIVAL : 0
+              feeApplied,
+              feeAmount: feeApplied ? FEE_LATE_ARRIVAL : 0
             });
           });
         } catch (error) {
@@ -796,7 +802,7 @@ function createReceptionRoutes({ pool, sendJSON }) {
             throw new Error('Appointment not found');
           }
 
-          const feeApplied = await applyLateArrivalFeeIfNeeded(
+          const feeApplied = await applyLateArrivalFee(
             conn,
             appointmentId,
             apptRow.appointment_date,
