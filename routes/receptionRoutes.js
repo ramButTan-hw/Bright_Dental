@@ -561,8 +561,11 @@ function createReceptionRoutes({ pool, sendJSON }) {
         } catch (error) {
           conn.rollback(() => {
             conn.release();
-            if (error.message.includes('required') || error.message.includes('format') || error.message.includes('booked')) {
+            if (error.message.includes('required') || error.message.includes('format')) {
               return sendJSON(res, 400, { error: error.message });
+            }
+            if (error.message.includes('booked') || error.message.includes('full') || error.message.includes('already')) {
+              return sendJSON(res, 409, { error: error.message });
             }
             if (error.code === 'ER_DUP_ENTRY') {
               return sendJSON(res, 409, { error: 'The selected time slot already exists for this doctor' });

@@ -528,8 +528,8 @@ function createAppointmentPreferenceHandlers(deps) {
         } catch (error) {
           conn.rollback(() => {
             conn.release();
-            if (error.message.includes('required') || error.message.includes('format') || error.message.includes('booked')) {
-              return sendJSON(res, 400, { error: error.message });
+            if (error.message.includes('required') || error.message.includes('format') || error.message.includes('booked') || error.message.includes('full') || error.message.includes('time off')) {
+              return sendJSON(res, 409, { error: error.message });
             }
             console.error('Error assigning appointment:', error);
             return sendJSON(res, 500, { error: 'Database error' });
