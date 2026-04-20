@@ -1314,6 +1314,13 @@ const pagedOutstandingPatients = useMemo(
           {activeSection === 'reports' && (
             <>
 
+              <div className="admin-tab-bar admin-tab-bar--lg">
+                <button type="button" className={activeReportTab === 'monthly' ? 'is-active' : ''} onClick={() => { setActiveReportTab('monthly'); setClinicFilters({ locationId: 'ALL', doctorId: 'ALL', statusGroup: 'ALL', paymentStatus: 'ALL', patientState: 'ALL', procedureCode: 'ALL', insuranceId: 'ALL' }); }}>Monthly Trends</button>
+                <button type="button" className={activeReportTab === 'providers' ? 'is-active' : ''} onClick={() => { setActiveReportTab('providers'); setClinicFilters({ locationId: 'ALL', doctorId: 'ALL', statusGroup: 'ALL', paymentStatus: 'ALL', patientState: 'ALL', procedureCode: 'ALL', insuranceId: 'ALL' }); }}>Provider Productivity</button>
+                <button type="button" className={activeReportTab === 'growth' ? 'is-active' : ''} onClick={() => { setActiveReportTab('growth'); setClinicFilters({ locationId: 'ALL', doctorId: 'ALL', statusGroup: 'ALL', paymentStatus: 'ALL', patientState: 'ALL', procedureCode: 'ALL', insuranceId: 'ALL' }); }}>Patient Growth</button>
+                <button type="button" className={activeReportTab === 'outstanding' ? 'is-active' : ''} onClick={() => { setActiveReportTab('outstanding'); setClinicFilters({ locationId: 'ALL', doctorId: 'ALL', statusGroup: 'ALL', paymentStatus: 'ALL', patientState: 'ALL', procedureCode: 'ALL', insuranceId: 'ALL' }); }}>Outstanding A/R</button>
+              </div>
+
               <section className="admin-panel">
                 <div className="admin-panel-header-row">
                   <div>
@@ -1336,7 +1343,7 @@ const pagedOutstandingPatients = useMemo(
                   </div>
                 </div>
 
-                <div className="clinic-filter-grid">
+                <div className="clinic-filter-grid clinic-filter-grid--two-col">
                   <label className="admin-inline-filter">
                     Location
                     <select
@@ -1350,61 +1357,68 @@ const pagedOutstandingPatients = useMemo(
                     </select>
                   </label>
 
-                  <label className="admin-inline-filter">
-                    Provider
-                    <select
-                      value={clinicFilters.doctorId}
-                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, doctorId: e.target.value }))}
-                    >
-                      <option value="ALL">All providers</option>
-                      {clinicProviderOptions.map((provider) => (
-                        <option key={provider.id} value={provider.id}>{provider.name}</option>
-                      ))}
-                    </select>
-                  </label>
+                  {activeReportTab === 'providers' && (
+                    <label className="admin-inline-filter">
+                      Provider
+                      <select
+                        value={clinicFilters.doctorId}
+                        onChange={(e) => setClinicFilters((prev) => ({ ...prev, doctorId: e.target.value }))}
+                      >
+                        <option value="ALL">All providers</option>
+                        {clinicProviderOptions.map((provider) => (
+                          <option key={provider.id} value={provider.id}>{provider.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
 
-                  <label className="admin-inline-filter">
-                    Visit Status
-                    <select
-                      value={clinicFilters.statusGroup}
-                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, statusGroup: e.target.value }))}
-                    >
-                      <option value="ALL">All statuses</option>
-                      <option value="COMPLETED">Completed only</option>
-                      <option value="SCHEDULED">Scheduled pipeline</option>
-                      <option value="CANCELLED">Cancelled only</option>
-                      <option value="NO_SHOW">No-show only</option>
-                      <option value="MISSED">Missed visits (cancelled + no-show)</option>
-                    </select>
-                  </label>
+                  {(activeReportTab === 'monthly' || activeReportTab === 'growth') && (
+                    <label className="admin-inline-filter">
+                      Visit Status
+                      <select
+                        value={clinicFilters.statusGroup}
+                        onChange={(e) => setClinicFilters((prev) => ({ ...prev, statusGroup: e.target.value }))}
+                      >
+                        <option value="ALL">All statuses</option>
+                        <option value="COMPLETED">Completed only</option>
+                        <option value="SCHEDULED">Scheduled pipeline</option>
+                        <option value="CANCELLED">Cancelled only</option>
+                        <option value="NO_SHOW">No-show only</option>
+                        <option value="MISSED">Missed visits (cancelled + no-show)</option>
+                      </select>
+                    </label>
+                  )}
 
-                  <label className="admin-inline-filter">
-                    Payment
-                    <select
-                      value={clinicFilters.paymentStatus}
-                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, paymentStatus: e.target.value }))}
-                    >
-                      <option value="ALL">All payment states</option>
-                      <option value="PAID">Paid</option>
-                      <option value="PARTIAL">Partial</option>
-                      <option value="UNPAID">Unpaid</option>
-                      <option value="REFUNDED">Refunded</option>
-                    </select>
-                  </label>
+                  {activeReportTab === 'monthly' && (
+                    <label className="admin-inline-filter">
+                      Payment
+                      <select
+                        value={clinicFilters.paymentStatus}
+                        onChange={(e) => setClinicFilters((prev) => ({ ...prev, paymentStatus: e.target.value }))}
+                      >
+                        <option value="ALL">All payment states</option>
+                        <option value="PAID">Paid</option>
+                        <option value="PARTIAL">Partial</option>
+                        <option value="UNPAID">Unpaid</option>
+                        <option value="REFUNDED">Refunded</option>
+                      </select>
+                    </label>
+                  )}
 
-
-                  <label className="admin-inline-filter">
-                    Procedure Code
-                    <select
-                      value={clinicFilters.procedureCode}
-                      onChange={(e) => setClinicFilters((prev) => ({ ...prev, procedureCode: e.target.value }))}
-                    >
-                      <option value="ALL">All procedure codes</option>
-                      {clinicProcedureCodes.map((item) => (
-                        <option key={item.code} value={item.code}>{item.label}</option>
-                      ))}
-                    </select>
-                  </label>
+                  {(activeReportTab === 'monthly' || activeReportTab === 'outstanding') && (
+                    <label className="admin-inline-filter">
+                      Procedure Code
+                      <select
+                        value={clinicFilters.procedureCode}
+                        onChange={(e) => setClinicFilters((prev) => ({ ...prev, procedureCode: e.target.value }))}
+                      >
+                        <option value="ALL">All procedure codes</option>
+                        {clinicProcedureCodes.map((item) => (
+                          <option key={item.code} value={item.code}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                 </div>
 
                 <div className="clinic-filter-actions">
@@ -1431,7 +1445,7 @@ const pagedOutstandingPatients = useMemo(
                   )}
                 </div>
 
-                {summary && (
+                {summary && activeReportTab === 'monthly' && (
                   <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', margin: '1rem 0 0' }}>
                     <article className="metric-card" style={{ flex: '1', minWidth: '160px' }}>
                       <h2>Patient Collections</h2>
@@ -1452,8 +1466,65 @@ const pagedOutstandingPatients = useMemo(
                 )}
               </section>
 
-              {!clinicPerformanceLoading && clinicPerformanceReport.summary && (
+              {/* Monthly Trends cards */}
+              {!clinicPerformanceLoading && clinicPerformanceReport.summary && activeReportTab === 'monthly' && (
                 <section className="admin-metrics-grid">
+                  <article className="metric-card">
+                    <h2>Production</h2>
+                    <p>{formatMoney(clinicPerformanceReport.summary.totalProduction)}</p>
+                    <small>Gross charges in range</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Collection Rate</h2>
+                    <p>{formatPercent(clinicPerformanceReport.summary.collectionRate)}</p>
+                    <small>Collected vs patient responsibility</small>
+                  </article>
+                  {financialDetail.totals && (
+                    <article className="metric-card">
+                      <h2>Refunded</h2>
+                      <p>{formatMoney(financialDetail.totals.total_refunded)}</p>
+                      <small>Total refunds issued in range</small>
+                    </article>
+                  )}
+                  <article className="metric-card">
+                    <h2>Completed Visits</h2>
+                    <p>{clinicPerformanceReport.summary.completedAppointments}</p>
+                    <small>{formatPercent(clinicPerformanceReport.summary.completionRate)} completion rate</small>
+                  </article>
+                </section>
+              )}
+
+              {/* Provider Productivity cards */}
+              {!clinicPerformanceLoading && clinicPerformanceReport.summary && activeReportTab === 'providers' && (
+                <section className="admin-metrics-grid">
+                </section>
+              )}
+
+              {/* Patient Growth cards */}
+              {!clinicPerformanceLoading && clinicPerformanceReport.summary && activeReportTab === 'growth' && (
+                <section className="admin-metrics-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                  <article className="metric-card">
+                    <h2>New Patients</h2>
+                    <p>{clinicPerformanceReport.summary.newPatients}</p>
+                    <small>Registered in range</small>
+                  </article>
+                  <article className="metric-card">
+                    <h2>Completed Visits</h2>
+                    <p>{clinicPerformanceReport.summary.completedAppointments}</p>
+                    <small>{formatPercent(clinicPerformanceReport.summary.completionRate)} completion rate</small>
+                  </article>
+                </section>
+              )}
+
+              {/* Outstanding A/R cards */}
+              {!clinicPerformanceLoading && clinicPerformanceReport.summary && activeReportTab === 'outstanding' && (
+                <section className="admin-metrics-grid" style={{ gridTemplateColumns: '1fr' }}>
+                  <article className="metric-card">
+                    <h2>Total Outstanding</h2>
+                    <p style={{ color: clinicPerformanceReport.summary.totalOutstanding > 0 ? '#9d2e2e' : 'inherit' }}>
+                      {formatMoney(clinicPerformanceReport.summary.totalOutstanding)}
+                    </p>
+                  </article>
                   {activeReportTab === 'monthly' && (
                     <>
                       <article className="metric-card">
@@ -1556,13 +1627,6 @@ const pagedOutstandingPatients = useMemo(
                 </section>
               )}
 
-              <div className="admin-tab-bar">
-                <button type="button" className={activeReportTab === 'monthly' ? 'is-active' : ''} onClick={() => setActiveReportTab('monthly')}>Monthly Trends</button>
-                <button type="button" className={activeReportTab === 'providers' ? 'is-active' : ''} onClick={() => setActiveReportTab('providers')}>Provider Productivity</button>
-                <button type="button" className={activeReportTab === 'growth' ? 'is-active' : ''} onClick={() => setActiveReportTab('growth')}>Patient Growth</button>
-                <button type="button" className={activeReportTab === 'outstanding' ? 'is-active' : ''} onClick={() => setActiveReportTab('outstanding')}>Outstanding A/R</button>
-                <button type="button" className={activeReportTab === 'financial' ? 'is-active' : ''} onClick={() => setActiveReportTab('financial')}>Financial Detail</button>
-              </div>
 
               {clinicPerformanceLoading && <p className="admin-loading">Loading clinic performance report...</p>}
 
