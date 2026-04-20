@@ -290,7 +290,9 @@ function createAppointmentPreferenceHandlers(deps) {
       JOIN patients p ON p.patient_id = apr.patient_id
       LEFT JOIN doctors d ON d.doctor_id = apr.assigned_doctor_id
       LEFT JOIN staff st ON st.staff_id = d.staff_id
-      WHERE apr.request_status NOT IN ('CANCELLED', 'ASSIGNED', 'COMPLETED')
+      WHERE apr.request_status NOT IN ('CANCELLED', 'ASSIGNED', 'COMPLETED', 'NO_SHOW')
+        AND COALESCE(apr.created_by, '') NOT IN ('SYSTEM_SEED')
+        AND COALESCE(apr.created_by, '') NOT LIKE 'LIVE_SEED_%'
       ORDER BY apr.created_at DESC`,
       (err, results) => {
         if (err) {
