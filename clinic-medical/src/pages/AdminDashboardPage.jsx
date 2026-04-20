@@ -22,6 +22,17 @@ const EMPTY_STAFF_FORM = {
   locationId: ''
 };
 
+const EMPTY_INSURANCE_FORM = {
+  companyName: '',
+  streetNo: '',
+  streetName: '',
+  city: '',
+  state: '',
+  zipCode: '',
+  phone: '',
+  fax: ''
+};
+
 const formatSsnInput = (value) => {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 9);
   if (digits.length <= 3) return digits;
@@ -38,6 +49,11 @@ const formatPhoneInput = (value) => {
 
 const formatZipInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 5);
 
+const formatZip10Input = (value) => {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+  if(digits.length <= 5) return digits;
+  if (digits.length <= 10) return `${digits.slice(0,5)}-${digits.slice(5)}`
+}
 const extractDigits = (value) => String(value || '').replace(/\D/g, '');
 
 const getLocationFieldErrors = (form) => {
@@ -197,7 +213,24 @@ function AdminDashboardPage() {
 
   const [receptionists, setReceptionists] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [insurances, setInsurances] = useState([]);
   const [staffTimeOffRequests, setStaffTimeOffRequests] = useState([]);
+
+  const loadInsurances = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/insurances`);
+    if (response.ok) {
+      const data = await response.json();
+      setInsurances(Array.isArray(data) ? data : []);
+    }
+  } catch (err) {
+    console.error('Failed to load insurances:', err);
+  }
+};
+
+useEffect(() => {
+  loadInsurances();
+}, []);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -232,6 +265,8 @@ function AdminDashboardPage() {
   const reportStatusOptions = ['ALL', 'SCHEDULED', 'CONFIRMED', 'RESCHEDULED', 'COMPLETED', 'CANCELED', 'NO_SHOW'];
 
   const [doctorForm, setDoctorForm] = useState({ ...EMPTY_STAFF_FORM });
+  const [insuranceForm, setInsuranceForm] = useState(EMPTY_INSURANCE_FORM);
+  const [insuranceFieldErrors, setInsuranceFieldErrors] = useState({});
 
   const [receptionistForm, setReceptionistForm] = useState({ ...EMPTY_STAFF_FORM });
   const [expandedCards, setExpandedCards] = useState({
@@ -239,7 +274,8 @@ function AdminDashboardPage() {
     location: false,
     receptionist: false,
     offDayRequests: false,
-    manageStaff: false
+    manageStaff: false,
+    insurance: false
   });
 
   const [allStaff, setAllStaff] = useState([]);
@@ -677,12 +713,66 @@ const pagedOutstandingPatients = useMemo(
     }
   };
 
+  const handleInsuranceSubmit = async (e) => {
+    e.preventDefault();
+    /*const errors = getInsuranceFieldErrors(insuranceForm);
+    if (Object.keys(errors).length > 0) {
+      setInsuranceFieldErrors(errors);
+      return;
+    }*/
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/insurances`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(insuranceForm)
+      });
+      if (res.ok) {
+        alert('Insurance Company Added Successfully');
+        setInsuranceForm(EMPTY_INSURANCE_FORM);
+        loadAdminData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleInsuranceDelete = async (insurance) => {
+  if (!window.confirm(`Are you sure you want to remove ${insurance.company_name}?`)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/insurances/${insurance.company_id}`, {
+      method: 'DELETE',
+    });
+
+    if (response.ok) {
+      setInsurances((prev) => prev.filter((item) => item.company_id !== insurance.company_id));
+      alert('Insurance company removed successfully');
+    } else {
+      const err = await response.json();
+      alert(`Error: ${err.error || 'Failed to delete insurance company'}`);
+    }
+  } catch (error) {
+    console.error('Delete request failed:', error);
+    alert('An error occurred while trying to delete the insurance company.');
+  }
+};
+
   const updateLocationField = (field, value) => {
     setLocationForm((prev) => {
       const nextForm = { ...prev, [field]: value };
       setLocationFieldErrors(getLocationFieldErrors(nextForm));
       return nextForm;
     });
+  };
+
+  const updateInsuranceField = (field, value) => {
+    setInsuranceForm(prev => ({ ...prev, [field]: value }));
+    if (insuranceFieldErrors[field]) {
+      setInsuranceFieldErrors(prev => ({ ...prev, [field]: false }));
+    }
   };
 
   const handleLocationDelete = async (location) => {
@@ -2747,6 +2837,93 @@ const pagedOutstandingPatients = useMemo(
                           </tbody>
                         </table>
                       </div>
+                    </div>
+                  )}
+                </article>
+
+                <article className="admin-panel admin-panel-wide collapsible-panel">
+                  <button
+                    type="button"
+                    className="collapse-toggle"
+                    onClick={() => setExpandedCards((prev) => ({ ...prev, insurance: !prev.insurance }))}
+                    aria-expanded={expandedCards.insurance}
+                  >
+                    <span>Add Insurance Company</span>
+                    <span>{expandedCards.insurance ? 'Hide' : 'Show'}</span>
+                  </button>
+  
+                  {expandedCards.insurance && (
+                    <div className="collapse-content">
+                      <form className="admin-form" onSubmit={handleInsuranceSubmit}>
+                        <input
+                          placeholder="Company Name"
+                          value={insuranceForm.companyName}
+                          className={insuranceFieldErrors.companyName ? 'admin-input-error' : ''}
+                          onChange={(e) => updateInsuranceField('companyName', e.target.value)}
+                          required
+                        />
+                        <input
+                          placeholder="Street number"
+                          value={insuranceForm.streetNo}
+                          onChange={(e) => updateInsuranceField('streetNo', e.target.value)}
+                          required
+                        />
+                        <input
+                          placeholder="Street name"
+                          value={insuranceForm.streetName}
+                          onChange={(e) => updateInsuranceField('streetName', e.target.value)}
+                          required
+                        />
+                        <input
+                          placeholder="City"
+                          value={insuranceForm.city}
+                          onChange={(e) => updateInsuranceField('city', e.target.value)}
+                          required
+                        />
+                        <input
+                          placeholder="State"
+                          maxLength={2}
+                          value={insuranceForm.state}
+                          onChange={(e) => updateInsuranceField('state', String(e.target.value || '').replace(/[^a-zA-Z]/g, '').toUpperCase())}
+                          required
+                        />
+                        <input
+                          placeholder="ZIP Code"
+                          value={insuranceForm.zipCode}
+                          inputMode="numeric"
+                          maxLength={10}
+                          onChange={(e) => updateInsuranceField('zipCode', formatZip10Input(e.target.value))}
+                          required
+                        />
+                        <input
+                          placeholder="Phone Number"
+                          value={insuranceForm.phone}
+                          onChange={(e) => updateInsuranceField('phone', formatPhoneInput(e.target.value))}
+                          required
+                        />
+                        <input
+                          placeholder="Fax Number"
+                          value={insuranceForm.fax}
+                          onChange={(e) => updateInsuranceField('fax', formatPhoneInput(e.target.value))}
+                        />
+                        <button type="submit">Register New Insurance</button>
+                      </form>
+
+                      <ul className="compact-list">
+                        {insurances.map((ins) => (
+                          <li key={ins.company_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                            <span> ID: {ins.company_id} - Company: {ins.company_name} - Phone Number: {ins.phone_number}</span>
+                            <button
+                              type="button"
+                              className="admin-btn"
+                              style={{ padding: '0.3rem 0.6rem', backgroundColor: '#8f2d2d' }}
+                              onClick={() => handleInsuranceDelete(ins)}
+                            >
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </article>

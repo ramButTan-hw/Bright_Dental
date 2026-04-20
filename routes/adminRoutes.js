@@ -14,6 +14,9 @@ function createAdminRoutes(handlers) {
     getAdminLocations,
     createAdminLocation,
     deleteAdminLocation,
+    getAdminInsurance,
+    createAdminInsurance,
+    deleteAdminInsurance,
     getAdminDoctorTimeOff,
     getAdminStaffTimeOffRequests,
     createAdminDoctorTimeOff,
@@ -134,6 +137,35 @@ function createAdminRoutes(handlers) {
         return true;
       }
       deleteAdminLocation(req, locationId, res);
+      return true;
+    }
+
+    if (method === 'GET' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'insurances') {
+      getAdminInsurance(req, res);
+      return true;
+    }
+
+    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'insurances') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+          try {
+            req.body = JSON.parse(body);
+            createAdminInsurance(req, res);
+          } catch (e) {
+        sendJSON(res, 400, { error: 'Invalid JSON body' });
+       }
+    });
+    return true;
+    }
+    if (method === 'DELETE' && parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'insurances' && parts[3]) {
+    const insuranceId = Number(parts[3]);
+     if (!Number.isInteger(insuranceId) || insuranceId <= 0) {
+        sendJSON(res, 400, { error: 'Valid Insurance ID is required' });
+        return true;
+    }
+      req.insuranceId = insuranceId;
+      deleteAdminInsurance(req, res);
       return true;
     }
 
