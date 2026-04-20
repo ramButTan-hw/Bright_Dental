@@ -13,6 +13,12 @@ function createPatientIntakeHandlers(deps) {
   function checkTimeSlotAvailability(preferredDate, preferredTime, locationId, locationText, callback) {
     if (!locationId && !locationText) return callback(null, false);
 
+    const resolvedIdSql = locationId
+      ? '?'
+      : `(SELECT location_id FROM locations
+          WHERE LOWER(TRIM(CONCAT(loc_street_no, ' ', loc_street_name, ', ', location_city, ', ', location_state, ' ', loc_zip_code))) = LOWER(TRIM(?))
+          LIMIT 1)`;
+
     pool.query(
       `SELECT
         (SELECT COUNT(d.doctor_id)
@@ -20,22 +26,28 @@ function createPatientIntakeHandlers(deps) {
          JOIN staff_locations sl ON sl.staff_id = d.staff_id
          JOIN staff st ON st.staff_id = d.staff_id
          JOIN users u ON u.user_id = st.user_id
-         WHERE sl.location_id = ? AND COALESCE(u.is_deleted, 0) = 0) AS doctor_count,
+         WHERE sl.location_id = ${resolvedIdSql}
+           AND COALESCE(u.is_deleted, 0) = 0) AS doctor_count,
         (SELECT COUNT(*)
          FROM appointment_slots
-         WHERE location_id = ? AND slot_date = ? AND slot_start_time = ?
+         WHERE location_id = ${resolvedIdSql}
+           AND slot_date = ? AND slot_start_time = ?
            AND (current_bookings >= max_patients OR is_available = 0)) AS full_slots,
         (SELECT COUNT(*)
          FROM appointment_preference_requests
-         WHERE (location_id = ? OR LOWER(TRIM(preferred_location)) = LOWER(TRIM(?)))
+         WHERE (location_id = ${resolvedIdSql} OR LOWER(TRIM(preferred_location)) = LOWER(TRIM(?)))
            AND preferred_date = ? AND preferred_time = ?
            AND request_status IN ('PREFERRED_PENDING', 'ASSIGNED')) AS pref_count`,
-      [locationId, locationId, preferredDate, preferredTime, locationId, locationText, preferredDate, preferredTime],
+      locationId
+        ? [locationId, locationId, preferredDate, preferredTime, locationId, locationText, preferredDate, preferredTime]
+        : [locationText, locationText, preferredDate, preferredTime, locationText, locationText, preferredDate, preferredTime],
       (err, rows) => {
         if (err) return callback(err);
         const doctorCount = Number(rows[0].doctor_count) || 0;
-        if (doctorCount === 0) return callback(null, false);
         const booked = Math.max(Number(rows[0].full_slots) || 0, Number(rows[0].pref_count) || 0);
+        // If no doctors resolved (location lookup failed), block only if an existing booking
+        // was already found by text match — otherwise allow through.
+        if (doctorCount === 0) return callback(null, booked > 0);
         callback(null, booked >= doctorCount);
       }
     );
