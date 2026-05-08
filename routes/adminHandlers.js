@@ -844,6 +844,65 @@ function createAdminHandlers(deps) {
     });
   }
 
+   function getAdminInsurance(req, res) {
+    pool.query(
+      `SELECT company_id, company_name, phone_number, address FROM insurance_companies ORDER BY company_name ASC`,
+      (err, rows) => {
+        if (err) {
+          console.error('Error fetching insurance companies:', err);
+          return sendJSON(res, 500, { error: 'Database error' });
+        }
+        sendJSON(res, 200, rows || []);
+      }
+    );
+  }
+
+  function createAdminInsurance(req, res) {
+  const { 
+    companyName, streetNo, streetName, 
+    city, state, zipCode, phone, fax 
+  } = req.body;
+
+  address = streetNo + " " + streetName
+
+  const query = `
+    INSERT INTO insurance_companies 
+    (company_name, address, city, state, zipcode, phone_number, fax_number, created_by, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'ADMIN_PORTAL', 'ADMIN_PORTAL')
+    `;
+
+  const params = [companyName, address, city, state, zipCode, phone, fax];
+
+    pool.query(query, params, (err, result) => {
+      if (err) {
+        console.error('Database error:', err);
+        return sendJSON(res, 500, { error: 'Failed to create insurance company' });
+      }
+      sendJSON(res, 201, { message: 'Insurance company created', id: result.insertId });
+    });
+  }
+
+  function deleteAdminInsurance(req, res) {
+    const insuranceId = req.insuranceId;
+
+  // TODO: Check if patients are on insurance
+    const query = 'DELETE FROM insurance_companies WHERE company_id = ?';
+
+    pool.query(query, [insuranceId], (err, result) => {
+      if (err) {
+        console.error('Database error during insurance deletion:', err);
+        // If there is a foreign key constraint, this will trigger the error block
+        return sendJSON(res, 500, { error: 'Cannot delete insurance company. It may be linked to existing patient records.' });
+      }
+
+      if (result.affectedRows === 0) {
+        return sendJSON(res, 404, { error: 'Insurance company not found.' });
+      }
+
+      sendJSON(res, 200, { message: 'Insurance company deleted successfully' });
+    });
+  }
+
   function getAdminDoctorTimeOff(req, res) {
     pool.query(
       `SELECT
@@ -2754,6 +2813,9 @@ function createAdminHandlers(deps) {
     getAdminLocations,
     createAdminLocation,
     deleteAdminLocation,
+    getAdminInsurance,
+    createAdminInsurance,
+    deleteAdminInsurance,
     getAdminDoctorTimeOff,
     getAdminStaffTimeOffRequests,
     createAdminDoctorTimeOff,
