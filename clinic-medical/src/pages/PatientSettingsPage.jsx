@@ -151,12 +151,28 @@ function PatientSettingsPage() {
     return <main className="patient-portal-page"><p className="portal-loading">Loading profile...</p></main>;
   }
 
+  // Fetch last login from patient profile if available
+  // The profile API should return account_last_login
+  const [lastLogin, setLastLogin] = useState(null);
+  useEffect(() => {
+    if (!session?.patientId) return;
+    fetch(`${API_BASE_URL}/api/patients/${session.patientId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setLastLogin(data?.account_last_login || null))
+      .catch(() => setLastLogin(null));
+  }, [API_BASE_URL, session?.patientId]);
+
   return (
     <main className="patient-portal-page">
       <section className="portal-header-card">
         <div>
           <p className="portal-label">Patient Portal</p>
           <h1>My Profile &amp; Settings</h1>
+          {lastLogin && (
+            <p style={{ margin: 0, color: '#2a7b2a', fontWeight: 500 }}>
+              Last login: {new Date(lastLogin).toLocaleString()}
+            </p>
+          )}
         </div>
         <div className="portal-link-row">
           <button type="button" className="portal-secondary-btn" onClick={() => navigate('/patient-portal')}>Back to Portal</button>
