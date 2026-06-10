@@ -80,7 +80,6 @@ const ALLERGIES_INITIAL_STATE = ALLERGY_OPTIONS.reduce((acc, item) => {
 const WEEKDAY_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const TIME_PREFERENCE_OPTIONS = [
   { value: '08:00', label: '8:00 AM' },
-  { value: '08:00', label: '8:00 AM' },
   { value: '09:00', label: '9:00 AM' },
   { value: '10:00', label: '10:00 AM' },
   { value: '11:00', label: '11:00 AM' },
@@ -215,7 +214,6 @@ function RegisterPatientPage() {
           }))
         );
       } catch (error) {
-        console.error('Failed to fetch pain symptoms:', error.message);
       }
     };
 
@@ -226,7 +224,6 @@ function RegisterPatientPage() {
         const data = await response.json();
         setDoctors(Array.isArray(data) ? data : []);
       } catch (error) {
-        console.error('Failed to fetch doctors:', error.message);
       }
     };
 
@@ -237,7 +234,6 @@ function RegisterPatientPage() {
         const data = await response.json();
         setDepartments(Array.isArray(data) ? data : []);
       } catch (error) {
-        console.error('Failed to fetch departments:', error.message);
       }
     };
 
@@ -248,7 +244,6 @@ function RegisterPatientPage() {
         const data = await response.json();
         setLocations(Array.isArray(data) ? data : []);
       } catch (error) {
-        console.error('Failed to fetch locations:', error.message);
       }
     };
 
@@ -259,7 +254,6 @@ function RegisterPatientPage() {
         const data = await response.json();
         setInsuranceCompanies(Array.isArray(data) ? data : []);
       } catch (error) {
-        console.error('Failed to fetch insurance companies:', error.message);
       }
     };
 
@@ -288,7 +282,6 @@ function RegisterPatientPage() {
       const data = await response.json();
       setAvailability(data.availability || []);
     } catch (error) {
-      console.error('Failed to fetch availability:', error.message);
       setAvailability([]);
     }
   };

@@ -1,9 +1,7 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import '../styles/our-motive.css';
 
 export default function OurMotive() {
-    const navigate = useNavigate();
     useEffect(() => { document.title = 'Our Motive | Bright Dental'; }, []);
     const values = [
         {

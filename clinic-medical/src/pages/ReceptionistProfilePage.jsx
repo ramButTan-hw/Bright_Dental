@@ -55,14 +55,6 @@ function ReceptionistProfilePage() {
   const session = getReceptionPortalSession();
   const fileInputRef = useRef(null);
 
-  const formatEmergencyPhone = (value) => {
-    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
-    if (!digits) return '';
-    if (digits.length <= 3) return digits;
-    if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
-  };
-
   const formatPhone = (value) => {
     const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
     if (!digits) return '';
@@ -162,7 +154,7 @@ function ReceptionistProfilePage() {
           zipcode: formatZip(profile.s_zipcode || ''),
           country: profile.s_country || '',
           emergencyContactName: profile.emergency_contact_name || '',
-          emergencyContactPhone: formatEmergencyPhone(profile.emergency_contact_phone)
+          emergencyContactPhone: formatPhone(profile.emergency_contact_phone)
         });
         if (sid) {
           fetchWithTimeout(`${API_BASE_URL}/api/staff/profile-image?staffId=${sid}`)
@@ -314,7 +306,7 @@ function ReceptionistProfilePage() {
     }
 
     if (field === 'emergencyContactPhone') {
-      const formatted = formatEmergencyPhone(value);
+      const formatted = formatPhone(value);
       setForm((prev) => ({ ...prev, [field]: formatted }));
       return;
     }
