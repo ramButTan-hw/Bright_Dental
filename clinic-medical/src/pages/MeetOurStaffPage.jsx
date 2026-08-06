@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
-
-const API_BASE_URL = resolveApiBaseUrl();
 
 const ROLE_LABELS = {
   DOCTOR: 'Our Doctors',
@@ -12,6 +10,7 @@ const ROLE_LABELS = {
 const ROLE_ORDER = ['DOCTOR', 'RECEPTIONIST', 'ADMIN'];
 
 function MeetOurStaffPage() {
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
 

@@ -90,23 +90,27 @@ function PatientDashboardPage() {
   };
 
   const downloadInvoicePdf = async () => {
-    const doc = new jsPDF();
-    const invoices = await fetch(`${API_BASE_URL}/api/patients/${patientId}/invoices`).then(safeJson);
-    doc.text("Patient Invoices", 14, 15);
-    autoTable(doc, {
-        head: [['Invoice #', 'Appt Date', 'Appt Time', 'Total', 'Patient Amount', 'Amount Paid', 'Amount Due', 'Status']],
-        body: invoices.map(i => [
-            i.invoice_id,
-            i.appointment_date,
-            i.appointment_time,
-            i.amount,
-            i.patient_amount,
-            i.amount_paid,
-            i.amount_due,
-            i.payment_status
-        ])
-    });
-    doc.save(`patient-${patientId}-invoices.pdf`);
+    try {
+      const doc = new jsPDF();
+      const invoices = await fetch(`${API_BASE_URL}/api/patients/${patientId}/invoices`).then(safeJson);
+      doc.text("Patient Invoices", 14, 15);
+      autoTable(doc, {
+          head: [['Invoice #', 'Appt Date', 'Appt Time', 'Total', 'Patient Amount', 'Amount Paid', 'Amount Due', 'Status']],
+          body: invoices.map(i => [
+              i.invoice_id,
+              i.appointment_date,
+              i.appointment_time,
+              i.amount,
+              i.patient_amount,
+              i.amount_paid,
+              i.amount_due,
+              i.payment_status
+          ])
+      });
+      doc.save(`patient-${patientId}-invoices.pdf`);
+    } catch (err) {
+      alert('Failed to download invoices. Please try again.');
+    }
   }
 
   useEffect(() => {

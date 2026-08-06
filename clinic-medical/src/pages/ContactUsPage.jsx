@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { resolveApiBaseUrl } from '../utils/patientPortal';
 
-const API_BASE_URL = resolveApiBaseUrl();
-
 function ContactUsPage() {
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
 
