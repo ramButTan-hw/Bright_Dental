@@ -281,3 +281,32 @@
     align-items: flex-start;
   }
 }
+
+/* Settings page form grid */
+.settings-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem 1rem;
+}
+
+.settings-form__full {
+  grid-column: 1 / -1;
+}
+
+.settings-form__actions {
+  margin-top: 0.5rem;
+}
+
+.settings-form__submit {
+  width: fit-content;
+}
+
+.settings-section--mt {
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 600px) {
+  .settings-form {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { resolveApiBaseUrl } from '../utils/patientPortal';
 import '../styles/PatientRegistrationPage.css';
 
 const TOBACCO_ACTIVE_OPTIONS = ['Cigarettes', 'Cigars', 'Smokeless Tobacco'];
@@ -104,24 +105,6 @@ function addDays(date, days) {
   return next;
 }
 
-function resolveApiBaseUrl() {
-  const configuredApiUrl = (import.meta.env.VITE_API_URL || '').trim();
-  if (configuredApiUrl) {
-    return configuredApiUrl.replace(/\/+$/, '');
-  }
-
-  if (typeof window === 'undefined') {
-    return 'http://localhost:3001';
-  }
-
-  const localHosts = ['localhost', '127.0.0.1', '::1'];
-  if (localHosts.includes(window.location.hostname)) {
-    return 'http://localhost:3001';
-  }
-
-  return window.location.origin.replace(/\/+$/, '');
-}
-
 function PatientRegistrationPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
@@ -220,7 +203,9 @@ function PatientRegistrationPage() {
   const [locations, setLocations] = useState([]);
   const [insuranceInfo, setInsuranceInfo] = useState({ companyId: '', memberId: '', groupNumber: '' });
 
-  const API_BASE_URL = resolveApiBaseUrl();
+  const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
+
+  useEffect(() => { document.title = 'Patient Registration | Bright Dental'; }, []);
 
   useEffect(() => {
     const fetchPainSymptoms = async () => {

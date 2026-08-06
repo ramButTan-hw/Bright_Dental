@@ -539,6 +539,18 @@
   border-color: #006a6a;
 }
 
+@media (max-width: 640px) {
+  .registration-form {
+    padding: 1.25rem;
+  }
+
+  .form-grid,
+  .tobacco-details-grid,
+  .preferred-appointment-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
