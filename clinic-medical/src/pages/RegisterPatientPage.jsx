@@ -97,7 +97,7 @@ const TIME_PREFERENCE_OPTIONS = [
 function RegisterPatientPage() {
   const navigate = useNavigate();
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
-  const session = getReceptionPortalSession();
+  const session = useMemo(() => getReceptionPortalSession(), []);
 
   const [step, setStep] = useState(1);
   const [submittingRegistration, setSubmittingRegistration] = useState(false);

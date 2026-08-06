@@ -52,7 +52,7 @@ const formatDateTimeWithMeridiem = (value) => {
 function DentistProfilePage() {
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
   const navigate = useNavigate();
-  const session = getDentistPortalSession();
+  const session = useMemo(() => getDentistPortalSession(), []);
   const fileInputRef = useRef(null);
 
   const formatEmergencyPhone = (value) => {

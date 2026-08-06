@@ -7,7 +7,7 @@ import autoTable from 'jspdf-autotable';
 function PatientDashboardPage() {
   const { patientId } = useParams();
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
-  const session = getReceptionPortalSession();
+  const session = useMemo(() => getReceptionPortalSession(), []);
 
   const [patientDetail, setPatientDetail] = useState(null);
   const [message, setMessage] = useState('');

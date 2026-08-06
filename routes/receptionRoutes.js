@@ -377,9 +377,9 @@ function createReceptionRoutes({ pool, sendJSON }) {
         [doctorId, locationId, appointmentDate, appointmentTime, appointmentEndTime, createdBy, createdBy]
       );
       slotId = Number(slotInsert.insertId);
-      currentBookings = 0;
-      maxPatients = 1;
-      isAvailable = true;
+      let currentBookings = 0;
+      let maxPatients = 1;
+      let isAvailable = true;
     }
 
     const [appointmentInsert] = await conn.promise().query(

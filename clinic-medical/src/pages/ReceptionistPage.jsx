@@ -84,7 +84,7 @@ function PatientSearch() {
 function ReceptionistPage() {
   const navigate = useNavigate();
   const API_BASE_URL = useMemo(() => resolveApiBaseUrl(), []);
-  const session = getReceptionPortalSession();
+  const session = useMemo(() => getReceptionPortalSession(), []);
 
   const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
     const controller = new AbortController();
