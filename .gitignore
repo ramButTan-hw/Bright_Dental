@@ -140,3 +140,8 @@ database/seeds/
 
 # macOS
 .DS_Store
+
+# Deployment secrets
+.env.*
+!.env.example
+!.env.azure.example

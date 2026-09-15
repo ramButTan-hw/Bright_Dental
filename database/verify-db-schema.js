@@ -13,26 +13,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function resolveConfig(target) {
-  const prefix = target === 'local' ? 'LOCAL_' : target === 'railway' ? 'RAILWAY_' : '';
-  const read = (key) => process.env[`${prefix}${key}`] || (target === 'local' ? process.env[key] : '');
-
-  const config = {
-    host: target === 'default' ? process.env.DB_HOST : read('DB_HOST'),
-    port: Number((target === 'default' ? process.env.DB_PORT : read('DB_PORT')) || 3306),
-    user: target === 'default' ? process.env.DB_USER : read('DB_USER'),
-    password: target === 'default' ? process.env.DB_PASSWORD : read('DB_PASSWORD'),
-    database: target === 'default' ? process.env.DB_NAME : read('DB_NAME')
-  };
-
-  const missing = ['host', 'user', 'database'].filter((k) => !String(config[k] || '').trim());
-  if (missing.length > 0) {
-    const label = target === 'default' ? 'DB_' : `${prefix}DB_`;
-    throw new Error(`Missing required ${label} env vars for ${target}: ${missing.join(', ')}`);
-  }
-
-  return config;
-}
+const { resolveConfig } = require('./config');
 
 function extractIdentifiers(sql, regex) {
   const out = [];

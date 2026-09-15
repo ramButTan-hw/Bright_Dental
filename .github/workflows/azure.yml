@@ -1,0 +1,79 @@
+name: Container checks and Azure deployment
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - name: Build and start application with MySQL
+        env:
+          DB_PASSWORD: ci-database-password
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          ADMIN_SECRET: ci-admin-password
+        run: docker compose up --build -d --wait --wait-timeout 300
+      - name: Verify migrated schema, API, and frontend
+        env:
+          DB_PASSWORD: ci-database-password
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          ADMIN_SECRET: ci-admin-password
+        run: |
+          docker compose exec -T app npm run verify:schema
+          bash scripts/check-deployment.sh http://localhost:3001
+          curl --fail http://localhost:3001/api/public/locations
+      - name: Container logs and cleanup
+        if: always()
+        env:
+          DB_PASSWORD: ci-database-password
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          ADMIN_SECRET: ci-admin-password
+        run: |
+          docker compose logs --no-color
+          docker compose down -v
+
+  deploy:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AZURE_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: azure-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+      AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and deploy immutable image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          registry=$(az acr show -g "$AZURE_RESOURCE_GROUP" -n "$AZURE_ACR_NAME" --query loginServer -o tsv)
+          az acr build --registry "$AZURE_ACR_NAME" --image "bright-dental:$IMAGE_TAG" --platform linux/amd64 .
+          az webapp config container set -g "$AZURE_RESOURCE_GROUP" -n "$AZURE_WEBAPP_NAME" \
+            --container-image-name "$registry/bright-dental:$IMAGE_TAG" --container-registry-url "https://$registry" --output none
+          az webapp restart -g "$AZURE_RESOURCE_GROUP" -n "$AZURE_WEBAPP_NAME" --output none
+          hostname=$(az webapp show -g "$AZURE_RESOURCE_GROUP" -n "$AZURE_WEBAPP_NAME" --query defaultHostName -o tsv)
+          bash scripts/check-deployment.sh "https://$hostname"

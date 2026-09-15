@@ -1,4 +1,4 @@
--- Deactivate the legacy generic CARD payment method on Railway.
+-- Deactivate the legacy generic CARD payment method on the deployed database.
 -- Credit Card and Debit Card remain available for checkout, and historical
 -- payments keep their foreign key reference intact.
 

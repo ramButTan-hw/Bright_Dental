@@ -1,5 +1,5 @@
 -- Add receptionist notifications for doctor time-off approvals.
--- This keeps the live Railway schema aligned with schema.sql.
+-- This keeps the deployed schema aligned with schema.sql.
 
 ALTER TABLE receptionist_notifications
     MODIFY COLUMN notification_type ENUM('INSURANCE_CHANGE_REQUEST', 'PHARMACY_CHANGE_REQUEST', 'DOCTOR_TIME_OFF') NOT NULL;

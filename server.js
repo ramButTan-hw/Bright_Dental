@@ -1096,6 +1096,13 @@ const server = http.createServer((req, res) => {
     return sendJSON(res, 200, { status: 'Medical Clinic API is running' });
   }
 
+  if (parsedUrl.pathname === '/api/ready' && method === 'GET') {
+    pool.query({ sql: 'SELECT 1', timeout: 3000 }, (error) => {
+      sendJSON(res, error ? 503 : 200, { status: error ? 'not ready' : 'ready' });
+    });
+    return;
+  }
+
   // Serve React build in production
   const buildDir = pathModule.join(__dirname, 'clinic-medical', 'dist');
   if (fs.existsSync(buildDir)) {
@@ -1130,9 +1137,9 @@ const server = http.createServer((req, res) => {
   sendJSON(res, 404, { error: 'Route not found' });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Medical Clinic API server running on http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/`);
+  console.log(`Health check: http://localhost:${PORT}/api/health`);
 });
 
 // Handle server errors
@@ -1143,3 +1150,11 @@ server.on('error', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
+
+// Let in-flight requests finish before App Service or Docker replaces the container.
+function shutdown() {
+  server.close(() => pool.end(() => process.exit(0)));
+  setTimeout(() => process.exit(1), 10000).unref();
+}
+process.once('SIGTERM', shutdown);
+process.once('SIGINT', shutdown);

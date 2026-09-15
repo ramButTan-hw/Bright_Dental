@@ -1,0 +1,14 @@
+.git
+.github
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.log
+**/*.pem
+**/*.key
+**/.DS_Store
+coverage
+docs
+scripts
+test

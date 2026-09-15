@@ -1,3 +1,4 @@
+import { resolveApiBaseUrl } from '../utils/patientPortal';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles/PatientRegistrationPage.css';
@@ -102,24 +103,6 @@ function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
-}
-
-function resolveApiBaseUrl() {
-  const configuredApiUrl = (import.meta.env.VITE_API_URL || '').trim();
-  if (configuredApiUrl) {
-    return configuredApiUrl.replace(/\/+$/, '');
-  }
-
-  if (typeof window === 'undefined') {
-    return 'http://localhost:3001';
-  }
-
-  const localHosts = ['localhost', '127.0.0.1', '::1'];
-  if (localHosts.includes(window.location.hostname)) {
-    return 'http://localhost:3001';
-  }
-
-  return window.location.origin.replace(/\/+$/, '');
 }
 
 function PatientRegistrationPage() {

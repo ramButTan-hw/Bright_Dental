@@ -4,21 +4,8 @@ export function resolveApiBaseUrl() {
     return configuredApiUrl.replace(/\/+$/, '');
   }
 
-  if (typeof window === 'undefined') {
-    return 'http://localhost:3001';
-  }
-
-  const localHosts = ['localhost', '127.0.0.1', '::1'];
-  if (localHosts.includes(window.location.hostname)) {
-    return 'http://localhost:3001';
-  }
-
-  // In local Vite dev, keep API calls pinned to the backend service.
-  if (window.location.port === '5173') {
-    return 'http://localhost:3001';
-  }
-
-  return window.location.origin.replace(/\/+$/, '');
+  // Both Vite's proxy and the production container serve the API on this origin.
+  return typeof window === 'undefined' ? '' : window.location.origin.replace(/\/+$/, '');
 }
 
 export function getPatientPortalSession() {

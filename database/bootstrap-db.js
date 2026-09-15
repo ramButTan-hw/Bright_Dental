@@ -68,17 +68,34 @@ async function runPendingMigrations(db) {
 }
 
 async function main() {
-  const db = pool.promise();
+  let db;
+  let locked = false;
 
   try {
+    // A dedicated connection holds the advisory lock across every DDL statement.
+    db = await pool.promise().getConnection();
+    const [rows] = await db.query("SELECT GET_LOCK('bright-dental-bootstrap', 120) AS acquired");
+    locked = Number(rows[0].acquired) === 1;
+    if (!locked) throw new Error('Timed out waiting for the database bootstrap lock');
     await importSchemaIfDatabaseIsEmpty(db);
     await runPendingMigrations(db);
     console.log('Database bootstrap complete.');
-    process.exit(0);
   } catch (error) {
     console.error('Database bootstrap failed:', error.message);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    if (db) {
+      try {
+        if (locked) await db.query("SELECT RELEASE_LOCK('bright-dental-bootstrap')");
+      } finally {
+        db.release();
+      }
+    }
+    await pool.promise().end();
   }
 }
 
-main();
+main().catch((error) => {
+  console.error('Database bootstrap cleanup failed:', error.message);
+  process.exit(1);
+});

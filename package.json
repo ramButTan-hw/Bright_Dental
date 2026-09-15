@@ -9,10 +9,13 @@
     "bootstrap": "node database/bootstrap-db.js",
     "verify:schema": "node database/verify-db-schema.js",
     "verify:schema:local": "node database/verify-db-schema.js --target=local",
-    "verify:schema:railway": "node database/verify-db-schema.js --target=railway",
-    "build": "cd clinic-medical && npm install && npm run build",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "copy": "node database/init-db.js"
+    "build": "npm ci --prefix clinic-medical --no-audit --no-fund && npm run build --prefix clinic-medical",
+    "test": "node --test",
+    "copy": "node database/init-db.js",
+    "verify:schema:azure": "node database/verify-db-schema.js --target=azure",
+    "docker:up": "docker compose up --build -d --wait",
+    "docker:down": "docker compose down",
+    "deploy:azure": "bash scripts/deploy-azure.sh"
   },
   "keywords": [],
   "author": "",
@@ -23,5 +26,8 @@
     "mysql": "^2.18.1",
     "mysql2": "^3.20.0",
     "nodemailer": "^8.0.4"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
