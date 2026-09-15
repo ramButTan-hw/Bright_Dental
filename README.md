@@ -15,7 +15,7 @@ Containerized with Docker and configured for deployment on Microsoft Azure.
   <a href="#technology-stack"><img src="https://img.shields.io/badge/MySQL-8.0-4479A1?style=for-the-badge&amp;logo=mysql&amp;logoColor=white" alt="MySQL 8.0"></a>
 </p>
 
-[Product tour](#product-tour) · [Architecture](#azure--docker-architecture) · [Docker setup](#quick-start-with-docker) · [Azure deployment](#deploy-to-azure)
+[Product tour](#product-tour) · [Database triggers](#core-database-triggers) · [Architecture](#azure--docker-architecture) · [Docker setup](#quick-start-with-docker) · [Azure deployment](#deploy-to-azure)
 
 </div>
 
@@ -140,6 +140,40 @@ Demo screens covering the patient journey and clinic operations. Select an image
     </td>
   </tr>
 </table>
+
+## Core database triggers
+
+MySQL triggers run automatically when records change, enforcing business rules at the database level. These three protect the core booking, appointment, and billing workflows.
+
+### 1. Validate appointment bookings
+
+**`appointments_validate_slot_on_insert`** · `BEFORE INSERT` on `appointments`
+
+Checks that the selected slot matches the appointment's **doctor, location, date, and time**. For a booking whose status is neither `CANCELLED` nor `NO_SHOW`, it also rejects the insert if the slot already contains another appointment with a status outside those two values. Invalid bookings raise a database error before the row is saved.
+
+**Example:** Booking a 9:00 AM slot with a different doctor, or inserting another active appointment into an occupied slot, is rejected.
+
+[View trigger SQL](database/migrations/2026-04-20-recreate-missing-validation-triggers.sql#L39)
+
+### 2. Protect appointment status transitions
+
+**`appointments_enforce_status_transition`** · `BEFORE UPDATE` on `appointments`
+
+Prevents status changes once an appointment is **`COMPLETED` or `CANCELLED`**. A **`CHECKED_IN`** appointment may only move to `COMPLETED` or `CANCELLED`, keeping the visit workflow consistent across application entry points.
+
+**Example:** `CHECKED_IN → COMPLETED` is allowed; `COMPLETED → SCHEDULED` is rejected.
+
+[View trigger SQL](database/schema.sql#L1372) · [Runtime definition](server.js#L481)
+
+### 3. Recalculate invoice payment status
+
+**`after_payment_insert_update_invoice_status`** · `AFTER INSERT` on `payments`
+
+After a payment is recorded, recalculates the invoice's **net paid amount** as total payments minus recorded refunds. It compares that amount with the patient's responsibility and sets the invoice to **`Paid`**, **`Partial`**, or **`Unpaid`**, marking the update as trigger-generated.
+
+**Example:** For a $100 patient balance with no refunds, a $40 payment sets the invoice to `Partial`; another $60 payment changes it to `Paid`.
+
+[View trigger SQL](database/schema.sql#L1333)
 
 ## Technology stack
 

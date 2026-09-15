@@ -89,7 +89,7 @@ async function ensureDoctorNpiPrimaryKey() {
   }
 }
 
-function ensureDefaultClinicLocations() {
+async function ensureDefaultClinicLocations() {
   const insertSql = `INSERT INTO locations (location_city, location_state, loc_street_no, loc_street_name, loc_zip_code, created_by, updated_by)
     SELECT ?, ?, ?, ?, ?, 'SYSTEM', 'SYSTEM'
     WHERE NOT EXISTS (
@@ -101,7 +101,7 @@ function ensureDefaultClinicLocations() {
         AND loc_zip_code = ?
     )`;
 
-  DEFAULT_CLINIC_LOCATIONS.forEach((location) => {
+  for (const location of DEFAULT_CLINIC_LOCATIONS) {
     const params = [
       location.city,
       location.state,
@@ -115,24 +115,20 @@ function ensureDefaultClinicLocations() {
       location.zipCode
     ];
 
-    pool.query(insertSql, params, (err) => {
-      if (err) {
-        console.error('Error ensuring default clinic location:', err.message);
-      }
-    });
-  });
+    // Serialize inserts: concurrent INSERT ... WHERE NOT EXISTS can deadlock.
+    await pool.promise().query(insertSql, params);
+  }
 }
 
-// Only seed locations if none exist (prevents duplicates when data is already loaded)
-pool.query('SELECT COUNT(*) AS cnt FROM locations', (err, rows) => {
-  if (!err && rows[0].cnt === 0) {
-    ensureDefaultClinicLocations();
-  }
-});
+// Only seed locations if none exist (preserves existing clinic data).
+const locationsReady = pool.promise().query('SELECT COUNT(*) AS cnt FROM locations')
+  .then(async ([rows]) => {
+    if (rows[0].cnt === 0) await ensureDefaultClinicLocations();
+  });
 ensureDoctorNpiPrimaryKey();
 
 // Ensure location contact columns exist and seed contact info
-(function ensureLocationContactColumns() {
+locationsReady.then(function ensureLocationContactColumns() {
   const cols = [
     { name: 'loc_phone', def: "VARCHAR(20) AFTER loc_zip_code" },
     { name: 'loc_email', def: "VARCHAR(100) AFTER loc_phone" },
@@ -235,7 +231,9 @@ ensureDoctorNpiPrimaryKey();
       onColumnDone();
     });
   });
-})();
+}).catch((error) => {
+  console.error('Error initializing clinic locations:', error.message);
+});
 
 async function ensureAppointmentRescheduleTracking() {
   const db = pool.promise();
